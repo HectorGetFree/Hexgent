@@ -5,13 +5,14 @@ from .stream_events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
     TaskCreatedEvent,
+    TaskUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
 )
 from .agent_loop import agent_loop_stream
 from .loop_control import stop_reason_message
-from .task import InMemoryTaskStore
+from .task import InMemoryTaskStore, Task
 from .tool.tool_context import ToolExecutionContext
 
 
@@ -44,6 +45,16 @@ def configure_readline() -> None:
     readline.parse_and_bind("set convert-meta off")
 
 
+def _print_task(task: Task, title: str) -> None:
+    """展示 Task 的整体状态和所有步骤状态。"""
+    task_status = TASK_STATUS_LABELS[task.status]
+    print(f"\033[90m{title}：{task.objective}\033[0m")
+    print(f"\033[90m  整体状态：{task_status}\033[0m")
+    for index, step in enumerate(task.steps, start=1):
+        step_status = TASK_STATUS_LABELS[step.status]
+        print(f"\033[90m  {index}. [{step_status}] {step.content}\033[0m")
+
+
 def main() -> None:
     """启动 Hexgent 交互会话。"""
     # 1. 初始化终端输入、对话历史和会话级工具上下文。
@@ -58,11 +69,18 @@ def main() -> None:
     while True:
         try:
             query = input("\033[32m你：\033[0m")
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
+            print("\n输入流已关闭，会话结束。")
+            break
+        except KeyboardInterrupt:
+            print("\n会话已结束。")
             break
 
-        if query.strip().lower() in ("q", "exit", ""):
+        normalized_query = query.strip().lower()
+        if normalized_query in ("q", "exit"):
             break
+        if not normalized_query:
+            continue
 
         history.append({"role": "user", "content": query})
 
@@ -85,10 +103,9 @@ def main() -> None:
                     f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
                 )
             elif isinstance(event, TaskCreatedEvent):
-                print(f"\033[90m任务计划：{event.task.objective}\033[0m")
-                for index, step in enumerate(event.task.steps, start=1):
-                    status_label = TASK_STATUS_LABELS[step.status]
-                    print(f"\033[90m  {index}. [{status_label}] {step.content}\033[0m")
+                _print_task(event.task, "任务计划")
+            elif isinstance(event, TaskUpdatedEvent):
+                _print_task(event.task, "任务进度")
             elif isinstance(event, LoopLimitReachedEvent):
                 print(f"\033[90m{stop_reason_message(event.reason)}\033[0m")
             elif isinstance(event, RunFinishedEvent):

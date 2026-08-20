@@ -19,8 +19,8 @@ class LoopLimits:
 
     max_model_rounds: int = 12
     max_tool_calls: int = 30
-    max_total_tokens: int = 60_000
-    max_output_tokens_per_round: int = 4_000
+    max_total_tokens: int = 120_000
+    max_output_tokens_per_round: int = 8_000
     max_elapsed_seconds: float = 600
     finalization_output_tokens: int = 2_000
 

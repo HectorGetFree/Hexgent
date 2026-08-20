@@ -9,6 +9,7 @@ from hexgent.stream_events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
     TaskCreatedEvent,
+    TaskUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -17,6 +18,7 @@ from hexgent.loop_control import LoopLimits
 from hexgent.task import InMemoryTaskStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_registry import get_tool
 
 
 agent_loop_module = import_module("hexgent.agent_loop")
@@ -266,14 +268,58 @@ class AgentLoopLimitsTest(unittest.TestCase):
         created = [event for event in events if isinstance(event, TaskCreatedEvent)]
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0].task.objective, "检查项目")
-        self.assertEqual([step.content for step in created[0].task.steps], ["读取代码", "总结结果"])
+        self.assertEqual(
+            [step.content for step in created[0].task.steps],
+            ["读取代码", "总结结果"],
+        )
+
+    def test_update_task_plan_emits_latest_step_statuses(self) -> None:
+        """Task 更新成功后应发送最新的整体状态和步骤状态。"""
+        create_arguments = (
+            '{"objective":"检查项目","steps":['
+            '{"content":"读取代码","process_message":"正在读取代码",'
+            '"status":"in_progress"},'
+            '{"content":"总结结果","process_message":"正在总结结果",'
+            '"status":"pending"}]}'
+        )
+        update_arguments = (
+            '{"status":"in_progress","steps":['
+            '{"content":"读取代码","process_message":"正在读取代码",'
+            '"status":"completed"},'
+            '{"content":"总结结果","process_message":"正在总结结果",'
+            '"status":"in_progress"}]}'
+        )
+        client = FakeClient(
+            [
+                make_response(
+                    [make_tool_call("task-1", "create_task", create_arguments)]
+                ),
+                make_response(
+                    [make_tool_call("task-2", "update_task_plan", update_arguments)]
+                ),
+                make_response([], "继续执行"),
+                make_response([], "等待下一轮"),
+            ]
+        )
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+        ):
+            events = list(agent_loop_module.agent_loop_stream([], self.context))
+
+        updated = [event for event in events if isinstance(event, TaskUpdatedEvent)]
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(updated[0].task.status, "in_progress")
+        self.assertEqual(
+            [step.status for step in updated[0].task.steps],
+            ["completed", "in_progress"],
+        )
 
     def test_tool_description_hides_write_content(self) -> None:
         """写文件的调用说明只能展示路径，不能泄露写入内容。"""
-        description = agent_loop_module._describe_tool_call(
-            "write_file",
-            '{"path":"notes.md","content":"敏感内容"}',
-        )
+        tool = get_tool("write_file")
+        self.assertIsNotNone(tool)
+        description = tool.describe('{"path":"notes.md","content":"敏感内容"}')
 
         self.assertEqual(description, "write_file(notes.md)")
         self.assertNotIn("敏感内容", description)

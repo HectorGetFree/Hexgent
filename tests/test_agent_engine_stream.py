@@ -9,6 +9,7 @@ from hexgent.stream_events import (
     AgentLoopResult,
     RunFinishedEvent,
     TaskCreatedEvent,
+    TaskUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -58,6 +59,16 @@ class AgentEngineStreamTest(unittest.TestCase):
                 ToolStartedEvent("create_task", "c1", "create_task(检查项目)"),
                 ToolFinishedEvent("create_task", "c1", "success"),
                 TaskCreatedEvent(task),
+                TaskUpdatedEvent(
+                    Task(
+                        "检查项目",
+                        "in_progress",
+                        [
+                            TaskStep("读取代码", "正在读取代码", "completed"),
+                            TaskStep("总结结果", "正在总结结果", "in_progress"),
+                        ],
+                    )
+                ),
                 RunFinishedEvent(AgentLoopResult("", 0.5)),
             ]
         )
@@ -73,6 +84,9 @@ class AgentEngineStreamTest(unittest.TestCase):
         self.assertIn("开始处理工具：create_task(检查项目)", rendered)
         self.assertIn("任务计划：检查项目", rendered)
         self.assertIn("1. [进行中] 读取代码", rendered)
+        self.assertIn("任务进度：检查项目", rendered)
+        self.assertIn("1. [已完成] 读取代码", rendered)
+        self.assertIn("2. [进行中] 总结结果", rendered)
         self.assertNotIn("工具结束：create_task，状态：成功，用时", rendered)
 
     def test_limit_result_returns_to_next_user_input(self) -> None:
@@ -98,6 +112,29 @@ class AgentEngineStreamTest(unittest.TestCase):
         self.assertEqual(stream.call_count, 2)
         self.assertIn("第一轮收尾", output.getvalue())
         self.assertIn("第二轮继续", output.getvalue())
+
+    def test_empty_input_does_not_end_session(self) -> None:
+        """空行应被忽略，不应结束整个交互会话。"""
+        events = iter(
+            [
+                TextDeltaEvent("继续运行"),
+                RunFinishedEvent(AgentLoopResult("继续运行", 0.2)),
+            ]
+        )
+        output = StringIO()
+        with (
+            patch("builtins.input", side_effect=["", "有效输入", "q"]),
+            patch.object(
+                agent_engine_module,
+                "agent_loop_stream",
+                return_value=events,
+            ) as stream,
+            patch("sys.stdout", output),
+        ):
+            agent_engine_module.main()
+
+        self.assertEqual(stream.call_count, 1)
+        self.assertIn("继续运行", output.getvalue())
 
 
 if __name__ == "__main__":

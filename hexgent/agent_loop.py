@@ -1,7 +1,6 @@
 """模型调用与工具执行的核心循环。"""
 
 from collections.abc import Generator
-import json
 from typing import Any
 
 from .stream_events import (
@@ -10,6 +9,7 @@ from .stream_events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
     TaskCreatedEvent,
+    TaskUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -26,6 +26,7 @@ from .prompt import SYSTEM_PROMPT, TOOLS
 from .task import InMemoryTaskStore, format_task_context, task_needs_continuation
 from .tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import execute_tool_call
+from hexgent.tool.tool_registry import get_tool
 
 
 MAX_TASK_COMPLETION_NUDGES = 1
@@ -46,37 +47,6 @@ def _budget_tool_result(call_id: str, reason: LoopStopReason) -> dict[str, str]:
         "call_id": call_id,
         "output": f"错误：{stop_reason_message(reason)}，本次工具调用未执行",
     }
-
-
-def _describe_tool_call(tool_name: str, raw_arguments: str) -> str:
-    """生成不泄露文件内容的简短工具调用说明。"""
-    # 1. 尽力解析模型参数；参数尚不合法时只展示工具名称。
-    try:
-        arguments = json.loads(raw_arguments)
-    except (json.JSONDecodeError, TypeError):
-        return f"{tool_name}()"
-    if not isinstance(arguments, dict):
-        return f"{tool_name}()"
-
-    # 2. 仅选择适合终端展示的参数，避免输出写入内容或替换文本。
-    display_keys = {
-        "bash": "command",
-        "read_file": "path",
-        "write_file": "path",
-        "edit_file": "path",
-        "glob": "pattern",
-        "create_task": "objective",
-        "update_task_plan": "status",
-    }
-    key = display_keys.get(tool_name)
-    value = arguments.get(key) if key else None
-    if not isinstance(value, str) or not value:
-        return f"{tool_name}()"
-
-    compact_value = " ".join(value.split())
-    if len(compact_value) > 120:
-        compact_value = f"{compact_value[:117]}..."
-    return f"{tool_name}({compact_value})"
 
 
 def _stream_model_response(
@@ -237,10 +207,16 @@ def agent_loop_stream(
         # 5. 逐个处理工具调用，并为开始、结束和预算事件提供实时反馈。
         results = []
         for tool_call in tool_calls:
+            registered_tool = get_tool(tool_call.name)
+            description = (
+                registered_tool.describe(tool_call.arguments)
+                if registered_tool is not None
+                else f"{tool_call.name}()"
+            )
             yield ToolStartedEvent(
                 tool_call.name,
                 tool_call.call_id,
-                _describe_tool_call(tool_call.name, tool_call.arguments),
+                description,
             )
 
             tool_stop_reason: LoopStopReason | None = None
@@ -284,6 +260,10 @@ def agent_loop_stream(
                 task = execution_context.task_store.get_task()
                 if task is not None:
                     yield TaskCreatedEvent(task)
+            elif tool_call.name == "update_task_plan" and result.status == "success":
+                task = execution_context.task_store.get_task()
+                if task is not None:
+                    yield TaskUpdatedEvent(task)
 
         # 6. 将完整工具结果加入历史；批次中触发限制时直接进入收尾流。
         messages.extend(results)

@@ -1,7 +1,7 @@
 """Agent Loop 向界面层发送的流式事件。"""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from .loop_control import LoopStopReason
 from .task import Task
@@ -53,6 +53,13 @@ class TaskCreatedEvent:
 
 
 @dataclass(frozen=True)
+class TaskUpdatedEvent:
+    """Task 更新成功后向界面层展示的最新计划。"""
+
+    task: Task
+
+
+@dataclass(frozen=True)
 class LoopLimitReachedEvent:
     """本轮运行触发了执行限制。"""
 
@@ -66,11 +73,13 @@ class RunFinishedEvent:
     result: AgentLoopResult
 
 
-AgentEvent = (
+
+AgentEvent: TypeAlias = (
     TextDeltaEvent
     | ToolStartedEvent
     | ToolFinishedEvent
     | TaskCreatedEvent
+    | TaskUpdatedEvent
     | LoopLimitReachedEvent
     | RunFinishedEvent
 )
