@@ -1,4 +1,4 @@
-"""Allow Hexgent to run with ``python -m hexgent``."""
+"""支持通过 ``python -m hexgent`` 启动 Hexgent。"""
 
 from hexgent.agent_engine import main
 

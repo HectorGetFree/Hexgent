@@ -1,4 +1,4 @@
-"""Hexgent agent package."""
+"""Hexgent 智能体包。"""
 
 from .agent_loop import agent_loop
 

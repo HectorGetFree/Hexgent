@@ -1,11 +1,11 @@
 
-"""Command-line entry point for Hexgent."""
+"""Hexgent 命令行入口。"""
 
 from .agent_loop import agent_loop
 
 
 def configure_readline() -> None:
-    """Configure macOS libedit for UTF-8 input when readline is available."""
+    """readline 可用时，为 macOS libedit 配置 UTF-8 输入。"""
     try:
         import readline
     except ImportError:
@@ -18,7 +18,7 @@ def configure_readline() -> None:
 
 
 def main() -> None:
-    """Run the interactive Hexgent session."""
+    """启动 Hexgent 交互会话。"""
     configure_readline()
     history = []
 

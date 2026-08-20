@@ -1,15 +1,15 @@
-"""Core model and tool execution loop."""
+"""模型调用与工具执行的核心循环。"""
 
 import json
 from typing import Any
 
 from .client import get_client, get_model
-from .prompt import BASH_TOOLS, SYSTEM_PROMPT
-from .tools import run_bash
+from .prompt import SYSTEM_PROMPT, TOOLS
+from .tool_registry import execute_tool
 
 
 def agent_loop(messages: list[Any]) -> str:
-    """Run model turns until the model returns without a tool call."""
+    """持续执行模型轮次，直到模型不再请求调用工具。"""
     client = get_client()
 
     while True:
@@ -17,7 +17,7 @@ def agent_loop(messages: list[Any]) -> str:
             model=get_model(),
             instructions=SYSTEM_PROMPT,
             input=messages,
-            tools=BASH_TOOLS,
+            tools=TOOLS,
             max_output_tokens=8000,
         )
         messages.extend(response.output)
@@ -30,12 +30,13 @@ def agent_loop(messages: list[Any]) -> str:
 
         results = []
         for call in tool_calls:
-            arguments = json.loads(call.arguments)
-            command = arguments["command"]
-
-            print(f"\033[33m$ {command}\033[0m")
-            output = run_bash(command)
-            print(output[:200])
+            try:
+                arguments = json.loads(call.arguments)
+            except json.JSONDecodeError as error:
+                output = f"错误：工具参数不是有效的 JSON：{error}"
+            else:
+                print(f"\033[33m使用工具：{call.name}\033[0m")
+                output = execute_tool(call.name, arguments)
 
             results.append(
                 {
