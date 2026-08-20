@@ -8,7 +8,8 @@ from typing import Any, Literal
 
 from hexgent.tool.tool_permission import PermissionDecision, ask_user, check_permission
 from hexgent.prompt import TOOLS
-from .tool_registry import ToolFunction, get_tool
+from .tool_context import ToolExecutionContext
+from .tool_registry import RegisteredTool, get_tool
 
 
 ToolExecutionStatus = Literal["success", "invalid", "denied", "error"]
@@ -67,8 +68,9 @@ def _matches_json_type(value: Any, expected_type: str) -> bool:
 
 def _validate_arguments(
     tool_name: str,
-    tool: ToolFunction,
+    tool: RegisteredTool,
     arguments: dict[str, Any],
+    context: ToolExecutionContext,
 ) -> ToolExecutionResult | None:
     """按照工具 Schema 和函数签名校验参数。"""
     schema = TOOL_SCHEMAS.get(tool_name)
@@ -92,9 +94,16 @@ def _validate_arguments(
             return _invalid(f"参数“{name}”必须是 {expected_type} 类型")
 
     try:
-        inspect.signature(tool).bind(**arguments)
+        bind_arguments = dict(arguments)
+        if tool.requires_context:
+            bind_arguments["context"] = context
+        inspect.signature(tool.function).bind(**bind_arguments)
     except TypeError as error:
         return _invalid(f"参数与工具函数签名不匹配：{error}")
+
+    tool_validation_error = tool.validate(arguments, context)
+    if tool_validation_error is not None:
+        return _invalid(tool_validation_error)
     return None
 
 
@@ -126,6 +135,7 @@ def execute_tool_call(
     tool_name: str,
     raw_arguments: str,
     *,  # 表示后面的参数只能用参数名传递
+    context: ToolExecutionContext,
     user_confirmation: UserConfirmation = ask_user,
     execution_notifier: ToolExecutionNotifier | None = None,
 ) -> ToolExecutionResult:
@@ -145,7 +155,7 @@ def execute_tool_call(
         return parsed
 
     # 3. 按照工具 Schema 和函数签名校验参数合法性。
-    validation_error = _validate_arguments(tool_name, tool, parsed)
+    validation_error = _validate_arguments(tool_name, tool, parsed, context)
     if validation_error is not None:
         return validation_error
 
@@ -164,7 +174,7 @@ def execute_tool_call(
 
     # 6. 真正执行工具，并将正常输出或异常转换为统一结果。
     try:
-        output = tool(**parsed)
+        output = tool.execute(parsed, context)
     except Exception as error:
         return ToolExecutionResult("error", f"错误：{error}", True)
     return ToolExecutionResult("success", output, False)
