@@ -1,11 +1,10 @@
 """模型调用与工具执行的核心循环。"""
 
-import json
 from typing import Any
 
 from .client import get_client, get_model
 from .prompt import SYSTEM_PROMPT, TOOLS
-from .tool_registry import execute_tool
+from hexgent.tool.tool_execution import execute_tool_call
 
 
 def agent_loop(messages: list[Any]) -> str:
@@ -29,20 +28,20 @@ def agent_loop(messages: list[Any]) -> str:
             return response.output_text
 
         results = []
-        for call in tool_calls:
-            try:
-                arguments = json.loads(call.arguments)
-            except json.JSONDecodeError as error:
-                output = f"错误：工具参数不是有效的 JSON：{error}"
-            else:
-                print(f"\033[33m使用工具：{call.name}\033[0m")
-                output = execute_tool(call.name, arguments)
+        for tool_call in tool_calls:
+            result = execute_tool_call(
+                tool_call.name,
+                tool_call.arguments,
+                execution_notifier=lambda name: print(
+                    f"\033[33m使用工具：{name}\033[0m"
+                ),
+            )
 
             results.append(
                 {
                     "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": output,
+                    "call_id": tool_call.call_id,
+                    "output": result.output,
                 }
             )
 

@@ -1,0 +1,170 @@
+"""完整的工具调用与执行前置管线。"""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+import inspect
+import json
+from typing import Any, Literal
+
+from hexgent.tool.tool_permission import PermissionDecision, ask_user, check_permission
+from hexgent.prompt import TOOLS
+from .tool_registry import ToolFunction, get_tool
+
+
+ToolExecutionStatus = Literal["success", "invalid", "denied", "error"]
+UserConfirmation = Callable[[str, str], bool]
+ToolExecutionNotifier = Callable[[str], None]
+
+
+@dataclass(frozen=True)
+class ToolExecutionResult:
+    """一次工具调用的最终结果。"""
+
+    status: ToolExecutionStatus
+    output: str
+    is_error: bool
+
+
+TOOL_SCHEMAS = {tool["name"]: tool["parameters"] for tool in TOOLS}
+
+
+def _invalid(message: str) -> ToolExecutionResult:
+    """创建参数无效结果。"""
+    return ToolExecutionResult("invalid", f"错误：{message}", True)
+
+
+def _parse_arguments(raw_arguments: str) -> ToolExecutionResult | dict[str, Any]:
+    """解析模型返回的 JSON 工具参数。"""
+    try:
+        arguments = json.loads(raw_arguments)
+    except json.JSONDecodeError as error:
+        return _invalid(f"工具参数不是有效的 JSON：{error}")
+    except TypeError as error:
+        return _invalid(f"工具参数无法解析：{error}")
+
+    if not isinstance(arguments, dict):
+        return _invalid("工具参数必须是 JSON 对象")
+    return arguments
+
+
+def _matches_json_type(value: Any, expected_type: str) -> bool:
+    """判断 Python 值是否符合基础 JSON Schema 类型。"""
+    if expected_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    type_mapping: dict[str, type | tuple[type, ...]] = {
+        "string": str,
+        "boolean": bool,
+        "object": dict,
+        "array": list,
+        "null": type(None),
+    }
+    expected_python_type = type_mapping.get(expected_type)
+    return expected_python_type is None or isinstance(value, expected_python_type)
+
+
+def _validate_arguments(
+    tool_name: str,
+    tool: ToolFunction,
+    arguments: dict[str, Any],
+) -> ToolExecutionResult | None:
+    """按照工具 Schema 和函数签名校验参数。"""
+    schema = TOOL_SCHEMAS.get(tool_name)
+    if schema is None:
+        return _invalid(f"工具“{tool_name}”缺少参数 Schema")
+
+    required = schema.get("required", [])
+    missing = [name for name in required if name not in arguments]
+    if missing:
+        return _invalid(f"缺少必填参数：{', '.join(missing)}")
+
+    properties = schema.get("properties", {})
+    if schema.get("additionalProperties") is False:
+        extra = [name for name in arguments if name not in properties]
+        if extra:
+            return _invalid(f"包含未声明的参数：{', '.join(extra)}")
+
+    for name, value in arguments.items():
+        expected_type = properties.get(name, {}).get("type")
+        if expected_type and not _matches_json_type(value, expected_type):
+            return _invalid(f"参数“{name}”必须是 {expected_type} 类型")
+
+    try:
+        inspect.signature(tool).bind(**arguments)
+    except TypeError as error:
+        return _invalid(f"参数与工具函数签名不匹配：{error}")
+    return None
+
+
+def _resolve_permission(
+    tool_name: str,
+    decision: PermissionDecision,
+    user_confirmation: UserConfirmation,
+) -> ToolExecutionResult | None:
+    """处理 deny 和 ask，将允许决策继续传向执行阶段。"""
+    if decision.behavior == "deny":
+        return ToolExecutionResult(
+            "denied",
+            decision.message or "错误：工具调用已被拒绝",
+            True,
+        )
+
+    if decision.behavior == "ask":
+        message = decision.message or "本次工具调用需要用户确认"
+        if not user_confirmation(tool_name, message):
+            return ToolExecutionResult(
+                "denied",
+                f"错误：用户未授权本次操作：{message}",
+                True,
+            )
+    return None
+
+
+def execute_tool_call(
+    tool_name: str,
+    raw_arguments: str,
+    *,  # 表示后面的参数只能用参数名传递
+    user_confirmation: UserConfirmation = ask_user,
+    execution_notifier: ToolExecutionNotifier | None = None,
+) -> ToolExecutionResult:
+    """完成工具查找、参数校验、权限处理和真正执行。"""
+    # 1. 校验工具是否存在，并取得对应的工具函数。
+    tool = get_tool(tool_name)
+    if tool is None:
+        return ToolExecutionResult(
+            "invalid",
+            f"错误：未知工具“{tool_name}”",
+            True,
+        )
+
+    # 2. 将模型生成的原始参数解析为 JSON 对象。
+    parsed = _parse_arguments(raw_arguments)
+    if isinstance(parsed, ToolExecutionResult):
+        return parsed
+
+    # 3. 按照工具 Schema 和函数签名校验参数合法性。
+    validation_error = _validate_arguments(tool_name, tool, parsed)
+    if validation_error is not None:
+        return validation_error
+
+    # 4. 计算权限决策，并处理直接拒绝或等待用户确认的情况。
+    permission_result = _resolve_permission(
+        tool_name,
+        check_permission(tool_name, parsed),
+        user_confirmation,
+    )
+    if permission_result is not None:
+        return permission_result
+
+    # 5. 权限允许后，通知调用方工具即将开始执行。
+    if execution_notifier is not None:
+        execution_notifier(tool_name)
+
+    # 6. 真正执行工具，并将正常输出或异常转换为统一结果。
+    try:
+        output = tool(**parsed)
+    except Exception as error:
+        return ToolExecutionResult("error", f"错误：{error}", True)
+    return ToolExecutionResult("success", output, False)

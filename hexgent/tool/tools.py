@@ -9,11 +9,7 @@ MAX_OUTPUT_LENGTH = 50_000
 
 
 def bash(command: str) -> str:
-    """执行 Shell 命令，并过滤基础危险命令。"""
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(item in command for item in dangerous):
-        return "错误：危险命令已被阻止"
-
+    """执行 Shell 命令。"""
     try:
         result = subprocess.run(
             command,

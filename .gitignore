@@ -43,3 +43,8 @@ Thumbs.db
 *.tmp
 *.temp
 
+# resources
+resources/
+
+# docs
+docs/
