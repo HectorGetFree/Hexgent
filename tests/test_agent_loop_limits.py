@@ -5,6 +5,14 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from hexgent.stream_events import (
+    LoopLimitReachedEvent,
+    RunFinishedEvent,
+    TaskCreatedEvent,
+    TextDeltaEvent,
+    ToolFinishedEvent,
+    ToolStartedEvent,
+)
 from hexgent.loop_control import LoopLimits
 from hexgent.task import InMemoryTaskStore
 from hexgent.tool.tool_context import ToolExecutionContext
@@ -22,9 +30,17 @@ class FakeResponses:
         self.calls: list[dict] = []
 
     def create(self, **arguments):
-        """记录请求参数并返回下一个响应。"""
+        """记录请求参数并将下一个完整响应转换为事件流。"""
         self.calls.append(arguments)
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if hasattr(response, "stream_events"):
+            return iter(response.stream_events)
+        events = [
+            SimpleNamespace(type="response.output_text.delta", delta=delta)
+            for delta in response.text_deltas
+        ]
+        events.append(SimpleNamespace(type="response.completed", response=response))
+        return iter(events)
 
 
 class FakeClient:
@@ -39,6 +55,7 @@ def make_response(
     text: str = "",
     input_tokens: int = 10,
     output_tokens: int = 5,
+    text_deltas: list[str] | None = None,
 ) -> SimpleNamespace:
     """创建包含固定 Token 用量的测试响应。"""
     return SimpleNamespace(
@@ -48,16 +65,21 @@ def make_response(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         ),
+        text_deltas=text_deltas if text_deltas is not None else ([text] if text else []),
     )
 
 
-def make_tool_call(call_id: str) -> SimpleNamespace:
-    """创建一个读取文件的模型工具调用。"""
+def make_tool_call(
+    call_id: str,
+    name: str = "read_file",
+    arguments: str = '{"path":"a"}',
+) -> SimpleNamespace:
+    """创建一个模型工具调用。"""
     return SimpleNamespace(
         type="function_call",
         call_id=call_id,
-        name="read_file",
-        arguments='{"path":"a"}',
+        name=name,
+        arguments=arguments,
     )
 
 
@@ -91,6 +113,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(len(client.responses.calls), 2)
         self.assertIn("tools", client.responses.calls[0])
         self.assertNotIn("tools", client.responses.calls[1])
+        self.assertTrue(all(call["stream"] for call in client.responses.calls))
 
     def test_every_tool_call_gets_a_result_after_tool_limit(self) -> None:
         """批次中额度耗尽后，所有未执行调用仍应获得配对结果。"""
@@ -169,6 +192,151 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(result.stop_reason, "max_total_tokens")
         self.assertEqual(result.output_text, "Token 收尾")
         self.assertEqual(len(client.responses.calls), 2)
+
+    def test_text_deltas_are_emitted_in_order(self) -> None:
+        """流式入口应立即按原始顺序发送文本增量和最终结果。"""
+        client = FakeClient(
+            [make_response([], "你好，世界", text_deltas=["你好", "，", "世界"])]
+        )
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+        ):
+            events = list(agent_loop_module.agent_loop_stream([], self.context))
+
+        deltas = [event.delta for event in events if isinstance(event, TextDeltaEvent)]
+        finished = [event for event in events if isinstance(event, RunFinishedEvent)]
+        self.assertEqual(deltas, ["你好", "，", "世界"])
+        self.assertEqual(len(finished), 1)
+        self.assertEqual(finished[0].result.output_text, "你好，世界")
+
+    def test_tool_events_wrap_execution_after_completed_response(self) -> None:
+        """工具只应在完整响应到达后执行，并由开始和结束事件包围。"""
+        client = FakeClient(
+            [make_response([make_tool_call("c1")]), make_response([], "完成")]
+        )
+        execution_order = []
+
+        def execute(*args, **kwargs):
+            execution_order.append("execute")
+            return ToolExecutionResult("success", "ok", False)
+
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(agent_loop_module, "execute_tool_call", side_effect=execute),
+        ):
+            events = list(agent_loop_module.agent_loop_stream([], self.context))
+
+        relevant_events = [
+            event
+            for event in events
+            if isinstance(event, (ToolStartedEvent, ToolFinishedEvent))
+        ]
+        self.assertEqual(execution_order, ["execute"])
+        self.assertIsInstance(relevant_events[0], ToolStartedEvent)
+        self.assertIsInstance(relevant_events[1], ToolFinishedEvent)
+        self.assertEqual(relevant_events[0].call_id, "c1")
+        self.assertEqual(relevant_events[1].call_id, "c1")
+        self.assertEqual(relevant_events[0].description, "read_file(a)")
+        self.assertFalse(hasattr(relevant_events[1], "elapsed_seconds"))
+
+    def test_create_task_emits_initial_plan(self) -> None:
+        """Task 创建成功后应向界面层发送完整初始计划。"""
+        arguments = (
+            '{"objective":"检查项目","steps":['
+            '{"content":"读取代码","process_message":"正在读取代码",'
+            '"status":"in_progress"},'
+            '{"content":"总结结果","process_message":"正在总结结果",'
+            '"status":"pending"}]}'
+        )
+        client = FakeClient(
+            [
+                make_response([make_tool_call("task-1", "create_task", arguments)]),
+                make_response([], "继续检查"),
+                make_response([], "完成"),
+            ]
+        )
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+        ):
+            events = list(agent_loop_module.agent_loop_stream([], self.context))
+
+        created = [event for event in events if isinstance(event, TaskCreatedEvent)]
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].task.objective, "检查项目")
+        self.assertEqual([step.content for step in created[0].task.steps], ["读取代码", "总结结果"])
+
+    def test_tool_description_hides_write_content(self) -> None:
+        """写文件的调用说明只能展示路径，不能泄露写入内容。"""
+        description = agent_loop_module._describe_tool_call(
+            "write_file",
+            '{"path":"notes.md","content":"敏感内容"}',
+        )
+
+        self.assertEqual(description, "write_file(notes.md)")
+        self.assertNotIn("敏感内容", description)
+
+    def test_limit_event_is_emitted_once_before_finalization(self) -> None:
+        """循环限制事件应只出现一次，并位于最终结果之前。"""
+        client = FakeClient([make_response([], "已收尾")])
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+        ):
+            events = list(
+                agent_loop_module.agent_loop_stream(
+                    [], self.context, LoopLimits(max_elapsed_seconds=0)
+                )
+            )
+
+        limits = [event for event in events if isinstance(event, LoopLimitReachedEvent)]
+        self.assertEqual(len(limits), 1)
+        self.assertIsInstance(events[-1], RunFinishedEvent)
+
+    def test_incomplete_stream_never_executes_tool(self) -> None:
+        """不完整响应不得把尚未确认的工具参数交给执行管线。"""
+        client = FakeClient(
+            [
+                SimpleNamespace(
+                    stream_events=[
+                        SimpleNamespace(
+                            type="response.function_call_arguments.delta",
+                            delta='{"path":',
+                        ),
+                        SimpleNamespace(type="response.incomplete"),
+                    ]
+                )
+            ]
+        )
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(agent_loop_module, "execute_tool_call") as execute,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "未完整结束"):
+                list(agent_loop_module.agent_loop_stream([], self.context))
+
+        execute.assert_not_called()
+
+    def test_failed_stream_raises_chinese_error(self) -> None:
+        """失败事件应终止循环并提供中文错误信息。"""
+        client = FakeClient(
+            [
+                SimpleNamespace(
+                    stream_events=[
+                        SimpleNamespace(type="response.failed", error="连接中断")
+                    ]
+                )
+            ]
+        )
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(agent_loop_module, "get_model", return_value="fake"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "模型流式响应失败：连接中断"):
+                list(agent_loop_module.agent_loop_stream([], self.context))
 
 
 if __name__ == "__main__":

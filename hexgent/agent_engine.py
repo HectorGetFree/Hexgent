@@ -1,9 +1,34 @@
 
 """Hexgent 命令行入口。"""
 
-from .agent_loop import agent_loop
+from .stream_events import (
+    LoopLimitReachedEvent,
+    RunFinishedEvent,
+    TaskCreatedEvent,
+    TextDeltaEvent,
+    ToolFinishedEvent,
+    ToolStartedEvent,
+)
+from .agent_loop import agent_loop_stream
+from .loop_control import stop_reason_message
 from .task import InMemoryTaskStore
 from .tool.tool_context import ToolExecutionContext
+
+
+TOOL_STATUS_LABELS = {
+    "success": "成功",
+    "invalid": "参数无效",
+    "denied": "已拒绝",
+    "error": "执行错误",
+    "skipped": "未执行",
+}
+
+TASK_STATUS_LABELS = {
+    "pending": "待处理",
+    "in_progress": "进行中",
+    "completed": "已完成",
+    "blocked": "已阻塞",
+}
 
 
 def configure_readline() -> None:
@@ -41,6 +66,35 @@ def main() -> None:
 
         history.append({"role": "user", "content": query})
 
-        result = agent_loop(history, context=tool_context)
-        print(f"\033[36mHexgent：\033[0m{result.output_text}")
-        print(f"\033[90m本次用时：{result.elapsed_seconds:.1f} 秒\033[0m\n")
+        # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
+        text_is_open = False
+        for event in agent_loop_stream(history, context=tool_context):
+            if isinstance(event, TextDeltaEvent):
+                if not text_is_open:
+                    print("\033[36mHexgent：\033[0m", end="", flush=True)
+                    text_is_open = True
+                print(event.delta, end="", flush=True)
+            elif isinstance(event, ToolStartedEvent):
+                if text_is_open:
+                    print()
+                print(f"\033[90m开始处理工具：{event.description}\033[0m")
+                text_is_open = False
+            elif isinstance(event, ToolFinishedEvent):
+                status_label = TOOL_STATUS_LABELS[event.status]
+                print(
+                    f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
+                )
+            elif isinstance(event, TaskCreatedEvent):
+                print(f"\033[90m任务计划：{event.task.objective}\033[0m")
+                for index, step in enumerate(event.task.steps, start=1):
+                    status_label = TASK_STATUS_LABELS[step.status]
+                    print(f"\033[90m  {index}. [{status_label}] {step.content}\033[0m")
+            elif isinstance(event, LoopLimitReachedEvent):
+                print(f"\033[90m{stop_reason_message(event.reason)}\033[0m")
+            elif isinstance(event, RunFinishedEvent):
+                if text_is_open:
+                    print()
+                print(
+                    f"\033[90m本次用时：{event.result.elapsed_seconds:.1f} 秒\033[0m\n"
+                )
+                text_is_open = False
