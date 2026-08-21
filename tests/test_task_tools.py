@@ -1,6 +1,7 @@
 """Task 工具的状态语义测试。"""
 
 import json
+from pathlib import Path
 import unittest
 
 from hexgent.task import InMemoryTaskStore
@@ -22,7 +23,7 @@ class TaskToolsTest(unittest.TestCase):
 
     def setUp(self) -> None:
         """为每个用例创建独立的内存 Task Store。"""
-        self.context = ToolExecutionContext(InMemoryTaskStore())
+        self.context = ToolExecutionContext(InMemoryTaskStore(), Path.cwd().resolve())
 
     def execute(self, tool_name: str, arguments: dict):
         """通过完整工具执行管线调用 Task 工具。"""

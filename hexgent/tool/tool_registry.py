@@ -84,11 +84,23 @@ class RegisteredTool:
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
-    "bash": RegisteredTool(bash, display_argument="command"),
-    "read_file": RegisteredTool(read_file, display_argument="path"),
-    "write_file": RegisteredTool(write_file, display_argument="path"),
-    "edit_file": RegisteredTool(edit_file, display_argument="path"),
-    "glob": RegisteredTool(glob, display_argument="pattern"),
+    "bash": RegisteredTool(bash, requires_context=True, display_argument="command"),
+    "read_file": RegisteredTool(
+        read_file,
+        requires_context=True,
+        display_argument="path",
+    ),
+    "write_file": RegisteredTool(
+        write_file,
+        requires_context=True,
+        display_argument="path",
+    ),
+    "edit_file": RegisteredTool(
+        edit_file,
+        requires_context=True,
+        display_argument="path",
+    ),
+    "glob": RegisteredTool(glob, requires_context=True, display_argument="pattern"),
     "create_task": RegisteredTool(
         create_task,
         requires_context=True,

@@ -13,7 +13,9 @@ from .stream_events import (
 from .agent_loop import agent_loop_stream
 from .loop_control import stop_reason_message
 from .task import InMemoryTaskStore, Task
+from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
+from .workspace import find_workspace_root
 
 
 TOOL_STATUS_LABELS = {
@@ -32,19 +34,6 @@ TASK_STATUS_LABELS = {
 }
 
 
-def configure_readline() -> None:
-    """readline 可用时，为 macOS libedit 配置 UTF-8 输入。"""
-    try:
-        import readline
-    except ImportError:
-        return
-
-    readline.parse_and_bind("set bind-tty-special-chars off")
-    readline.parse_and_bind("set input-meta on")
-    readline.parse_and_bind("set output-meta on")
-    readline.parse_and_bind("set convert-meta off")
-
-
 def _print_task(task: Task, title: str) -> None:
     """展示 Task 的整体状态和所有步骤状态。"""
     task_status = TASK_STATUS_LABELS[task.status]
@@ -58,17 +47,17 @@ def _print_task(task: Task, title: str) -> None:
 def main() -> None:
     """启动 Hexgent 交互会话。"""
     # 1. 初始化终端输入、对话历史和会话级工具上下文。
-    configure_readline()
+    terminal_io = TerminalIO()
     history = []
-    tool_context = ToolExecutionContext(InMemoryTaskStore())
+    tool_context = ToolExecutionContext(InMemoryTaskStore(), find_workspace_root())
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
-    print("输入 exit 或 q 可以结束对话。\n")
+    print("输入内容后按两次回车或输入 /send 发送消息；exit 或 q 可以结束对话。\n")
 
     # 2. 持续接收用户输入，并复用同一个 TaskStore 处理多轮对话。
     while True:
         try:
-            query = input("\033[32m你：\033[0m")
+            query = terminal_io.read_message()
         except EOFError:
             print("\n输入流已关闭，会话结束。")
             break
@@ -83,10 +72,15 @@ def main() -> None:
             continue
 
         history.append({"role": "user", "content": query})
+        print("\033[90m正在处理，请稍候……\033[0m")
 
         # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
         text_is_open = False
-        for event in agent_loop_stream(history, context=tool_context):
+        for event in agent_loop_stream(
+            history,
+            context=tool_context,
+            user_confirmation=terminal_io.request_confirmation,
+        ):
             if isinstance(event, TextDeltaEvent):
                 if not text_is_open:
                     print("\033[36mHexgent：\033[0m", end="", flush=True)

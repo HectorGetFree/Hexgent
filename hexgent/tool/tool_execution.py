@@ -6,14 +6,18 @@ import inspect
 import json
 from typing import Any, Literal
 
-from hexgent.tool.tool_permission import PermissionDecision, ask_user, check_permission
+from hexgent.tool.tool_permission import (
+    PermissionDecision,
+    UserConfirmationResult,
+    check_permission,
+)
 from hexgent.prompt import TOOLS
 from .tool_context import ToolExecutionContext
 from .tool_registry import RegisteredTool, get_tool
 
 
 ToolExecutionStatus = Literal["success", "invalid", "denied", "error"]
-UserConfirmation = Callable[[str, str], bool]
+UserConfirmation = Callable[[str, str], UserConfirmationResult]
 ToolExecutionNotifier = Callable[[str], None]
 
 
@@ -27,6 +31,14 @@ class ToolExecutionResult:
 
 
 TOOL_SCHEMAS = {tool["name"]: tool["parameters"] for tool in TOOLS}
+
+
+def unavailable_user_confirmation(
+    _tool_name: str,
+    _message: str,
+) -> UserConfirmationResult:
+    """在调用方没有提供界面确认能力时安全地停止执行。"""
+    return "unavailable"
 
 
 def _invalid(message: str) -> ToolExecutionResult:
@@ -122,10 +134,17 @@ def _resolve_permission(
 
     if decision.behavior == "ask":
         message = decision.message or "本次工具调用需要用户确认"
-        if not user_confirmation(tool_name, message):
+        confirmation = user_confirmation(tool_name, message)
+        if confirmation == "deny":
             return ToolExecutionResult(
                 "denied",
-                f"错误：用户未授权本次操作：{message}",
+                f"错误：用户拒绝本次操作：{message}",
+                True,
+            )
+        if confirmation == "unavailable":
+            return ToolExecutionResult(
+                "error",
+                "错误：当前输入环境无法读取权限确认，本次工具调用未执行",
                 True,
             )
     return None
@@ -136,7 +155,7 @@ def execute_tool_call(
     raw_arguments: str,
     *,  # 表示后面的参数只能用参数名传递
     context: ToolExecutionContext,
-    user_confirmation: UserConfirmation = ask_user,
+    user_confirmation: UserConfirmation = unavailable_user_confirmation,
     execution_notifier: ToolExecutionNotifier | None = None,
 ) -> ToolExecutionResult:
     """完成工具查找、参数校验、权限处理和真正执行。"""
@@ -162,7 +181,7 @@ def execute_tool_call(
     # 4. 计算权限决策，并处理直接拒绝或等待用户确认的情况。
     permission_result = _resolve_permission(
         tool_name,
-        check_permission(tool_name, parsed),
+        check_permission(tool_name, parsed, context),
         user_confirmation,
     )
     if permission_result is not None:

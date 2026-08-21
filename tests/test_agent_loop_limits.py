@@ -1,6 +1,7 @@
 """Agent Loop 执行限制测试。"""
 
 from importlib import import_module
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -90,7 +91,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
     def setUp(self) -> None:
         """为每个用例创建独立工具上下文。"""
-        self.context = ToolExecutionContext(InMemoryTaskStore())
+        self.context = ToolExecutionContext(InMemoryTaskStore(), Path.cwd().resolve())
 
     def test_round_limit_reserves_one_finalization_response(self) -> None:
         """正常轮次耗尽后应额外生成一次不带工具的收尾响应。"""

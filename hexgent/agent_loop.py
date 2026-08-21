@@ -1,6 +1,7 @@
 """模型调用与工具执行的核心循环。"""
 
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 from .stream_events import (
@@ -25,7 +26,11 @@ from .loop_control import (
 from .prompt import SYSTEM_PROMPT, TOOLS
 from .task import InMemoryTaskStore, format_task_context, task_needs_continuation
 from .tool.tool_context import ToolExecutionContext
-from hexgent.tool.tool_execution import execute_tool_call
+from hexgent.tool.tool_execution import (
+    UserConfirmation,
+    execute_tool_call,
+    unavailable_user_confirmation,
+)
 from hexgent.tool.tool_registry import get_tool
 
 
@@ -133,11 +138,15 @@ def agent_loop_stream(
     messages: list[Any],
     context: ToolExecutionContext | None = None,
     limits: LoopLimits | None = None,
+    user_confirmation: UserConfirmation = unavailable_user_confirmation,
 ) -> Generator[AgentEvent, None, None]:
     """在执行预算内持续产生模型、工具和最终结果事件。"""
     # 1. 初始化模型客户端、工具上下文、执行限制和本轮状态。
     client = get_client()
-    execution_context = context or ToolExecutionContext(InMemoryTaskStore())
+    execution_context = context or ToolExecutionContext(
+        InMemoryTaskStore(),
+        Path.cwd().resolve(),
+    )
     loop_limits = limits or LoopLimits()
     state = LoopState()
     completion_nudges = 0
@@ -241,6 +250,7 @@ def agent_loop_stream(
                 tool_call.name,
                 tool_call.arguments,
                 context=execution_context,
+                user_confirmation=user_confirmation,
             )
             if result.status in {"success", "error"}:
                 state.tool_calls += 1
@@ -283,11 +293,17 @@ def agent_loop(
     messages: list[Any],
     context: ToolExecutionContext | None = None,
     limits: LoopLimits | None = None,
+    user_confirmation: UserConfirmation = unavailable_user_confirmation,
 ) -> AgentLoopResult:
     """消费完整事件流，并为非流式调用方返回最终结果。"""
     # 1. 运行流式核心，但不负责展示任何中间事件。
     final_result = None
-    for event in agent_loop_stream(messages, context=context, limits=limits):
+    for event in agent_loop_stream(
+        messages,
+        context=context,
+        limits=limits,
+        user_confirmation=user_confirmation,
+    ):
         if isinstance(event, RunFinishedEvent):
             final_result = event.result
 

@@ -20,6 +20,21 @@ from hexgent.task import Task, TaskStep
 agent_engine_module = import_module("hexgent.agent_engine")
 
 
+class FakeTerminalIO:
+    """按顺序返回预设消息的终端输入替身。"""
+
+    def __init__(self, messages: list[str]) -> None:
+        self._messages = iter(messages)
+
+    def read_message(self) -> str:
+        """返回下一条预设消息。"""
+        return next(self._messages)
+
+    def request_confirmation(self, _tool_name: str, _message: str) -> str:
+        """测试默认允许工具权限确认。"""
+        return "allow"
+
+
 class AgentEngineStreamTest(unittest.TestCase):
     """验证终端不会重复打印已经流式输出的最终回答。"""
 
@@ -34,7 +49,11 @@ class AgentEngineStreamTest(unittest.TestCase):
         )
         output = StringIO()
         with (
-            patch("builtins.input", side_effect=["你好", "q"]),
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["你好", "q"]),
+            ),
             patch.object(agent_engine_module, "agent_loop_stream", return_value=events),
             patch("sys.stdout", output),
         ):
@@ -42,6 +61,7 @@ class AgentEngineStreamTest(unittest.TestCase):
 
         rendered = output.getvalue()
         self.assertEqual(rendered.count("你好，世界"), 1)
+        self.assertIn("Hexgent：正在处理，请稍候", rendered)
         self.assertIn("本次用时：1.2 秒", rendered)
 
     def test_tool_details_and_task_plan_are_rendered_without_tool_time(self) -> None:
@@ -74,7 +94,11 @@ class AgentEngineStreamTest(unittest.TestCase):
         )
         output = StringIO()
         with (
-            patch("builtins.input", side_effect=["检查", "q"]),
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["检查", "q"]),
+            ),
             patch.object(agent_engine_module, "agent_loop_stream", return_value=events),
             patch("sys.stdout", output),
         ):
@@ -99,7 +123,11 @@ class AgentEngineStreamTest(unittest.TestCase):
         )
         output = StringIO()
         with (
-            patch("builtins.input", side_effect=["开始任务", "继续", "q"]),
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["开始任务", "继续", "q"]),
+            ),
             patch.object(
                 agent_engine_module,
                 "agent_loop_stream",
@@ -123,7 +151,11 @@ class AgentEngineStreamTest(unittest.TestCase):
         )
         output = StringIO()
         with (
-            patch("builtins.input", side_effect=["", "有效输入", "q"]),
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["", "有效输入", "q"]),
+            ),
             patch.object(
                 agent_engine_module,
                 "agent_loop_stream",
