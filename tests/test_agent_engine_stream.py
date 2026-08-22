@@ -5,7 +5,7 @@ from io import StringIO
 import unittest
 from unittest.mock import patch
 
-from hexgent.stream_events import (
+from hexgent.events import (
     AgentLoopResult,
     RunFinishedEvent,
     TaskCreatedEvent,
@@ -54,14 +54,14 @@ class AgentEngineStreamTest(unittest.TestCase):
                 "TerminalIO",
                 return_value=FakeTerminalIO(["你好", "q"]),
             ),
-            patch.object(agent_engine_module, "agent_loop_stream", return_value=events),
+            patch.object(agent_engine_module, "agent_loop", return_value=events),
             patch("sys.stdout", output),
         ):
             agent_engine_module.main()
 
         rendered = output.getvalue()
         self.assertEqual(rendered.count("你好，世界"), 1)
-        self.assertIn("Hexgent：正在处理，请稍候", rendered)
+        self.assertIn("正在处理，请稍候", rendered)
         self.assertIn("本次用时：1.2 秒", rendered)
 
     def test_tool_details_and_task_plan_are_rendered_without_tool_time(self) -> None:
@@ -99,7 +99,7 @@ class AgentEngineStreamTest(unittest.TestCase):
                 "TerminalIO",
                 return_value=FakeTerminalIO(["检查", "q"]),
             ),
-            patch.object(agent_engine_module, "agent_loop_stream", return_value=events),
+            patch.object(agent_engine_module, "agent_loop", return_value=events),
             patch("sys.stdout", output),
         ):
             agent_engine_module.main()
@@ -130,7 +130,7 @@ class AgentEngineStreamTest(unittest.TestCase):
             ),
             patch.object(
                 agent_engine_module,
-                "agent_loop_stream",
+                "agent_loop",
                 side_effect=[first_events, second_events],
             ) as stream,
             patch("sys.stdout", output),
@@ -158,7 +158,7 @@ class AgentEngineStreamTest(unittest.TestCase):
             ),
             patch.object(
                 agent_engine_module,
-                "agent_loop_stream",
+                "agent_loop",
                 return_value=events,
             ) as stream,
             patch("sys.stdout", output),

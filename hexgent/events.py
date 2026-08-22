@@ -3,12 +3,14 @@
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from .loop_control import LoopStopReason
-from .task import Task
-from .tool.tool_execution import ToolExecutionStatus
+from hexgent.task import Task
+from hexgent.tool.tool_execution import ToolExecutionStatus
+from hexgent.loop.limits import LoopStopReason
+from hexgent.loop.state import ContinueReason
 
 
 ToolEventStatus = ToolExecutionStatus | Literal["skipped"]
+TerminalStatus = Literal["completed", "limit_reached", "failed", "cancelled"]
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,7 @@ class AgentLoopResult:
     output_text: str
     elapsed_seconds: float
     stop_reason: LoopStopReason | None = None
+    status: TerminalStatus = "completed"
 
 
 @dataclass(frozen=True)
@@ -67,11 +70,17 @@ class LoopLimitReachedEvent:
 
 
 @dataclass(frozen=True)
+class LoopTransitionEvent:
+    """Agent Loop 已构造完整下一轮 State。"""
+
+    reason: ContinueReason
+
+
+@dataclass(frozen=True)
 class RunFinishedEvent:
     """本轮运行已经产生最终结果。"""
 
     result: AgentLoopResult
-
 
 
 AgentEvent: TypeAlias = (
@@ -81,5 +90,6 @@ AgentEvent: TypeAlias = (
     | TaskCreatedEvent
     | TaskUpdatedEvent
     | LoopLimitReachedEvent
+    | LoopTransitionEvent
     | RunFinishedEvent
 )

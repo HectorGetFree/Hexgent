@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from hexgent.stream_events import (
+from hexgent.events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
     TaskCreatedEvent,
@@ -15,14 +15,18 @@ from hexgent.stream_events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
-from hexgent.loop_control import LoopLimits
+from hexgent.loop.limits import LoopLimits
+from hexgent.loop.state import LoopState
+from hexgent.loop.transitions import Continue, Stop
 from hexgent.task import InMemoryTaskStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
 
 
-agent_loop_module = import_module("hexgent.agent_loop")
+agent_loop_module = import_module("hexgent.loop.agent_loop")
+turn_module = import_module("hexgent.loop.agent_turn")
+tool_execution_module = import_module("hexgent.tool.tool_execution")
 
 
 class FakeResponses:
@@ -86,6 +90,25 @@ def make_tool_call(
     )
 
 
+def drain_generator(generator):
+    """收集生成器事件，并取得其最终返回值。"""
+    events = []
+    while True:
+        try:
+            events.append(next(generator))
+        except StopIteration as stopped:
+            return events, stopped.value
+
+
+def run_agent(*args, **kwargs):
+    """运行完整事件流，并返回事件和唯一 Terminal。"""
+    events = list(agent_loop_module.agent_loop(*args, **kwargs))
+    finished = [event for event in events if isinstance(event, RunFinishedEvent)]
+    if len(finished) != 1:
+        raise AssertionError("Agent Loop 必须产生唯一 RunFinishedEvent")
+    return events, finished[0].result
+
+
 class AgentLoopLimitsTest(unittest.TestCase):
     """验证循环限制和工具结果配对。"""
 
@@ -100,14 +123,14 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
             patch.object(
-                agent_loop_module,
+                tool_execution_module,
                 "execute_tool_call",
                 return_value=ToolExecutionResult("success", "ok", False),
             ),
         ):
-            result = agent_loop_module.agent_loop(
+            _, result = run_agent(
                 [], self.context, LoopLimits(max_model_rounds=1)
             )
 
@@ -117,6 +140,45 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertIn("tools", client.responses.calls[0])
         self.assertNotIn("tools", client.responses.calls[1])
         self.assertTrue(all(call["stream"] for call in client.responses.calls))
+
+    def test_budget_limit_returns_continue_with_finalization_state(self) -> None:
+        """预算命中应构造收尾 State，而不是在当前分支直接结束。"""
+        client = FakeClient([])
+        state = LoopState(messages=[], tool_context=self.context)
+
+        events, outcome = drain_generator(
+            turn_module.run_turn(
+                state,
+                client,
+                LoopLimits(max_elapsed_seconds=0),
+                lambda _tool, _message: "allow",
+            )
+        )
+
+        self.assertIsInstance(outcome, Continue)
+        self.assertEqual(outcome.reason, "budget_finalization")
+        self.assertEqual(outcome.next_state.mode, "finalizing")
+        self.assertEqual(outcome.next_state.stop_reason, "max_elapsed_seconds")
+        self.assertEqual(len(client.responses.calls), 0)
+        self.assertIsInstance(events[0], LoopLimitReachedEvent)
+
+    def test_valid_response_without_tools_returns_stop(self) -> None:
+        """有效响应没有工具调用时应产生正常 Stop。"""
+        client = FakeClient([make_response([], "完成")])
+        state = LoopState(messages=[], tool_context=self.context)
+        with patch.object(turn_module, "get_model", return_value="fake"):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    state,
+                    client,
+                    LoopLimits(),
+                    lambda _tool, _message: "allow",
+                )
+            )
+
+        self.assertIsInstance(outcome, Stop)
+        self.assertEqual(outcome.terminal.status, "completed")
+        self.assertEqual(outcome.terminal.output_text, "完成")
 
     def test_every_tool_call_gets_a_result_after_tool_limit(self) -> None:
         """批次中额度耗尽后，所有未执行调用仍应获得配对结果。"""
@@ -131,14 +193,14 @@ class AgentLoopLimitsTest(unittest.TestCase):
         messages = []
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
             patch.object(
-                agent_loop_module,
+                tool_execution_module,
                 "execute_tool_call",
                 return_value=ToolExecutionResult("success", "ok", False),
             ),
         ):
-            result = agent_loop_module.agent_loop(
+            _, result = run_agent(
                 messages, self.context, LoopLimits(max_tool_calls=1)
             )
 
@@ -157,9 +219,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
         client = FakeClient([make_response([], "时间收尾")])
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            result = agent_loop_module.agent_loop(
+            _, result = run_agent(
                 [], self.context, LoopLimits(max_elapsed_seconds=0)
             )
 
@@ -181,14 +243,14 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
             patch.object(
-                agent_loop_module,
+                tool_execution_module,
                 "execute_tool_call",
                 return_value=ToolExecutionResult("success", "ok", False),
             ),
         ):
-            result = agent_loop_module.agent_loop(
+            _, result = run_agent(
                 [], self.context, LoopLimits(max_total_tokens=50)
             )
 
@@ -203,9 +265,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop_stream([], self.context))
+            events = list(agent_loop_module.agent_loop([], self.context))
 
         deltas = [event.delta for event in events if isinstance(event, TextDeltaEvent)]
         finished = [event for event in events if isinstance(event, RunFinishedEvent)]
@@ -226,10 +288,10 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
-            patch.object(agent_loop_module, "execute_tool_call", side_effect=execute),
+            patch.object(turn_module, "get_model", return_value="fake"),
+            patch.object(tool_execution_module, "execute_tool_call", side_effect=execute),
         ):
-            events = list(agent_loop_module.agent_loop_stream([], self.context))
+            events = list(agent_loop_module.agent_loop([], self.context))
 
         relevant_events = [
             event
@@ -262,9 +324,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop_stream([], self.context))
+            events = list(agent_loop_module.agent_loop([], self.context))
 
         created = [event for event in events if isinstance(event, TaskCreatedEvent)]
         self.assertEqual(len(created), 1)
@@ -304,9 +366,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop_stream([], self.context))
+            events = list(agent_loop_module.agent_loop([], self.context))
 
         updated = [event for event in events if isinstance(event, TaskUpdatedEvent)]
         self.assertEqual(len(updated), 1)
@@ -330,10 +392,10 @@ class AgentLoopLimitsTest(unittest.TestCase):
         client = FakeClient([make_response([], "已收尾")])
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
         ):
             events = list(
-                agent_loop_module.agent_loop_stream(
+                agent_loop_module.agent_loop(
                     [], self.context, LoopLimits(max_elapsed_seconds=0)
                 )
             )
@@ -343,7 +405,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertIsInstance(events[-1], RunFinishedEvent)
 
     def test_incomplete_stream_never_executes_tool(self) -> None:
-        """不完整响应不得把尚未确认的工具参数交给执行管线。"""
+        """不完整响应不得执行残缺工具，并应形成 Error Terminal。"""
         client = FakeClient(
             [
                 SimpleNamespace(
@@ -359,16 +421,19 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
-            patch.object(agent_loop_module, "execute_tool_call") as execute,
+            patch.object(turn_module, "get_model", return_value="fake"),
+            patch.object(tool_execution_module, "execute_tool_call") as execute,
         ):
-            with self.assertRaisesRegex(RuntimeError, "未完整结束"):
-                list(agent_loop_module.agent_loop_stream([], self.context))
+            events = list(agent_loop_module.agent_loop([], self.context))
 
         execute.assert_not_called()
+        self.assertEqual(len(client.responses.calls), 1)
+        self.assertIsInstance(events[-1], RunFinishedEvent)
+        self.assertEqual(events[-1].result.status, "failed")
+        self.assertIn("未完整结束", events[-1].result.output_text)
 
-    def test_failed_stream_raises_chinese_error(self) -> None:
-        """失败事件应终止循环并提供中文错误信息。"""
+    def test_failed_stream_returns_error_terminal(self) -> None:
+        """失败事件应转换为包含中文信息的 Error Terminal。"""
         client = FakeClient(
             [
                 SimpleNamespace(
@@ -380,11 +445,13 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
-            patch.object(agent_loop_module, "get_model", return_value="fake"),
+            patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "模型流式响应失败：连接中断"):
-                list(agent_loop_module.agent_loop_stream([], self.context))
+            events = list(agent_loop_module.agent_loop([], self.context))
 
+        self.assertIsInstance(events[-1], RunFinishedEvent)
+        self.assertEqual(events[-1].result.status, "failed")
+        self.assertIn("模型流式响应失败：连接中断", events[-1].result.output_text)
 
 if __name__ == "__main__":
     unittest.main()

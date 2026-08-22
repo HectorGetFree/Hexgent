@@ -1,7 +1,7 @@
 
 """Hexgent 命令行入口。"""
 
-from .stream_events import (
+from hexgent.events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
     TaskCreatedEvent,
@@ -10,8 +10,8 @@ from .stream_events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
-from .agent_loop import agent_loop_stream
-from .loop_control import stop_reason_message
+from .loop.agent_loop import agent_loop
+from .loop.limits import stop_reason_message
 from .task import InMemoryTaskStore, Task
 from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
@@ -76,7 +76,7 @@ def main() -> None:
 
         # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
         text_is_open = False
-        for event in agent_loop_stream(
+        for event in agent_loop(
             history,
             context=tool_context,
             user_confirmation=terminal_io.request_confirmation,

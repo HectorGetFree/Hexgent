@@ -1,10 +1,13 @@
-"""完整的工具调用与执行前置管线。"""
+"""单个及批量工具调用的完整执行管线。"""
 
-from collections.abc import Callable
+from __future__ import annotations
+
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 import inspect
 import json
-from typing import Any, Literal
+from time import monotonic
+from typing import TYPE_CHECKING, Any, Literal
 
 from hexgent.tool.tool_permission import (
     PermissionDecision,
@@ -14,6 +17,9 @@ from hexgent.tool.tool_permission import (
 from hexgent.prompt import TOOLS
 from .tool_context import ToolExecutionContext
 from .tool_registry import RegisteredTool, get_tool
+
+if TYPE_CHECKING:
+    from hexgent.events import AgentEvent
 
 
 ToolExecutionStatus = Literal["success", "invalid", "denied", "error"]
@@ -28,6 +34,14 @@ class ToolExecutionResult:
     status: ToolExecutionStatus
     output: str
     is_error: bool
+
+
+@dataclass(frozen=True)
+class ToolBatchResult:
+    """完整工具批次产生的配对结果和实际执行数量。"""
+
+    outputs: list[dict[str, str]]
+    executed_count: int
 
 
 TOOL_SCHEMAS = {tool["name"]: tool["parameters"] for tool in TOOLS}
@@ -197,3 +211,88 @@ def execute_tool_call(
     except Exception as error:
         return ToolExecutionResult("error", f"错误：{error}", True)
     return ToolExecutionResult("success", output, False)
+
+
+def _budget_tool_result(
+    call_id: str,
+    message: str,
+) -> dict[str, str]:
+    """为因预算不足而未执行的工具调用创建配对结果。"""
+    return {
+        "type": "function_call_output",
+        "call_id": call_id,
+        "output": f"错误：{message}，本次工具调用未执行",
+    }
+
+
+def execute_tool_batch(
+    tool_calls: list[Any],
+    *,
+    context: ToolExecutionContext,
+    user_confirmation: UserConfirmation,
+    remaining_tool_calls: int,
+    deadline: float,
+) -> Generator[AgentEvent, None, ToolBatchResult]:
+    """执行完整工具批次，并保证每个调用都有配对结果。"""
+    from hexgent.events import (
+        TaskCreatedEvent,
+        TaskUpdatedEvent,
+        ToolFinishedEvent,
+        ToolStartedEvent,
+    )
+
+    # 1. 按响应顺序处理工具，持续累计本批次实际执行数量。
+    outputs: list[dict[str, str]] = []
+    executed_count = 0
+    limit_message: str | None = None
+
+    for tool_call in tool_calls:
+        registered_tool = get_tool(tool_call.name)
+        description = (
+            registered_tool.describe(tool_call.arguments)
+            if registered_tool is not None
+            else f"{tool_call.name}()"
+        )
+        yield ToolStartedEvent(tool_call.name, tool_call.call_id, description)
+
+        # 2. 每个工具执行前检查批次额度，耗尽后仍为剩余调用配对结果。
+        if limit_message is None:
+            if executed_count >= remaining_tool_calls:
+                limit_message = "本轮工具执行次数已达到上限"
+            elif monotonic() >= deadline:
+                limit_message = "本轮执行时间已达到上限"
+
+        if limit_message is not None:
+            outputs.append(_budget_tool_result(tool_call.call_id, limit_message))
+            yield ToolFinishedEvent(tool_call.name, tool_call.call_id, "skipped")
+            continue
+
+        # 3. 调用单工具执行管线并累计实际进入执行阶段的调用数量。
+        result = execute_tool_call(
+            tool_call.name,
+            tool_call.arguments,
+            context=context,
+            user_confirmation=user_confirmation,
+        )
+        if result.status in {"success", "error"}:
+            executed_count += 1
+        outputs.append(
+            {
+                "type": "function_call_output",
+                "call_id": tool_call.call_id,
+                "output": result.output,
+            }
+        )
+        yield ToolFinishedEvent(tool_call.name, tool_call.call_id, result.status)
+
+        # 4. Task 工具成功后把存储中已经生效的状态投影给界面层。
+        if tool_call.name == "create_task" and result.status == "success":
+            task = context.task_store.get_task()
+            if task is not None:
+                yield TaskCreatedEvent(task)
+        elif tool_call.name == "update_task_plan" and result.status == "success":
+            task = context.task_store.get_task()
+            if task is not None:
+                yield TaskUpdatedEvent(task)
+
+    return ToolBatchResult(outputs, executed_count)
