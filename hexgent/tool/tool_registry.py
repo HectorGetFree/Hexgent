@@ -6,11 +6,11 @@ import json
 from typing import Any
 
 from .tool_context import ToolExecutionContext
-from .task_tools import (
-    create_task,
-    update_task_plan,
-    validate_create_task,
-    validate_update_task_plan,
+from .plan_tools import (
+    create_plan,
+    update_plan,
+    validate_create_plan,
+    validate_update_plan,
 )
 from .builtin_tools import bash, edit_file, glob, read_file, write_file
 
@@ -24,10 +24,19 @@ ToolDescriber = Callable[[dict[str, Any]], str]
 class RegisteredTool:
     """注册表中的工具函数及其上下文需求。"""
 
+    # 工具名称最终映射到的 Python 函数。
     function: ToolFunction
+
+    # 标识执行函数时是否需要注入 ToolExecutionContext。
     requires_context: bool = False
+
+    # 工具专属的额外参数校验方法。
     validator: ToolValidator | None = None
+
+    # 生成调用摘要时优先展示的参数名称。
     display_argument: str | None = None
+
+    # 复杂工具用于生成调用摘要的自定义方法。
     describer: ToolDescriber | None = None
 
     def describe(self, raw_arguments: str) -> str:
@@ -101,16 +110,16 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         display_argument="path",
     ),
     "glob": RegisteredTool(glob, requires_context=True, display_argument="pattern"),
-    "create_task": RegisteredTool(
-        create_task,
+    "create_plan": RegisteredTool(
+        create_plan,
         requires_context=True,
-        validator=validate_create_task,
+        validator=validate_create_plan,
         display_argument="objective",
     ),
-    "update_task_plan": RegisteredTool(
-        update_task_plan,
+    "update_plan": RegisteredTool(
+        update_plan,
         requires_context=True,
-        validator=validate_update_task_plan,
+        validator=validate_update_plan,
         display_argument="status",
     ),
 }

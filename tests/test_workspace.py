@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from hexgent.task import InMemoryTaskStore
+from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import execute_tool_call
 from hexgent.workspace import find_workspace_root
@@ -30,7 +30,7 @@ class WorkspaceTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "example.txt").write_text("工作区内容", encoding="utf-8")
-            context = ToolExecutionContext(InMemoryTaskStore(), root.resolve())
+            context = ToolExecutionContext(InMemoryPlanStore(), root.resolve())
 
             result = execute_tool_call(
                 "read_file",

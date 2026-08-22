@@ -8,13 +8,13 @@ from unittest.mock import patch
 from hexgent.events import (
     AgentLoopResult,
     RunFinishedEvent,
-    TaskCreatedEvent,
-    TaskUpdatedEvent,
+    PlanCreatedEvent,
+    PlanUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
 )
-from hexgent.task import Task, TaskStep
+from hexgent.plan import Plan, PlanStep
 
 
 agent_engine_module = import_module("hexgent.agent_engine")
@@ -64,29 +64,47 @@ class AgentEngineStreamTest(unittest.TestCase):
         self.assertIn("正在处理，请稍候", rendered)
         self.assertIn("本次用时：1.2 秒", rendered)
 
-    def test_tool_details_and_task_plan_are_rendered_without_tool_time(self) -> None:
+    def test_tool_details_and_plan_are_rendered_without_tool_time(self) -> None:
         """终端应展示工具摘要和计划，但不展示单工具用时。"""
-        task = Task(
+        plan = Plan(
             "检查项目",
             "in_progress",
             [
-                TaskStep("读取代码", "正在读取代码", "in_progress"),
-                TaskStep("总结结果", "正在总结结果", "pending"),
+                PlanStep("读取代码", "正在读取代码", "in_progress", "step-1"),
+                PlanStep("总结结果", "正在总结结果", "pending", "step-2"),
             ],
         )
         events = iter(
             [
-                ToolStartedEvent("create_task", "c1", "create_task(检查项目)"),
-                ToolFinishedEvent("create_task", "c1", "success"),
-                TaskCreatedEvent(task),
-                TaskUpdatedEvent(
-                    Task(
+                ToolStartedEvent("create_plan", "c1", "create_plan(检查项目)"),
+                ToolFinishedEvent("create_plan", "c1", "success"),
+                PlanCreatedEvent(plan),
+                PlanUpdatedEvent(
+                    Plan(
                         "检查项目",
                         "in_progress",
                         [
-                            TaskStep("读取代码", "正在读取代码", "completed"),
-                            TaskStep("总结结果", "正在总结结果", "in_progress"),
+                            PlanStep(
+                                "读取代码",
+                                "正在读取代码",
+                                "completed",
+                                "step-1",
+                            ),
+                            PlanStep(
+                                "总结结果",
+                                "正在总结结果",
+                                "in_progress",
+                                "step-2",
+                            ),
+                            PlanStep(
+                                "补充验证",
+                                "正在补充验证",
+                                "pending",
+                                "step-r2-1",
+                            ),
                         ],
+                        revision=2,
+                        last_replan_reason="代码读取完成，进入总结阶段",
                     )
                 ),
                 RunFinishedEvent(AgentLoopResult("", 0.5)),
@@ -105,13 +123,18 @@ class AgentEngineStreamTest(unittest.TestCase):
             agent_engine_module.main()
 
         rendered = output.getvalue()
-        self.assertIn("开始处理工具：create_task(检查项目)", rendered)
-        self.assertIn("任务计划：检查项目", rendered)
+        self.assertIn("开始处理工具：create_plan(检查项目)", rendered)
+        self.assertIn("执行计划：检查项目", rendered)
+        self.assertIn("计划版本：1", rendered)
         self.assertIn("1. [进行中] 读取代码", rendered)
-        self.assertIn("任务进度：检查项目", rendered)
+        self.assertIn("(step-1)", rendered)
+        self.assertIn("计划进度：检查项目", rendered)
+        self.assertIn("计划版本：2", rendered)
+        self.assertIn("调整原因：代码读取完成，进入总结阶段", rendered)
         self.assertIn("1. [已完成] 读取代码", rendered)
         self.assertIn("2. [进行中] 总结结果", rendered)
-        self.assertNotIn("工具结束：create_task，状态：成功，用时", rendered)
+        self.assertIn("3. [待处理] 补充验证", rendered)
+        self.assertNotIn("工具结束：create_plan，状态：成功，用时", rendered)
 
     def test_limit_result_returns_to_next_user_input(self) -> None:
         """预算收尾结束后 CLI 应继续接收下一条用户输入。"""

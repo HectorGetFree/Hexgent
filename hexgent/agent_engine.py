@@ -4,15 +4,15 @@
 from hexgent.events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
-    TaskCreatedEvent,
-    TaskUpdatedEvent,
+    PlanCreatedEvent,
+    PlanUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
 )
 from .loop.agent_loop import agent_loop
 from .loop.limits import stop_reason_message
-from .task import InMemoryTaskStore, Task
+from .plan import InMemoryPlanStore, Plan
 from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
 from .workspace import find_workspace_root
@@ -26,7 +26,7 @@ TOOL_STATUS_LABELS = {
     "skipped": "未执行",
 }
 
-TASK_STATUS_LABELS = {
+PLAN_STATUS_LABELS = {
     "pending": "待处理",
     "in_progress": "进行中",
     "completed": "已完成",
@@ -34,14 +34,23 @@ TASK_STATUS_LABELS = {
 }
 
 
-def _print_task(task: Task, title: str) -> None:
-    """展示 Task 的整体状态和所有步骤状态。"""
-    task_status = TASK_STATUS_LABELS[task.status]
-    print(f"\033[90m{title}：{task.objective}\033[0m")
-    print(f"\033[90m  整体状态：{task_status}\033[0m")
-    for index, step in enumerate(task.steps, start=1):
-        step_status = TASK_STATUS_LABELS[step.status]
-        print(f"\033[90m  {index}. [{step_status}] {step.content}\033[0m")
+def _print_plan(plan: Plan, title: str) -> None:
+    """展示 Plan 的整体状态和所有步骤状态。"""
+    plan_status = PLAN_STATUS_LABELS[plan.status]
+    print(f"\033[90m{title}：{plan.objective}\033[0m")
+    print(
+        f"\033[90m  整体状态：{plan_status}，计划版本：{plan.revision}\033[0m"
+    )
+    for index, step in enumerate(plan.steps, start=1):
+        step_status = PLAN_STATUS_LABELS[step.status]
+        print(
+            f"\033[90m  {index}. [{step_status}] {step.content} "
+            f"({step.step_id})\033[0m"
+        )
+    if plan.last_replan_reason:
+        print(f"\033[90m  调整原因：{plan.last_replan_reason}\033[0m")
+    if plan.blocked_reason:
+        print(f"\033[90m  阻塞原因：{plan.blocked_reason}\033[0m")
 
 
 def main() -> None:
@@ -49,12 +58,12 @@ def main() -> None:
     # 1. 初始化终端输入、对话历史和会话级工具上下文。
     terminal_io = TerminalIO()
     history = []
-    tool_context = ToolExecutionContext(InMemoryTaskStore(), find_workspace_root())
+    tool_context = ToolExecutionContext(InMemoryPlanStore(), find_workspace_root())
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
     print("输入内容后按两次回车或输入 /send 发送消息；exit 或 q 可以结束对话。\n")
 
-    # 2. 持续接收用户输入，并复用同一个 TaskStore 处理多轮对话。
+    # 2. 持续接收用户输入，并复用同一个 PlanStore 处理多轮对话。
     while True:
         try:
             query = terminal_io.read_message()
@@ -96,10 +105,10 @@ def main() -> None:
                 print(
                     f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
                 )
-            elif isinstance(event, TaskCreatedEvent):
-                _print_task(event.task, "任务计划")
-            elif isinstance(event, TaskUpdatedEvent):
-                _print_task(event.task, "任务进度")
+            elif isinstance(event, PlanCreatedEvent):
+                _print_plan(event.plan, "执行计划")
+            elif isinstance(event, PlanUpdatedEvent):
+                _print_plan(event.plan, "计划进度")
             elif isinstance(event, LoopLimitReachedEvent):
                 print(f"\033[90m{stop_reason_message(event.reason)}\033[0m")
             elif isinstance(event, RunFinishedEvent):

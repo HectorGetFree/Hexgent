@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..client import get_client
-from ..task import InMemoryTaskStore
+from ..plan import InMemoryPlanStore
 from ..tool.tool_context import ToolExecutionContext
 from ..tool.tool_execution import UserConfirmation, unavailable_user_confirmation
 from hexgent.events import AgentEvent, LoopTransitionEvent, RunFinishedEvent
@@ -25,7 +25,7 @@ def agent_loop(
     # 1. 初始化不可变的循环配置和第一轮完整 State。
     client = get_client()
     execution_context = context or ToolExecutionContext(
-        InMemoryTaskStore(),
+        InMemoryPlanStore(),
         Path.cwd().resolve(),
     )
     loop_limits = limits or LoopLimits()

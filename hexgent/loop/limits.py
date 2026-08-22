@@ -21,11 +21,22 @@ LoopStopReason = Literal[
 class LoopLimits:
     """一次 Agent Loop 可以消耗的最大资源。"""
 
+    # 正常工作模式允许调用模型的最大轮数。
     max_model_rounds: int = 100
+
+    # 一次 Agent Loop 允许计入预算的最大工具调用数量。
     max_tool_calls: int = 300
+
+    # 所有完整模型响应允许累计消耗的最大 Token 数量。
     max_total_tokens: int = 1_000_000
+
+    # 单次正常模型调用允许生成的最大输出 Token 数量。
     max_output_tokens_per_round: int = 8_000
+
+    # 一次 Agent Loop 从开始到收尾允许持续的最大秒数。
     max_elapsed_seconds: float = 3_600
+
+    # 命中预算后专用收尾模型调用允许生成的最大 Token 数量。
     finalization_output_tokens: int = 2_000
 
 

@@ -30,8 +30,13 @@ class PermissionRule(TypedDict):
 class PermissionDecision:
     """权限管线产生的结构化决策。"""
 
+    # 权限管线最终要求允许、询问用户或直接拒绝。
     behavior: Literal["allow", "ask", "deny"]
+
+    # 提供给用户或工具结果的权限说明。
     message: str | None = None
+
+    # 供程序内部识别和审计的决策原因。
     reason: str | None = None
 
 

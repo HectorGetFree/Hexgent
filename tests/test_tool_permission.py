@@ -3,7 +3,7 @@
 from pathlib import Path
 import unittest
 
-from hexgent.task import InMemoryTaskStore
+from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import execute_tool_call
 from hexgent.tool.tool_permission import check_permission
@@ -15,7 +15,7 @@ class ToolPermissionTest(unittest.TestCase):
     def setUp(self) -> None:
         """创建具有明确工作区的工具上下文。"""
         self.workdir = Path("/tmp/hexgent-workspace").resolve()
-        self.context = ToolExecutionContext(InMemoryTaskStore(), self.workdir)
+        self.context = ToolExecutionContext(InMemoryPlanStore(), self.workdir)
 
     def test_relative_path_is_resolved_from_context_workdir(self) -> None:
         """工作区内的相对路径应直接允许。"""

@@ -9,8 +9,8 @@ from unittest.mock import patch
 from hexgent.events import (
     LoopLimitReachedEvent,
     RunFinishedEvent,
-    TaskCreatedEvent,
-    TaskUpdatedEvent,
+    PlanCreatedEvent,
+    PlanUpdatedEvent,
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -18,7 +18,7 @@ from hexgent.events import (
 from hexgent.loop.limits import LoopLimits
 from hexgent.loop.state import LoopState
 from hexgent.loop.transitions import Continue, Stop
-from hexgent.task import InMemoryTaskStore
+from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
@@ -114,7 +114,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
     def setUp(self) -> None:
         """为每个用例创建独立工具上下文。"""
-        self.context = ToolExecutionContext(InMemoryTaskStore(), Path.cwd().resolve())
+        self.context = ToolExecutionContext(InMemoryPlanStore(), Path.cwd().resolve())
 
     def test_round_limit_reserves_one_finalization_response(self) -> None:
         """正常轮次耗尽后应额外生成一次不带工具的收尾响应。"""
@@ -306,8 +306,8 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(relevant_events[0].description, "read_file(a)")
         self.assertFalse(hasattr(relevant_events[1], "elapsed_seconds"))
 
-    def test_create_task_emits_initial_plan(self) -> None:
-        """Task 创建成功后应向界面层发送完整初始计划。"""
+    def test_create_plan_emits_initial_plan(self) -> None:
+        """Plan 创建成功后应向界面层发送完整初始计划。"""
         arguments = (
             '{"objective":"检查项目","steps":['
             '{"content":"读取代码","process_message":"正在读取代码",'
@@ -317,7 +317,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         client = FakeClient(
             [
-                make_response([make_tool_call("task-1", "create_task", arguments)]),
+                make_response([make_tool_call("plan-1", "create_plan", arguments)]),
                 make_response([], "继续检查"),
                 make_response([], "完成"),
             ]
@@ -328,16 +328,16 @@ class AgentLoopLimitsTest(unittest.TestCase):
         ):
             events = list(agent_loop_module.agent_loop([], self.context))
 
-        created = [event for event in events if isinstance(event, TaskCreatedEvent)]
+        created = [event for event in events if isinstance(event, PlanCreatedEvent)]
         self.assertEqual(len(created), 1)
-        self.assertEqual(created[0].task.objective, "检查项目")
+        self.assertEqual(created[0].plan.objective, "检查项目")
         self.assertEqual(
-            [step.content for step in created[0].task.steps],
+            [step.content for step in created[0].plan.steps],
             ["读取代码", "总结结果"],
         )
 
-    def test_update_task_plan_emits_latest_step_statuses(self) -> None:
-        """Task 更新成功后应发送最新的整体状态和步骤状态。"""
+    def test_update_plan_emits_latest_step_statuses(self) -> None:
+        """Plan 更新成功后应发送最新的整体状态和步骤状态。"""
         create_arguments = (
             '{"objective":"检查项目","steps":['
             '{"content":"读取代码","process_message":"正在读取代码",'
@@ -346,19 +346,22 @@ class AgentLoopLimitsTest(unittest.TestCase):
             '"status":"pending"}]}'
         )
         update_arguments = (
-            '{"status":"in_progress","steps":['
-            '{"content":"读取代码","process_message":"正在读取代码",'
+            '{"expected_revision":1,"status":"in_progress",'
+            '"reason":null,"blocked_reason":null,"steps":['
+            '{"step_id":"step-1","content":"读取代码",'
+            '"process_message":"正在读取代码",'
             '"status":"completed"},'
-            '{"content":"总结结果","process_message":"正在总结结果",'
+            '{"step_id":"step-2","content":"总结结果",'
+            '"process_message":"正在总结结果",'
             '"status":"in_progress"}]}'
         )
         client = FakeClient(
             [
                 make_response(
-                    [make_tool_call("task-1", "create_task", create_arguments)]
+                    [make_tool_call("plan-1", "create_plan", create_arguments)]
                 ),
                 make_response(
-                    [make_tool_call("task-2", "update_task_plan", update_arguments)]
+                    [make_tool_call("plan-2", "update_plan", update_arguments)]
                 ),
                 make_response([], "继续执行"),
                 make_response([], "等待下一轮"),
@@ -370,11 +373,13 @@ class AgentLoopLimitsTest(unittest.TestCase):
         ):
             events = list(agent_loop_module.agent_loop([], self.context))
 
-        updated = [event for event in events if isinstance(event, TaskUpdatedEvent)]
+        updated = [event for event in events if isinstance(event, PlanUpdatedEvent)]
         self.assertEqual(len(updated), 1)
-        self.assertEqual(updated[0].task.status, "in_progress")
+        self.assertEqual(updated[0].plan.status, "in_progress")
+        self.assertEqual(updated[0].plan.revision, 2)
+        self.assertIsNone(updated[0].plan.last_replan_reason)
         self.assertEqual(
-            [step.status for step in updated[0].task.steps],
+            [step.status for step in updated[0].plan.steps],
             ["completed", "in_progress"],
         )
 

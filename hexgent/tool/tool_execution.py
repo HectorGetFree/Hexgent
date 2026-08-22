@@ -31,8 +31,13 @@ ToolExecutionNotifier = Callable[[str], None]
 class ToolExecutionResult:
     """一次工具调用的最终结果。"""
 
+    # 工具调用经过完整执行管线后得到的状态。
     status: ToolExecutionStatus
+
+    # 返回给模型的工具执行文本。
     output: str
+
+    # 标识该结果是否应被模型视为错误结果。
     is_error: bool
 
 
@@ -40,7 +45,10 @@ class ToolExecutionResult:
 class ToolBatchResult:
     """完整工具批次产生的配对结果和实际执行数量。"""
 
+    # 按调用顺序生成的 function_call_output 列表。
     outputs: list[dict[str, str]]
+
+    # 本批次实际计入工具预算的调用数量。
     executed_count: int
 
 
@@ -74,8 +82,10 @@ def _parse_arguments(raw_arguments: str) -> ToolExecutionResult | dict[str, Any]
     return arguments
 
 
-def _matches_json_type(value: Any, expected_type: str) -> bool:
+def _matches_json_type(value: Any, expected_type: str | list[str]) -> bool:
     """判断 Python 值是否符合基础 JSON Schema 类型。"""
+    if isinstance(expected_type, list):
+        return any(_matches_json_type(value, item) for item in expected_type)
     if expected_type == "number":
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     if expected_type == "integer":
@@ -235,8 +245,8 @@ def execute_tool_batch(
 ) -> Generator[AgentEvent, None, ToolBatchResult]:
     """执行完整工具批次，并保证每个调用都有配对结果。"""
     from hexgent.events import (
-        TaskCreatedEvent,
-        TaskUpdatedEvent,
+        PlanCreatedEvent,
+        PlanUpdatedEvent,
         ToolFinishedEvent,
         ToolStartedEvent,
     )
@@ -285,14 +295,14 @@ def execute_tool_batch(
         )
         yield ToolFinishedEvent(tool_call.name, tool_call.call_id, result.status)
 
-        # 4. Task 工具成功后把存储中已经生效的状态投影给界面层。
-        if tool_call.name == "create_task" and result.status == "success":
-            task = context.task_store.get_task()
-            if task is not None:
-                yield TaskCreatedEvent(task)
-        elif tool_call.name == "update_task_plan" and result.status == "success":
-            task = context.task_store.get_task()
-            if task is not None:
-                yield TaskUpdatedEvent(task)
+        # 4. Plan 工具成功后把存储中已经生效的状态投影给界面层。
+        if tool_call.name == "create_plan" and result.status == "success":
+            plan = context.plan_store.get_plan()
+            if plan is not None:
+                yield PlanCreatedEvent(plan)
+        elif tool_call.name == "update_plan" and result.status == "success":
+            plan = context.plan_store.get_plan()
+            if plan is not None:
+                yield PlanUpdatedEvent(plan)
 
     return ToolBatchResult(outputs, executed_count)

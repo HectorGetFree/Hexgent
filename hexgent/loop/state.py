@@ -10,7 +10,7 @@ from .limits import LoopStopReason
 LoopMode = Literal["working", "finalizing"]
 ContinueReason = Literal[
     "tool_results_ready",
-    "task_continuation",
+    "plan_continuation",
     "budget_finalization",
 ]
 
@@ -22,7 +22,7 @@ class LoopState:
     # 下一轮发送给模型的完整消息历史。
     messages: list[Any]
 
-    # 跨轮次共享的工具上下文，包括工作区和 TaskStore。
+    # 跨轮次共享的工具上下文，包括工作区和 PlanStore。
     tool_context: ToolExecutionContext
 
     # 已收到完整响应的正常模型调用次数。
@@ -37,8 +37,8 @@ class LoopState:
     # 完整模型响应累计报告的输出 Token。
     output_tokens: int = 0
 
-    # Task 未完成时已经发送的继续执行提醒次数。
-    completion_nudges: int = 0
+    # Plan 未完成时已经发送的继续执行提醒次数。
+    plan_completion_nudges: int = 0
 
     # working 表示正常工具循环，finalizing 表示无工具收尾轮。
     mode: LoopMode = "working"

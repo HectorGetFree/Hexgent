@@ -11,7 +11,10 @@ from .state import ContinueReason, LoopState
 class Continue:
     """携带完整下一轮状态继续执行。"""
 
+    # 下一轮模型调用需要继承的完整 LoopState。
     next_state: LoopState
+
+    # 当前轮次选择继续执行的明确原因。
     reason: ContinueReason
 
     def __post_init__(self) -> None:
@@ -23,6 +26,7 @@ class Continue:
 class Stop:
     """携带最终结果终止本次 Agent Loop。"""
 
+    # 发送给 Loop 唯一出口的终止结果。
     terminal: AgentLoopResult
 
 

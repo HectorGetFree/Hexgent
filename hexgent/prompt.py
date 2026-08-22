@@ -7,10 +7,11 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 - 只有在确实需要查看本地信息或执行操作时，才使用工具。
 - 读取、写入、编辑或查找文件时，优先使用对应的专用工具，而不是 bash。
 - 如果工具调用被权限层拒绝，不要绕过限制或反复重试；应向用户说明情况。
-- 面对包含三个及以上步骤的复杂任务，先调用 create_task：一个 Task 代表用户本次完整目标，步骤只是目标下的执行计划。
-- Task 创建后不得改写 objective；执行中通过 update_task_plan 动态增删、调整步骤和更新整体状态。
-- 开始执行时保持 Task 为 in_progress 且恰好一个步骤为 in_progress；完成并验证后，将全部步骤和 Task 标记为 completed。
-- 无法继续且需要用户输入时，将 Task 标记为 blocked；不要借调整计划扩大用户授权范围。
+- 面对包含三个及以上步骤的复杂目标，先调用 create_plan 创建并开始跟踪执行计划。
+- Plan 创建后不得改写 objective；获得新信息后应反思原计划是否仍然合理。步骤正常推进时只更新状态并将 reason 设为 null；仅在增删、替换或重排步骤时提供重规划 reason。
+- 重规划时保留已有步骤的 step_id；新增步骤的 step_id 使用 null 并交由系统生成。不得删除、回退或改写已经完成的步骤。
+- 开始执行时保持 Plan 为 in_progress 且恰好一个步骤为 in_progress；完成并验证后，将全部步骤和 Plan 标记为 completed。
+- 无法继续且需要用户输入时，将 Plan 标记为 blocked；不要借调整计划扩大用户授权范围。
 - 调用工具前后保持简洁，不要把自己表现成只会编程的 Coding Agent。
 - 不确定时坦诚说明；需求不清楚且会影响结果时，再向用户提问。
 - 默认使用与用户相同的语言回答。
@@ -116,8 +117,8 @@ TOOLS = [
     },
     {
         "type": "function",
-        "name": "create_task",
-        "description": "根据一次复杂用户需求创建整体 Task 和初始执行计划。",
+        "name": "create_plan",
+        "description": "根据一次复杂用户目标创建并开始跟踪初始执行计划。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -157,15 +158,27 @@ TOOLS = [
     },
     {
         "type": "function",
-        "name": "update_task_plan",
-        "description": "保持 Task 目标不变，整体更新其状态和完整步骤计划。",
+        "name": "update_plan",
+        "description": "根据最新执行结果更新进度或重规划，同时保留目标和已完成事实。",
         "parameters": {
             "type": "object",
             "properties": {
+                "expected_revision": {
+                    "type": "integer",
+                    "description": "当前 Plan 的 revision，用于拒绝过期计划覆盖新计划。",
+                },
                 "status": {
                     "type": "string",
                     "enum": ["pending", "in_progress", "completed", "blocked"],
-                    "description": "Task 的整体状态。",
+                    "description": "Plan 的整体状态。",
+                },
+                "reason": {
+                    "type": ["string", "null"],
+                    "description": "计划结构改变时说明重规划原因；纯步骤状态更新时必须为 null。",
+                },
+                "blocked_reason": {
+                    "type": ["string", "null"],
+                    "description": "Plan 阻塞时的具体原因；非 blocked 状态必须为 null。",
                 },
                 "steps": {
                     "type": "array",
@@ -173,6 +186,10 @@ TOOLS = [
                     "items": {
                         "type": "object",
                         "properties": {
+                            "step_id": {
+                                "type": ["string", "null"],
+                                "description": "已有步骤使用原 step_id；新增步骤使用 null。",
+                            },
                             "content": {
                                 "type": "string",
                                 "description": "完成整体目标所需的具体步骤。",
@@ -187,12 +204,23 @@ TOOLS = [
                                 "description": "步骤当前状态。",
                             },
                         },
-                        "required": ["content", "process_message", "status"],
+                        "required": [
+                            "step_id",
+                            "content",
+                            "process_message",
+                            "status"
+                        ],
                         "additionalProperties": False,
                     },
                 },
             },
-            "required": ["status", "steps"],
+            "required": [
+                "expected_revision",
+                "status",
+                "reason",
+                "blocked_reason",
+                "steps"
+            ],
             "additionalProperties": False,
         },
         "strict": True,
