@@ -10,7 +10,16 @@ from hexgent.loop.state import ContinueReason
 
 
 ToolEventStatus = ToolExecutionStatus | Literal["skipped"]
-TerminalStatus = Literal["completed", "limit_reached", "failed", "cancelled"]
+TerminalStatus = Literal[
+    "completed",
+    "blocked",
+    "incomplete",
+    "limit_reached",
+    "failed",
+    "cancelled",
+]
+PlanStopReason = Literal["plan_blocked", "plan_still_active"]
+RunStopReason: TypeAlias = LoopStopReason | PlanStopReason
 
 
 @dataclass(frozen=True)
@@ -23,8 +32,8 @@ class AgentLoopResult:
     # 本次运行从开始到结束的总耗时秒数。
     elapsed_seconds: float
 
-    # 因预算收尾时记录的具体限制原因。
-    stop_reason: LoopStopReason | None = None
+    # 本次运行停止的具体原因；正常完成时为空。
+    stop_reason: RunStopReason | None = None
 
     # 本次运行最终进入的终止状态。
     status: TerminalStatus = "completed"

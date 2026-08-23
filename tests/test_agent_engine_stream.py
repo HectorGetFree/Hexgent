@@ -164,6 +164,44 @@ class AgentEngineStreamTest(unittest.TestCase):
         self.assertIn("第一轮收尾", output.getvalue())
         self.assertIn("第二轮继续", output.getvalue())
 
+    def test_incomplete_plan_message_does_not_end_session(self) -> None:
+        """Plan 未完成终态应给出恢复提示，并继续接收下一条用户输入。"""
+        first_events = iter(
+            [
+                RunFinishedEvent(
+                    AgentLoopResult(
+                        "",
+                        0.4,
+                        stop_reason="plan_still_active",
+                        status="incomplete",
+                    )
+                )
+            ]
+        )
+        second_events = iter(
+            [TextDeltaEvent("已经继续"), RunFinishedEvent(AgentLoopResult("已经继续", 0.2))]
+        )
+        output = StringIO()
+
+        with (
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["检查项目", "继续", "q"]),
+            ),
+            patch.object(
+                agent_engine_module,
+                "agent_loop",
+                side_effect=[first_events, second_events],
+            ) as stream,
+            patch("sys.stdout", output),
+        ):
+            agent_engine_module.main()
+
+        self.assertEqual(stream.call_count, 2)
+        self.assertIn("Plan 尚未完成", output.getvalue())
+        self.assertIn("已经继续", output.getvalue())
+
     def test_empty_input_does_not_end_session(self) -> None:
         """空行应被忽略，不应结束整个交互会话。"""
         events = iter(

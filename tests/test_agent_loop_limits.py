@@ -18,7 +18,7 @@ from hexgent.events import (
 from hexgent.loop.limits import LoopLimits
 from hexgent.loop.state import LoopState
 from hexgent.loop.transitions import Continue, Stop
-from hexgent.plan import InMemoryPlanStore
+from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
@@ -179,6 +179,114 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertIsInstance(outcome, Stop)
         self.assertEqual(outcome.terminal.status, "completed")
         self.assertEqual(outcome.terminal.output_text, "完成")
+
+    def test_completed_plan_is_cleared_before_normal_stop(self) -> None:
+        """已完成 Plan 应正常结束，并在结束前从会话存储中清除。"""
+        self.context.plan_store.set_plan(
+            Plan(
+                "完成检查",
+                "completed",
+                [PlanStep("检查结果", "正在检查结果", "completed", "step-1")],
+            )
+        )
+        client = FakeClient([make_response([], "全部完成")])
+        state = LoopState(messages=[], tool_context=self.context)
+
+        with patch.object(turn_module, "get_model", return_value="fake"):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    state,
+                    client,
+                    LoopLimits(),
+                    lambda _tool, _message: "allow",
+                )
+            )
+
+        self.assertIsInstance(outcome, Stop)
+        self.assertEqual(outcome.terminal.status, "completed")
+        self.assertIsNone(self.context.plan_store.get_plan())
+
+    def test_blocked_plan_returns_blocked_terminal_and_is_retained(self) -> None:
+        """阻塞 Plan 应产生 blocked 终态，并保留给后续用户输入恢复。"""
+        plan = Plan(
+            "读取受限文件",
+            "blocked",
+            [PlanStep("等待授权", "正在等待授权", "pending", "step-1")],
+            blocked_reason="需要用户授权读取工作区外文件",
+        )
+        self.context.plan_store.set_plan(plan)
+        client = FakeClient([make_response([], "需要你的授权")])
+        state = LoopState(messages=[], tool_context=self.context)
+
+        with patch.object(turn_module, "get_model", return_value="fake"):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    state,
+                    client,
+                    LoopLimits(),
+                    lambda _tool, _message: "allow",
+                )
+            )
+
+        self.assertIsInstance(outcome, Stop)
+        self.assertEqual(outcome.terminal.status, "blocked")
+        self.assertEqual(outcome.terminal.stop_reason, "plan_blocked")
+        self.assertIs(self.context.plan_store.get_plan(), plan)
+
+    def test_active_plan_after_nudges_returns_incomplete_and_is_retained(self) -> None:
+        """活动 Plan 提醒耗尽后应明确未完成，而不能伪装成正常完成。"""
+        plan = Plan(
+            "检查项目",
+            "in_progress",
+            [PlanStep("读取代码", "正在读取代码", "in_progress", "step-1")],
+        )
+        self.context.plan_store.set_plan(plan)
+        client = FakeClient([make_response([], "暂时停止")])
+        state = LoopState(messages=[], tool_context=self.context)
+
+        with patch.object(turn_module, "get_model", return_value="fake"):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    state,
+                    client,
+                    LoopLimits(max_plan_completion_nudges=0),
+                    lambda _tool, _message: "allow",
+                )
+            )
+
+        self.assertIsInstance(outcome, Stop)
+        self.assertEqual(outcome.terminal.status, "incomplete")
+        self.assertEqual(outcome.terminal.stop_reason, "plan_still_active")
+        self.assertIs(self.context.plan_store.get_plan(), plan)
+
+    def test_active_plan_nudge_constructs_explicit_next_state(self) -> None:
+        """活动 Plan 尚有提醒额度时应构造原因明确的下一轮 State。"""
+        self.context.plan_store.set_plan(
+            Plan(
+                "检查项目",
+                "in_progress",
+                [PlanStep("读取代码", "正在读取代码", "in_progress", "step-1")],
+            )
+        )
+        client = FakeClient([make_response([], "准备结束", input_tokens=7, output_tokens=3)])
+        state = LoopState(messages=[], tool_context=self.context)
+
+        with patch.object(turn_module, "get_model", return_value="fake"):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    state,
+                    client,
+                    LoopLimits(max_plan_completion_nudges=1),
+                    lambda _tool, _message: "allow",
+                )
+            )
+
+        self.assertIsInstance(outcome, Continue)
+        self.assertEqual(outcome.reason, "plan_continuation")
+        self.assertEqual(outcome.next_state.plan_completion_nudges, 1)
+        self.assertEqual(outcome.next_state.model_rounds, 1)
+        self.assertEqual(outcome.next_state.total_tokens, 10)
+        self.assertIn("不能直接结束", outcome.next_state.messages[-1]["content"])
 
     def test_every_tool_call_gets_a_result_after_tool_limit(self) -> None:
         """批次中额度耗尽后，所有未执行调用仍应获得配对结果。"""

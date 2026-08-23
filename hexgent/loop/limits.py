@@ -39,6 +39,9 @@ class LoopLimits:
     # 命中预算后专用收尾模型调用允许生成的最大 Token 数量。
     finalization_output_tokens: int = 2_000
 
+    # 活动 Plan 在模型停止执行后允许发送的继续执行提醒次数。
+    max_plan_completion_nudges: int = 1
+
 
 def check_loop_limit(
     state: LoopState,

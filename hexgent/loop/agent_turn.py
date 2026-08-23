@@ -1,11 +1,11 @@
 """Agent Loop 单个轮次的状态迁移。"""
 
 from collections.abc import Generator
+from dataclasses import replace
 from typing import Any
 
 from ..client import get_model
 from ..prompt import TOOLS
-from ..plan import plan_needs_continuation
 from ..tool.tool_execution import UserConfirmation, execute_tool_batch
 from hexgent.context import build_context
 from hexgent.events import (
@@ -21,11 +21,9 @@ from .limits import (
     check_loop_limit,
     stop_reason_message,
 )
+from .plan_exit import review_plan_exit
 from .state import LoopState
 from .transitions import Continue, Stop, TurnOutcome
-
-
-MAX_PLAN_COMPLETION_NUDGES = 1
 
 
 def _finalization_message(reason: LoopStopReason) -> dict[str, str]:
@@ -119,6 +117,12 @@ def run_turn(
     model_rounds = state.model_rounds + 1
     input_tokens = state.input_tokens + response_input_tokens
     output_tokens = state.output_tokens + response_output_tokens
+    response_state = replace(
+        state,
+        model_rounds=model_rounds,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
     # 5. 收尾模式收到有效响应后直接形成限制 Terminal。
     if state.mode == "finalizing":
@@ -134,47 +138,10 @@ def run_turn(
             )
         )
 
-    # 6. 没有工具调用时，根据 Plan 状态继续提醒或正常停止。
+    # 6. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
     tool_calls = [item for item in response.output if item.type == "function_call"]
     if not tool_calls:
-        plan = state.tool_context.plan_store.get_plan()
-        if (
-            plan_needs_continuation(plan)
-            and state.plan_completion_nudges < MAX_PLAN_COMPLETION_NUDGES
-        ):
-            state.messages.append(
-                {
-                    "role": "developer",
-                    "content": (
-                        "当前 Plan 仍处于待处理或执行中。请继续完成必要工作，或调用 "
-                        "update_plan 准确更新整体状态后再结束本轮任务。"
-                    ),
-                }
-            )
-            next_state = LoopState(
-                messages=state.messages,
-                tool_context=state.tool_context,
-                model_rounds=model_rounds,
-                tool_calls=state.tool_calls,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                plan_completion_nudges=state.plan_completion_nudges + 1,
-                mode="working",
-                transition="plan_continuation",
-                started_at=state.started_at,
-                stop_reason=None,
-            )
-            return Continue(next_state, "plan_continuation")
-
-        if plan is not None and plan.status == "completed":
-            state.tool_context.plan_store.clear_plan()
-        return Stop(
-            AgentLoopResult(
-                response.output_text,
-                state.elapsed_seconds,
-                status="completed",
-            )
-        )
+        return review_plan_exit(response_state, limits, response.output_text)
 
     # 7. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
     batch = yield from execute_tool_batch(

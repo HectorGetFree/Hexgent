@@ -114,6 +114,16 @@ def main() -> None:
             elif isinstance(event, RunFinishedEvent):
                 if text_is_open:
                     print()
+                if event.result.status == "blocked":
+                    plan = tool_context.plan_store.get_plan()
+                    reason = plan.blocked_reason if plan is not None else None
+                    detail = f"：{reason}" if reason else ""
+                    print(f"\033[90mPlan 已阻塞{detail}。可以补充信息后继续。\033[0m")
+                elif event.result.status == "incomplete":
+                    print(
+                        "\033[90mPlan 尚未完成，本次运行已停止；"
+                        "可以输入“继续”恢复执行。\033[0m"
+                    )
                 print(
                     f"\033[90m本次用时：{event.result.elapsed_seconds:.1f} 秒\033[0m\n"
                 )
