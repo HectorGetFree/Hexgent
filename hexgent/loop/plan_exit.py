@@ -5,7 +5,7 @@ from dataclasses import replace
 from hexgent.events import AgentLoopResult
 
 from .limits import LoopLimits
-from .state import LoopState
+from .loop_state import LoopState
 from .transitions import Continue, Stop, TurnOutcome
 
 
@@ -39,7 +39,7 @@ def review_plan_exit(
 
     # 4. 活动 Plan 仍有提醒额度时，构造携带明确原因的下一轮 State。
     if state.plan_completion_nudges < limits.max_plan_completion_nudges:
-        state.messages.append(
+        state.conversation.append_message(
             {
                 "role": "developer",
                 "content": (
@@ -51,6 +51,7 @@ def review_plan_exit(
         )
         next_state = replace(
             state,
+            messages=state.conversation.active_messages,
             plan_completion_nudges=state.plan_completion_nudges + 1,
             transition="plan_continuation",
         )

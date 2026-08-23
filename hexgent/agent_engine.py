@@ -2,6 +2,9 @@
 """Hexgent 命令行入口。"""
 
 from hexgent.events import (
+    ContextCompactionFailedEvent,
+    ContextCompactionFinishedEvent,
+    ContextCompactionStartedEvent,
     LoopLimitReachedEvent,
     RunFinishedEvent,
     PlanCreatedEvent,
@@ -10,6 +13,7 @@ from hexgent.events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
+from .context import ConversationContext
 from .loop.agent_loop import agent_loop
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
@@ -57,7 +61,7 @@ def main() -> None:
     """启动 Hexgent 交互会话。"""
     # 1. 初始化终端输入、对话历史和会话级工具上下文。
     terminal_io = TerminalIO()
-    history = []
+    conversation = ConversationContext()
     tool_context = ToolExecutionContext(InMemoryPlanStore(), find_workspace_root())
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
@@ -80,13 +84,13 @@ def main() -> None:
         if not normalized_query:
             continue
 
-        history.append({"role": "user", "content": query})
+        conversation.append_message({"role": "user", "content": query})
         print("\033[90m正在处理，请稍候……\033[0m")
 
         # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
         text_is_open = False
         for event in agent_loop(
-            history,
+            conversation,
             context=tool_context,
             user_confirmation=terminal_io.request_confirmation,
         ):
@@ -111,6 +115,15 @@ def main() -> None:
                 _print_plan(event.plan, "计划进度")
             elif isinstance(event, LoopLimitReachedEvent):
                 print(f"\033[90m{stop_reason_message(event.reason)}\033[0m")
+            elif isinstance(event, ContextCompactionStartedEvent):
+                print("\033[90m正在整理较早的对话上下文……\033[0m")
+            elif isinstance(event, ContextCompactionFinishedEvent):
+                print(
+                    "\033[90m上下文整理完成："
+                    f"约 {event.before_tokens:,} → {event.after_tokens:,} Token\033[0m"
+                )
+            elif isinstance(event, ContextCompactionFailedEvent):
+                print(f"\033[90m{event.message}\033[0m")
             elif isinstance(event, RunFinishedEvent):
                 if text_is_open:
                     print()

@@ -6,7 +6,7 @@ from typing import Literal, TypeAlias
 from hexgent.plan import Plan
 from hexgent.tool.tool_execution import ToolExecutionStatus
 from hexgent.loop.limits import LoopStopReason
-from hexgent.loop.state import ContinueReason
+from hexgent.loop.loop_state import ContinueReason
 
 
 ToolEventStatus = ToolExecutionStatus | Literal["skipped"]
@@ -108,6 +108,33 @@ class LoopTransitionEvent:
 
 
 @dataclass(frozen=True)
+class ContextCompactionStartedEvent:
+    """活动上下文开始进行主动压缩。"""
+
+    # 压缩前估算的完整请求 Token 数量。
+    before_tokens: int
+
+
+@dataclass(frozen=True)
+class ContextCompactionFinishedEvent:
+    """活动上下文已经成功完成主动压缩。"""
+
+    # 压缩前估算的完整请求 Token 数量。
+    before_tokens: int
+
+    # 压缩后估算的完整请求 Token 数量。
+    after_tokens: int
+
+
+@dataclass(frozen=True)
+class ContextCompactionFailedEvent:
+    """活动上下文主动压缩失败。"""
+
+    # 适合向用户弱化展示的中文失败原因。
+    message: str
+
+
+@dataclass(frozen=True)
 class RunFinishedEvent:
     """本轮运行已经产生最终结果。"""
 
@@ -123,5 +150,8 @@ AgentEvent: TypeAlias = (
     | PlanUpdatedEvent
     | LoopLimitReachedEvent
     | LoopTransitionEvent
+    | ContextCompactionStartedEvent
+    | ContextCompactionFinishedEvent
+    | ContextCompactionFailedEvent
     | RunFinishedEvent
 )

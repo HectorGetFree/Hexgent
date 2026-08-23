@@ -1,0 +1,41 @@
+"""模型活动上下文的容量与压缩配置。"""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ContextLimits:
+    """控制何时压缩上下文以及压缩后保留多少近期内容。"""
+
+    # 当前模型能够接收的最大上下文 Token 数量。
+    context_window_tokens: int = 128_000
+
+    # 为主模型正常回答预留的输出 Token 数量。
+    reserved_output_tokens: int = 8_000
+
+    # 为 Token 估算误差和请求固定内容预留的安全余量。
+    safety_margin_tokens: int = 8_000
+
+    # 单次上下文摘要允许生成的最大 Token 数量。
+    summary_output_tokens: int = 4_000
+
+    # 压缩后尽量原样保留的最近消息 Token 数量。
+    recent_context_tokens: int = 24_000
+
+    # 同一会话允许连续发生的上下文压缩失败次数。
+    max_compaction_attempts: int = 2
+
+    @property
+    def compaction_threshold_tokens(self) -> int:
+        """返回触发主动压缩的上下文 Token 阈值。"""
+        return max(
+            1,
+            self.context_window_tokens
+            - self.reserved_output_tokens
+            - self.safety_margin_tokens,
+        )
+
+    @property
+    def blocking_threshold_tokens(self) -> int:
+        """返回不压缩便不能安全调用主模型的硬阈值。"""
+        return max(1, self.context_window_tokens - self.reserved_output_tokens)

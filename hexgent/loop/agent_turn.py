@@ -5,6 +5,8 @@ from dataclasses import replace
 from typing import Any
 
 from ..client import get_model
+from ..context.context_budget import ContextLimits
+from ..context.compaction import compact_context_if_needed
 from ..prompt import TOOLS
 from ..tool.tool_execution import UserConfirmation, execute_tool_batch
 from hexgent.context import build_context
@@ -22,7 +24,7 @@ from .limits import (
     stop_reason_message,
 )
 from .plan_exit import review_plan_exit
-from .state import LoopState
+from .loop_state import LoopState
 from .transitions import Continue, Stop, TurnOutcome
 
 
@@ -43,10 +45,11 @@ def _continue_with_finalization(
     reason: LoopStopReason,
 ) -> Continue:
     """构造一次明确进入预算收尾的状态迁移。"""
-    state.messages.append(_finalization_message(reason))
+    state.conversation.append_message(_finalization_message(reason))
     next_state = LoopState(
         messages=state.messages,
         tool_context=state.tool_context,
+        conversation=state.conversation,
         model_rounds=state.model_rounds,
         tool_calls=state.tool_calls,
         input_tokens=state.input_tokens,
@@ -77,6 +80,7 @@ def run_turn(
     client: Any,
     limits: LoopLimits,
     user_confirmation: UserConfirmation,
+    context_limits: ContextLimits | None = None,
 ) -> Generator[AgentEvent, None, TurnOutcome]:
     """执行一个完整轮次，并只返回 Continue 或 Stop。"""
     # 1. 在每个正常轮次的唯一入口统一检查全局预算。
@@ -87,9 +91,36 @@ def run_turn(
             return _continue_with_finalization(state, stop_reason)
 
     # 2. 根据工作或收尾模式准备本轮模型请求。
+    model = get_model()
+    instructions = build_context(state.tool_context)
+    active_context_limits = context_limits or ContextLimits()
+
+    # 3. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
+    request_tools = TOOLS if state.mode == "working" else []
+    compaction = yield from compact_context_if_needed(
+        state.conversation,
+        client,
+        model,
+        instructions,
+        request_tools,
+        active_context_limits,
+    )
+    if compaction.status == "compacted":
+        next_state = replace(
+            state,
+            messages=state.conversation.active_messages,
+            input_tokens=state.input_tokens + compaction.input_tokens,
+            output_tokens=state.output_tokens + compaction.output_tokens,
+            transition="context_compacted",
+        )
+        return Continue(next_state, "context_compacted")
+    if compaction.status == "blocked":
+        return _failure_stop(state, compaction.message or "上下文无法安全压缩")
+
+    # 4. 组装主模型请求；压缩摘要调用不计入正常模型轮次。
     request: dict[str, Any] = {
-        "model": get_model(),
-        "instructions": build_context(state.tool_context),
+        "model": model,
+        "instructions": instructions,
         "input": state.messages,
     }
     if state.mode == "working":
@@ -102,18 +133,22 @@ def run_turn(
     else:
         request["max_output_tokens"] = limits.finalization_output_tokens
 
-    # 3. 模型调用必须产生完整响应，否则直接形成 Error Terminal。
+    # 5. 模型调用必须产生完整响应，否则直接形成 Error Terminal。
     try:
         response = yield from call_model(client, **request)
     except ModelCallError as error:
         yield TextDeltaEvent(f"\n\n错误：{error}")
         return _failure_stop(state, str(error))
 
-    # 4. 完整响应进入历史，并计算下一轮继承的资源用量。
+    # 6. 完整响应进入历史，并计算下一轮继承的资源用量。
     response_input_tokens, response_output_tokens = state.usage_values(
         getattr(response, "usage", None)
     )
-    state.messages.extend(response.output)
+    tool_calls = [item for item in response.output if item.type == "function_call"]
+    state.conversation.append_messages(
+        response.output,
+        completes_round=not tool_calls,
+    )
     model_rounds = state.model_rounds + 1
     input_tokens = state.input_tokens + response_input_tokens
     output_tokens = state.output_tokens + response_output_tokens
@@ -124,7 +159,7 @@ def run_turn(
         output_tokens=output_tokens,
     )
 
-    # 5. 收尾模式收到有效响应后直接形成限制 Terminal。
+    # 7. 收尾模式收到有效响应后直接形成限制 Terminal。
     if state.mode == "finalizing":
         plan = state.tool_context.plan_store.get_plan()
         if plan is not None and plan.status == "completed":
@@ -138,12 +173,11 @@ def run_turn(
             )
         )
 
-    # 6. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
-    tool_calls = [item for item in response.output if item.type == "function_call"]
+    # 8. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
     if not tool_calls:
         return review_plan_exit(response_state, limits, response.output_text)
 
-    # 7. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
+    # 9. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
     batch = yield from execute_tool_batch(
         tool_calls,
         context=state.tool_context,
@@ -151,10 +185,11 @@ def run_turn(
         remaining_tool_calls=max(0, limits.max_tool_calls - state.tool_calls),
         deadline=state.started_at + limits.max_elapsed_seconds,
     )
-    state.messages.extend(batch.outputs)
+    state.conversation.append_messages(batch.outputs, completes_round=True)
     next_state = LoopState(
         messages=state.messages,
         tool_context=state.tool_context,
+        conversation=state.conversation,
         model_rounds=model_rounds,
         tool_calls=state.tool_calls + batch.executed_count,
         input_tokens=input_tokens,

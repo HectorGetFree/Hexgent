@@ -1,7 +1,7 @@
-"""构建每轮模型调用所需的上下文。"""
+"""构建每轮模型调用所需的运行时上下文。"""
 
-from hexgent.prompt import SYSTEM_PROMPT
 from hexgent.plan import format_plan_context
+from hexgent.prompt import SYSTEM_PROMPT
 from hexgent.tool.tool_context import ToolExecutionContext
 
 

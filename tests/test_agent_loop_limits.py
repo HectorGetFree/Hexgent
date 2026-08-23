@@ -7,7 +7,10 @@ import unittest
 from unittest.mock import patch
 
 from hexgent.events import (
+    ContextCompactionFinishedEvent,
+    ContextCompactionStartedEvent,
     LoopLimitReachedEvent,
+    LoopTransitionEvent,
     RunFinishedEvent,
     PlanCreatedEvent,
     PlanUpdatedEvent,
@@ -15,13 +18,17 @@ from hexgent.events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
+from hexgent.context import ContextLimits, ConversationContext
+from hexgent.utils.token_estimator import estimate_request_tokens
+from hexgent.context.builder import build_context
 from hexgent.loop.limits import LoopLimits
-from hexgent.loop.state import LoopState
+from hexgent.loop.loop_state import LoopState
 from hexgent.loop.transitions import Continue, Stop
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
+from hexgent.prompt import TOOLS
 
 
 agent_loop_module = import_module("hexgent.loop.agent_loop")
@@ -382,6 +389,71 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(deltas, ["你好", "，", "世界"])
         self.assertEqual(len(finished), 1)
         self.assertEqual(finished[0].result.output_text, "你好，世界")
+
+    def test_context_compaction_is_an_explicit_loop_transition(self) -> None:
+        """主动压缩应先构造下一轮 State，再调用主模型完成任务。"""
+        conversation = ConversationContext()
+        conversation.append_message(
+            {"role": "user", "content": "较早问题" + "旧内容" * 500}
+        )
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="较早回答" + "历史" * 500)],
+            completes_round=True,
+        )
+        conversation.append_message({"role": "user", "content": "最新问题"})
+        instructions = build_context(self.context)
+        before_tokens = estimate_request_tokens(
+            instructions,
+            conversation.active_messages,
+            TOOLS,
+        )
+        recent_tokens = estimate_request_tokens(
+            instructions,
+            [conversation.active_messages[-1]],
+            TOOLS,
+        )
+        threshold = recent_tokens + max(10, (before_tokens - recent_tokens) // 2)
+        context_limits = ContextLimits(
+            context_window_tokens=threshold + 2,
+            reserved_output_tokens=1,
+            safety_margin_tokens=1,
+            recent_context_tokens=100,
+        )
+        client = FakeClient(
+            [
+                make_response([], "较早会话已经完成初步检查。"),
+                make_response([], "继续完成最新问题"),
+            ]
+        )
+
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(turn_module, "get_model", return_value="fake"),
+        ):
+            events = list(
+                agent_loop_module.agent_loop(
+                    conversation,
+                    self.context,
+                    context_limits=context_limits,
+                )
+            )
+
+        transitions = [
+            event.reason
+            for event in events
+            if isinstance(event, LoopTransitionEvent)
+        ]
+        self.assertTrue(
+            any(isinstance(event, ContextCompactionStartedEvent) for event in events)
+        )
+        self.assertTrue(
+            any(isinstance(event, ContextCompactionFinishedEvent) for event in events)
+        )
+        self.assertIn("context_compacted", transitions)
+        self.assertEqual(len(client.responses.calls), 2)
+        self.assertNotIn("tools", client.responses.calls[0])
+        self.assertIn("tools", client.responses.calls[1])
+        self.assertEqual(conversation.compaction_count, 1)
 
     def test_tool_events_wrap_execution_after_completed_response(self) -> None:
         """工具只应在完整响应到达后执行，并由开始和结束事件包围。"""

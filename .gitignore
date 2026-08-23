@@ -46,5 +46,6 @@ Thumbs.db
 # resources
 resources/
 
-# docs
-docs/
+# 文档默认不追踪，但上下文设计需要随实现持续维护。
+docs/*
+!docs/上下文管理设计.md

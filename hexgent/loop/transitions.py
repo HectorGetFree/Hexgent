@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 from hexgent.events import AgentLoopResult
-from .state import ContinueReason, LoopState
+from .loop_state import ContinueReason, LoopState
 
 
 @dataclass(frozen=True)
