@@ -7,6 +7,18 @@ from typing import Any, Literal, TypedDict
 
 from .tool_context import ToolExecutionContext
 
+PermissionBehavior = Literal[
+    "allow",  # 无需用户确认，允许工具继续执行。
+    "ask",  # 命中询问规则，必须取得用户确认后才能执行。
+    "deny",  # 命中拒绝规则，禁止执行工具。
+]
+
+UserConfirmationResult = Literal[
+    "allow",  # 用户明确允许本次工具调用。
+    "deny",  # 用户明确拒绝本次工具调用。
+    "unavailable",  # 当前交互入口无法向用户发起确认。
+]
+
 DENY_LIST = [
     "rm -rf /",
     "sudo",
@@ -31,7 +43,7 @@ class PermissionDecision:
     """权限管线产生的结构化决策。"""
 
     # 权限管线最终要求允许、询问用户或直接拒绝。
-    behavior: Literal["allow", "ask", "deny"]
+    behavior: PermissionBehavior
 
     # 提供给用户或工具结果的权限说明。
     message: str | None = None
@@ -110,9 +122,6 @@ def check_rules(
         if tool_name in rule["tools"] and rule["check"](args, context):
             return rule["message"](args, context)
     return None
-
-
-UserConfirmationResult = Literal["allow", "deny", "unavailable"]
 
 
 def check_permission(

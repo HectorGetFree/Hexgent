@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import inspect
 import json
 from time import monotonic
@@ -20,6 +20,7 @@ from hexgent.context.session_store import (
     SessionStore,
     build_persisted_output_message,
 )
+from hexgent.utils.token_estimator import estimate_value_tokens
 from .tool_context import ToolExecutionContext
 from .tool_registry import RegisteredTool, get_tool
 
@@ -27,7 +28,12 @@ if TYPE_CHECKING:
     from hexgent.events import AgentEvent
 
 
-ToolExecutionStatus = Literal["success", "invalid", "denied", "error"]
+ToolExecutionStatus = Literal[
+    "success",  # 工具调用已经成功执行并生成结果。
+    "invalid",  # 工具不存在，或调用参数未通过解析与合法性校验。
+    "denied",  # 权限管线或用户确认拒绝执行工具。
+    "error",  # 工具执行期间发生异常或超时。
+]
 UserConfirmation = Callable[[str, str], UserConfirmationResult]
 ToolExecutionNotifier = Callable[[str], None]
 
@@ -240,6 +246,69 @@ def _budget_tool_result(
     }
 
 
+def _truncate_to_token_budget(text: str, token_budget: int) -> str:
+    """在不超过估算 Token 预算的前提下保留文本开头。"""
+    if token_budget <= 0:
+        return ""
+    if estimate_value_tokens(text) <= token_budget:
+        return text
+    low = 0
+    high = len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if estimate_value_tokens(text[:middle]) <= token_budget:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]
+
+
+def _apply_batch_result_budget(
+    outputs: list[dict[str, str]],
+    inline_results: list[tuple[int, str, str, str]],
+    persisted_results: dict[int, PersistedToolResult],
+    session_store: SessionStore | None,
+) -> None:
+    """按批次总预算从最大结果开始外置，并限制所有预览的总量。"""
+    if session_store is None:
+        return
+    limits = session_store.tool_result_limits
+
+    # 1. 超过批次内联预算时，持续选择当前最大的完整结果进行外置。
+    remaining = list(inline_results)
+    total_inline_tokens = sum(
+        estimate_value_tokens(output)
+        for _, _, _, output in remaining
+    )
+    while remaining and total_inline_tokens > limits.max_batch_inline_tokens:
+        largest = max(remaining, key=lambda item: estimate_value_tokens(item[3]))
+        remaining.remove(largest)
+        output_index, call_id, tool_name, raw_output = largest
+        persisted = session_store.persist_tool_result(
+            call_id,
+            tool_name,
+            raw_output,
+            force=True,
+        )
+        if persisted is None:
+            raise RuntimeError("工具结果批次预算要求外置，但未生成持久化结果")
+        persisted_results[output_index] = persisted
+        total_inline_tokens -= estimate_value_tokens(raw_output)
+
+    # 2. 在所有外置结果之间平均分配总预览预算，并更新模型可见结果。
+    if not persisted_results:
+        return
+    preview_budget = max(
+        1,
+        limits.max_batch_preview_tokens // len(persisted_results),
+    )
+    for output_index, persisted in persisted_results.items():
+        preview = _truncate_to_token_budget(persisted.preview, preview_budget)
+        outputs[output_index]["output"] = build_persisted_output_message(
+            replace(persisted, preview=preview)
+        )
+
+
 def execute_tool_batch(
     tool_calls: list[Any],
     *,
@@ -259,6 +328,8 @@ def execute_tool_batch(
 
     # 1. 按响应顺序处理工具，持续累计本批次实际执行数量。
     outputs: list[dict[str, str]] = []
+    inline_results: list[tuple[int, str, str, str]] = []
+    persisted_results: dict[int, PersistedToolResult] = {}
     executed_count = 0
     limit_message: str | None = None
 
@@ -340,6 +411,13 @@ def execute_tool_batch(
                 "output": model_output,
             }
         )
+        output_index = len(outputs) - 1
+        if persisted is None:
+            inline_results.append(
+                (output_index, tool_call.call_id, tool_call.name, result.output)
+            )
+        else:
+            persisted_results[output_index] = persisted
         yield ToolFinishedEvent(tool_call.name, tool_call.call_id, result.status)
         if session_store is not None:
             session_store.append_transcript(
@@ -364,5 +442,17 @@ def execute_tool_batch(
             plan = context.plan_store.get_plan()
             if plan is not None:
                 yield PlanUpdatedEvent(plan)
+
+    # 5. 工具全部完成后执行批次总预算，保证大批量小结果不会撑爆上下文。
+    try:
+        _apply_batch_result_budget(
+            outputs,
+            inline_results,
+            persisted_results,
+            session_store,
+        )
+    except OSError as error:
+        for output in outputs:
+            output["output"] = f"错误：工具结果批次持久化失败：{error}"
 
     return ToolBatchResult(outputs, executed_count)

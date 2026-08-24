@@ -11,11 +11,15 @@ max_plan_completion_nudges = 1
 context_window_tokens = 32000
 reserved_output_tokens = 8000
 safety_margin_tokens = 4000
-summary_output_tokens = 4000
+summary_output_tokens = 2000
 recent_context_tokens = 8000
 max_compaction_attempts = 2
+min_compaction_savings_tokens = 2000
+min_compaction_savings_ratio = 0.1
+max_partial_compactions = 1
 
 [tool_result]
 max_inline_characters = 50000
-preview_characters = 2000
-
+preview_characters = 500
+max_batch_inline_tokens = 8000
+max_batch_preview_tokens = 4000

@@ -9,12 +9,15 @@ from hexgent.context.context import ConversationContext
 from ..tool.tool_context import ToolExecutionContext
 from .limits import LoopStopReason
 
-LoopMode = Literal["working", "finalizing"]
+LoopMode = Literal[
+    "working",  # 正常调用模型、执行工具并推进 Plan。
+    "finalizing",  # 已停止正常循环，只进行一次禁用工具的收尾响应。
+]
 ContinueReason = Literal[
-    "tool_results_ready",
-    "plan_continuation",
-    "context_compacted",
-    "budget_finalization",
+    "tool_results_ready",  # 工具批次结果已回填，继续下一轮模型调用。
+    "plan_continuation",  # Plan 仍在执行中，提醒模型继续推进或更新状态。
+    "context_compacted",  # 活动上下文已压缩，使用新上下文重试当前轮次。
+    "budget_finalization",  # 命中循环预算，进入禁用工具的收尾轮次。
 ]
 
 

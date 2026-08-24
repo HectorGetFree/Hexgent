@@ -105,7 +105,7 @@ def run_turn(
         request_tools,
         active_context_limits,
     )
-    if compaction.status == "compacted":
+    if compaction.status in {"compacted", "partial"}:
         next_state = replace(
             state,
             messages=state.conversation.active_messages,

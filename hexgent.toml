@@ -16,12 +16,16 @@ max_plan_completion_nudges = 1
 context_window_tokens = 128000
 reserved_output_tokens = 8000
 safety_margin_tokens = 8000
-summary_output_tokens = 4000
+summary_output_tokens = 2000
 recent_context_tokens = 24000
 max_compaction_attempts = 2
+min_compaction_savings_tokens = 2000
+min_compaction_savings_ratio = 0.1
+max_partial_compactions = 1
 
 [tool_result]
 # 超过该字符数的工具结果会完整外置，模型上下文只保留预览。
 max_inline_characters = 50000
-preview_characters = 2000
-
+preview_characters = 500
+max_batch_inline_tokens = 8000
+max_batch_preview_tokens = 4000

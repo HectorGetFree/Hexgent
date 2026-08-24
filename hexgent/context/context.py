@@ -41,6 +41,9 @@ class ConversationContext:
     # 最近连续发生的上下文压缩失败次数。
     consecutive_compaction_failures: int = 0
 
+    # 当前连续压缩流程已经接受的部分有效压缩次数。
+    partial_compaction_count: int = 0
+
     # 可选的会话持久化实现；为空时仅保留内存记录。
     session_store: SessionStore | None = None
 
@@ -97,6 +100,7 @@ class ConversationContext:
         query = UserQuery(len(self._user_queries) + 1, content)
         self._user_queries = (*self._user_queries, query)
         self.active_messages.append(query)
+        self.partial_compaction_count = 0
         if persist:
             message = query.to_message()
             self.transcript.append(message)
@@ -115,6 +119,7 @@ class ConversationContext:
             return
         self.transcript.append(message)
         self.active_messages.append(message)
+        self.partial_compaction_count = 0
         self._persist("message", message)
 
     def append_messages(
@@ -137,13 +142,26 @@ class ConversationContext:
         ):
             self.round_boundaries.append(boundary)
 
-    def apply_compaction(self, cut_index: int, summary: str) -> None:
-        """压缩非 Query 历史，并原样保留切点之前的全部用户 Query。"""
-        preserved_queries = [
-            item
-            for item in self.active_messages[:cut_index]
-            if isinstance(item, UserQuery)
-        ]
+    def build_compacted_messages(
+        self,
+        cut_index: int,
+        summary: str,
+    ) -> tuple[list[Any], list[int], list[UserQuery]]:
+        """构造候选活动上下文，但不立即修改当前会话状态。"""
+        latest_query = next(
+            (
+                item
+                for item in reversed(self.active_messages)
+                if isinstance(item, UserQuery)
+            ),
+            None,
+        )
+        preserved_queries = (
+            [latest_query]
+            if latest_query is not None
+            and latest_query in self.active_messages[:cut_index]
+            else []
+        )
         summary_message = {
             "role": "developer",
             "content": f"以下是此前会话的压缩摘要：\n\n{summary}",
@@ -156,22 +174,50 @@ class ConversationContext:
             if boundary > cut_index
         ]
 
-        self.active_messages[:] = [
+        compacted_messages = [
             *preserved_queries,
             summary_message,
             *remaining_messages,
         ]
-        self.round_boundaries[:] = [prefix_length, *remaining_boundaries]
+        compacted_boundaries = [prefix_length, *remaining_boundaries]
+        return compacted_messages, compacted_boundaries, preserved_queries
+
+    def apply_compaction(
+        self,
+        cut_index: int,
+        summary: str,
+        *,
+        before_tokens: int,
+        after_tokens: int,
+        summary_tokens: int,
+        recent_tokens: int,
+        status: str,
+    ) -> None:
+        """提交已经验证收益的候选压缩，并记录完整观测指标。"""
+        compacted_messages, compacted_boundaries, preserved_queries = (
+            self.build_compacted_messages(cut_index, summary)
+        )
+        self.active_messages[:] = compacted_messages
+        self.round_boundaries[:] = compacted_boundaries
         boundary_record = {
             "type": "context_compaction_boundary",
             "summary": summary,
             "compacted_messages": cut_index,
             "preserved_query_sequences": [query.sequence for query in preserved_queries],
+            "before_tokens": before_tokens,
+            "after_tokens": after_tokens,
+            "summary_tokens": summary_tokens,
+            "recent_tokens": recent_tokens,
+            "status": status,
         }
         self.transcript.append(boundary_record)
         self._persist("context_compaction_boundary", boundary_record)
         self.compaction_count += 1
         self.consecutive_compaction_failures = 0
+        if status == "partial":
+            self.partial_compaction_count += 1
+        else:
+            self.partial_compaction_count = 0
 
     def record_compaction_failure(self) -> None:
         """累计一次压缩失败，供后续熔断判断使用。"""

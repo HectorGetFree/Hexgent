@@ -125,8 +125,9 @@ def main(config_path: Path | None = None) -> None:
             elif isinstance(event, ContextCompactionStartedEvent):
                 print("\033[90m正在整理较早的对话上下文……\033[0m")
             elif isinstance(event, ContextCompactionFinishedEvent):
+                label = "上下文部分整理完成" if event.status == "partial" else "上下文整理完成"
                 print(
-                    "\033[90m上下文整理完成："
+                    f"\033[90m{label}："
                     f"约 {event.before_tokens:,} → {event.after_tokens:,} Token\033[0m"
                 )
             elif isinstance(event, ContextCompactionFailedEvent):

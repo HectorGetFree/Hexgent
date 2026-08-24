@@ -9,16 +9,21 @@ from hexgent.loop.limits import LoopStopReason
 from hexgent.loop.loop_state import ContinueReason
 
 
-ToolEventStatus = ToolExecutionStatus | Literal["skipped"]
-TerminalStatus = Literal[
-    "completed",
-    "blocked",
-    "incomplete",
-    "limit_reached",
-    "failed",
-    "cancelled",
+ToolEventStatus = ToolExecutionStatus | Literal[
+    "skipped",  # 工具因批次预算等执行前条件未满足而被跳过。
 ]
-PlanStopReason = Literal["plan_blocked", "plan_still_active"]
+TerminalStatus = Literal[
+    "completed",  # Agent Run 已正常完成并产生最终答复。
+    "blocked",  # Agent Run 因上下文或 Plan 阻塞而无法继续。
+    "incomplete",  # Agent Run 已停止，但用户目标尚未完整完成。
+    "limit_reached",  # Agent Run 命中循环预算并完成收尾。
+    "failed",  # Agent Run 因不可恢复错误而终止。
+    "cancelled",  # Agent Run 被用户或上层调用方主动取消。
+]
+PlanStopReason = Literal[
+    "plan_blocked",  # 当前 Plan 已进入阻塞状态。
+    "plan_still_active",  # 模型停止调用工具时，当前 Plan 仍未完成。
+]
 RunStopReason: TypeAlias = LoopStopReason | PlanStopReason
 
 
@@ -124,6 +129,12 @@ class ContextCompactionFinishedEvent:
 
     # 压缩后估算的完整请求 Token 数量。
     after_tokens: int
+
+    # 完全低于主动阈值或仍需一次补充压缩的结果状态。
+    status: Literal[
+        "compacted",  # 活动上下文已回落到主动压缩阈值以下。
+        "partial",  # 本次压缩有效，但仍需要一次有限的补充压缩。
+    ] = "compacted"
 
 
 @dataclass(frozen=True)

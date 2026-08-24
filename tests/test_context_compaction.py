@@ -54,14 +54,14 @@ class ContextCompactionTest(unittest.TestCase):
         conversation = ConversationContext()
         conversation.append_message({"role": "user", "content": "较早的问题"})
         conversation.append_messages(
-            [SimpleNamespace(type="message", text="较早的回答")],
+            [SimpleNamespace(type="message", text="较早的回答" * 100)],
             completes_round=True,
         )
         latest_message = {"role": "user", "content": "最新的问题"}
         conversation.append_message(latest_message)
         transcript_before = list(conversation.transcript)
         response = SimpleNamespace(
-            output_text="用户先前询问了一个问题，Agent 已经完成回答。",
+            output_text="<summary>用户先前询问了一个问题，Agent 已经完成回答。</summary>",
             usage=SimpleNamespace(input_tokens=20, output_tokens=8),
         )
         client = FakeClient(response)
@@ -78,16 +78,21 @@ class ContextCompactionTest(unittest.TestCase):
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=100,
+                    min_compaction_savings_tokens=1,
+                    min_compaction_savings_ratio=0.01,
                 ),
             )
         )
 
-        self.assertEqual(outcome.status, "compacted")
+        self.assertIn(outcome.status, {"compacted", "partial"})
         self.assertIsInstance(events[0], ContextCompactionStartedEvent)
         self.assertIsInstance(events[1], ContextCompactionFinishedEvent)
-        self.assertIsInstance(conversation.active_messages[0], UserQuery)
-        self.assertEqual(conversation.active_messages[0].content, "较早的问题")
-        self.assertIn("压缩摘要", conversation.active_messages[1]["content"])
+        self.assertNotIn(first_query := "较早的问题", [
+            message.content
+            for message in conversation.active_messages
+            if isinstance(message, UserQuery)
+        ])
+        self.assertIn("压缩摘要", conversation.active_messages[0]["content"])
         self.assertEqual(
             conversation.active_messages[-1].content,
             latest_message["content"],
@@ -97,8 +102,8 @@ class ContextCompactionTest(unittest.TestCase):
         self.assertEqual(outcome.input_tokens, 20)
         self.assertEqual(outcome.output_tokens, 8)
 
-    def test_every_user_query_remains_verbatim_after_compaction(self) -> None:
-        """历史压缩不得改写、删除或摘要任何用户 Query 原文。"""
+    def test_transcript_keeps_all_queries_but_active_context_keeps_latest(self) -> None:
+        """Transcript 保留全部 Query，活动上下文只强制保留最新 Query。"""
         conversation = ConversationContext()
         first = conversation.append_user_query("第一条 Query，保留原始标点！")
         conversation.append_messages(
@@ -106,7 +111,9 @@ class ContextCompactionTest(unittest.TestCase):
             completes_round=True,
         )
         second = conversation.append_user_query("第二条 Query 也必须保持不变。")
-        client = FakeClient(SimpleNamespace(output_text="历史工作摘要", usage=None))
+        client = FakeClient(
+            SimpleNamespace(output_text="<summary>历史工作摘要</summary>", usage=None)
+        )
 
         _, outcome = drain_generator(
             compact_context_if_needed(
@@ -120,11 +127,13 @@ class ContextCompactionTest(unittest.TestCase):
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=100,
+                    min_compaction_savings_tokens=1,
+                    min_compaction_savings_ratio=0.01,
                 ),
             )
         )
 
-        self.assertEqual(outcome.status, "compacted")
+        self.assertIn(outcome.status, {"compacted", "partial"})
         self.assertEqual(conversation.user_queries, (first, second))
         self.assertEqual(
             [
@@ -132,8 +141,10 @@ class ContextCompactionTest(unittest.TestCase):
                 for message in conversation.model_messages()
                 if isinstance(message, dict) and message.get("role") == "user"
             ],
-            [first.content, second.content],
+            [second.content],
         )
+        self.assertIn(first.to_message(), conversation.transcript)
+        self.assertIn(second.to_message(), conversation.transcript)
 
     def test_tool_call_and_result_are_sent_to_summary_together(self) -> None:
         """同一完整轮次里的工具调用和结果不能被压缩切点拆开。"""
@@ -154,7 +165,7 @@ class ContextCompactionTest(unittest.TestCase):
         conversation.append_messages([tool_result], completes_round=True)
         conversation.append_message({"role": "user", "content": "继续总结"})
         client = FakeClient(
-            SimpleNamespace(output_text="已读取文件。", usage=None)
+            SimpleNamespace(output_text="<summary>已读取文件。</summary>", usage=None)
         )
 
         _, outcome = drain_generator(
@@ -169,12 +180,14 @@ class ContextCompactionTest(unittest.TestCase):
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=100,
+                    min_compaction_savings_tokens=1,
+                    min_compaction_savings_ratio=0.01,
                 ),
             )
         )
 
         summary_input = client.responses.calls[0]["input"]
-        self.assertEqual(outcome.status, "compacted")
+        self.assertIn(outcome.status, {"compacted", "partial"})
         self.assertIn(tool_call, summary_input)
         self.assertIn(tool_result, summary_input)
 
@@ -215,6 +228,88 @@ class ContextCompactionTest(unittest.TestCase):
         )
 
         self.assertGreater(complete_request, messages_only)
+
+    def test_latest_complete_round_can_be_fully_summarized(self) -> None:
+        """最近原子轮次过大时应允许使用消息末尾的完整安全边界。"""
+        conversation = ConversationContext()
+        conversation.append_user_query("检查大型工具批次")
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="大型结果" * 500)],
+            completes_round=True,
+        )
+        client = FakeClient(
+            SimpleNamespace(
+                output_text="<summary>已完成大型批次检查。</summary>",
+                usage=None,
+            )
+        )
+
+        _, outcome = drain_generator(
+            compact_context_if_needed(
+                conversation,
+                client,
+                "fake",
+                "系统提示词",
+                [],
+                ContextLimits(
+                    context_window_tokens=100,
+                    reserved_output_tokens=1,
+                    safety_margin_tokens=1,
+                    recent_context_tokens=10,
+                    min_compaction_savings_tokens=1,
+                    min_compaction_savings_ratio=0.01,
+                ),
+            )
+        )
+
+        self.assertIn(outcome.status, {"compacted", "partial"})
+        self.assertEqual(
+            client.responses.calls[0]["input"][-1].text,
+            "大型结果" * 500,
+        )
+        self.assertEqual(conversation.transcript[-1]["compacted_messages"], 2)
+
+    def test_ineffective_summary_retries_then_blocks_without_mutation(self) -> None:
+        """摘要没有收益时应有限重试，不能提交并反复摘要旧摘要。"""
+        conversation = ConversationContext()
+        conversation.append_user_query("检查")
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="旧内容" * 100)],
+            completes_round=True,
+        )
+        active_before = list(conversation.active_messages)
+        client = FakeClient(
+            SimpleNamespace(
+                output_text=f"<summary>{'更长摘要' * 200}</summary>",
+                usage=None,
+            )
+        )
+
+        events, outcome = drain_generator(
+            compact_context_if_needed(
+                conversation,
+                client,
+                "fake",
+                "系统提示词",
+                [],
+                ContextLimits(
+                    context_window_tokens=20,
+                    reserved_output_tokens=1,
+                    safety_margin_tokens=1,
+                    recent_context_tokens=5,
+                    summary_output_tokens=1_000,
+                    min_compaction_savings_tokens=10,
+                    min_compaction_savings_ratio=0.1,
+                    max_compaction_attempts=2,
+                ),
+            )
+        )
+
+        self.assertEqual(outcome.status, "blocked")
+        self.assertEqual(len(client.responses.calls), 2)
+        self.assertIsInstance(events[-1], ContextCompactionFailedEvent)
+        self.assertEqual(conversation.active_messages, active_before)
+        self.assertEqual(conversation.compaction_count, 0)
 
 
 if __name__ == "__main__":

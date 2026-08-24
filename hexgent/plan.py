@@ -4,8 +4,17 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 
-PlanStepStatus = Literal["pending", "in_progress", "completed"]
-PlanStatus = Literal["pending", "in_progress", "completed", "blocked"]
+PlanStepStatus = Literal[
+    "pending",  # 步骤尚未开始执行。
+    "in_progress",  # 步骤正在执行，且同一 Plan 中只能有一个进行中步骤。
+    "completed",  # 步骤已经完成。
+]
+PlanStatus = Literal[
+    "pending",  # Plan 已创建，但尚未进入执行状态。
+    "in_progress",  # Plan 正在按步骤执行。
+    "completed",  # Plan 的全部目标已经完成。
+    "blocked",  # Plan 因明确阻塞原因无法继续执行。
+]
 
 
 @dataclass(frozen=True)

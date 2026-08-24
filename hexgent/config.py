@@ -150,6 +150,10 @@ def _validate_relationships(config: HexgentConfig) -> None:
         raise ConfigError(
             "[context].recent_context_tokens 必须小于主动压缩阈值"
         )
+    if not 0 < context.min_compaction_savings_ratio <= 1:
+        raise ConfigError(
+            "[context].min_compaction_savings_ratio 必须大于 0 且小于或等于 1"
+        )
     if (
         config.tool_result.preview_characters
         > config.tool_result.max_inline_characters

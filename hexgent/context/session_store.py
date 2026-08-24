@@ -22,7 +22,13 @@ class ToolResultLimits:
     max_inline_characters: int = 50_000
 
     # 大结果落盘后继续向模型展示的开头预览字符数。
-    preview_characters: int = 2_000
+    preview_characters: int = 500
+
+    # 同一工具批次允许完整内联到模型上下文的结果 Token 总量。
+    max_batch_inline_tokens: int = 8_000
+
+    # 同一工具批次所有外置结果允许保留的预览 Token 总量。
+    max_batch_preview_tokens: int = 4_000
 
 
 @dataclass(frozen=True)
@@ -141,10 +147,12 @@ class SessionStore:
         call_id: str,
         tool_name: str,
         output: str,
+        *,
+        force: bool = False,
     ) -> PersistedToolResult | None:
         """在结果超过内联预算时保存完整内容并返回模型可见引用。"""
         limits = self.tool_result_limits
-        if len(output) <= limits.max_inline_characters:
+        if not force and len(output) <= limits.max_inline_characters:
             return None
 
         self.tool_results_dir.mkdir(parents=True, exist_ok=True)

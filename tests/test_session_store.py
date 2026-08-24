@@ -170,5 +170,54 @@ class SessionStoreTest(unittest.TestCase):
             ],
         )
 
+    def test_batch_budget_persists_largest_inline_results(self) -> None:
+        """多个小结果合计超限时应从最大结果开始外置。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = SessionStore(
+                root,
+                session_id="session-batch-budget",
+                tool_result_limits=ToolResultLimits(
+                    max_inline_characters=1_000,
+                    preview_characters=20,
+                    max_batch_inline_tokens=15,
+                    max_batch_preview_tokens=10,
+                ),
+            )
+            context = ToolExecutionContext(InMemoryPlanStore(), root)
+            tool_calls = [
+                SimpleNamespace(
+                    call_id=f"call-{index}",
+                    name="read_file",
+                    arguments=f'{{"path":"{index}.txt"}}',
+                )
+                for index in range(1, 4)
+            ]
+            results = [
+                ToolExecutionResult("success", "A" * 80, False),
+                ToolExecutionResult("success", "B" * 60, False),
+                ToolExecutionResult("success", "C" * 20, False),
+            ]
+
+            with patch.object(
+                tool_execution_module,
+                "execute_tool_call",
+                side_effect=results,
+            ):
+                _, batch = drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        tool_calls,
+                        context=context,
+                        user_confirmation=lambda _tool, _message: "allow",
+                        remaining_tool_calls=3,
+                        deadline=monotonic() + 10,
+                        session_store=store,
+                    )
+                )
+
+        self.assertIn("<persisted-output", batch.outputs[0]["output"])
+        self.assertIn("<persisted-output", batch.outputs[1]["output"])
+        self.assertEqual(batch.outputs[2]["output"], "C" * 20)
+
 if __name__ == "__main__":
     unittest.main()

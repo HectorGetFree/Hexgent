@@ -433,10 +433,12 @@ class AgentLoopLimitsTest(unittest.TestCase):
             reserved_output_tokens=1,
             safety_margin_tokens=1,
             recent_context_tokens=100,
+            min_compaction_savings_tokens=1,
+            min_compaction_savings_ratio=0.01,
         )
         client = FakeClient(
             [
-                make_response([], "较早会话已经完成初步检查。"),
+                make_response([], "<summary>较早会话已经完成初步检查。</summary>"),
                 make_response([], "继续完成最新问题"),
             ]
         )

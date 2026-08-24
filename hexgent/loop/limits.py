@@ -10,10 +10,10 @@ if TYPE_CHECKING:
 
 
 LoopStopReason = Literal[
-    "max_model_rounds",
-    "max_tool_calls",
-    "max_total_tokens",
-    "max_elapsed_seconds",
+    "max_model_rounds",  # 正常模型调用轮数达到上限。
+    "max_tool_calls",  # 实际计入预算的工具调用数量达到上限。
+    "max_total_tokens",  # 完整模型响应累计 Token 达到上限。
+    "max_elapsed_seconds",  # 本次 Agent Run 的总执行时间达到上限。
 ]
 
 

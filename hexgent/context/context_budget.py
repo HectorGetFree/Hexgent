@@ -17,13 +17,22 @@ class ContextLimits:
     safety_margin_tokens: int = 8_000
 
     # 单次上下文摘要允许生成的最大 Token 数量。
-    summary_output_tokens: int = 4_000
+    summary_output_tokens: int = 2_000
 
     # 压缩后尽量原样保留的最近消息 Token 数量。
     recent_context_tokens: int = 24_000
 
     # 同一会话允许连续发生的上下文压缩失败次数。
     max_compaction_attempts: int = 2
+
+    # 一次压缩至少应减少的绝对估算 Token 数量。
+    min_compaction_savings_tokens: int = 2_000
+
+    # 一次压缩至少应减少的估算 Token 比例。
+    min_compaction_savings_ratio: float = 0.1
+
+    # 连续压缩流程最多允许接受的部分有效压缩次数。
+    max_partial_compactions: int = 1
 
     @property
     def compaction_threshold_tokens(self) -> int:
