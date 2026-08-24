@@ -69,7 +69,9 @@ def _select_cut_index(
         if 0 < boundary < len(conversation.active_messages)
     ]
     for boundary in eligible_boundaries:
-        recent_messages = conversation.active_messages[boundary:]
+        recent_messages = conversation.materialize_messages(
+            conversation.active_messages[boundary:]
+        )
         if estimate_value_tokens(recent_messages) <= recent_context_tokens:
             return boundary
     return eligible_boundaries[-1] if eligible_boundaries else None
@@ -105,7 +107,7 @@ def compact_context_if_needed(
     # 1. 估算包含运行时指令和工具定义的完整请求大小。
     before_tokens = estimate_request_tokens(
         instructions,
-        conversation.active_messages,
+        conversation.model_messages(),
         tools,
     )
     if before_tokens < limits.compaction_threshold_tokens:
@@ -144,7 +146,9 @@ def compact_context_if_needed(
         stream = client.responses.create(
             model=model,
             instructions=COMPACTION_INSTRUCTIONS,
-            input=conversation.active_messages[:cut_index],
+            input=conversation.materialize_messages(
+                conversation.active_messages[:cut_index]
+            ),
             max_output_tokens=limits.summary_output_tokens,
             stream=True,
         )
@@ -170,7 +174,7 @@ def compact_context_if_needed(
     conversation.apply_compaction(cut_index, summary)
     after_tokens = estimate_request_tokens(
         instructions,
-        conversation.active_messages,
+        conversation.model_messages(),
         tools,
     )
     yield ContextCompactionFinishedEvent(before_tokens, after_tokens)

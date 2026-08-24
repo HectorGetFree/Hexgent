@@ -6,7 +6,7 @@ import unittest
 from hexgent.context.compaction import compact_context_if_needed
 from hexgent.utils.token_estimator import estimate_request_tokens
 from hexgent.context.context_budget import ContextLimits
-from hexgent.context.context import ConversationContext
+from hexgent.context.context import ConversationContext, UserQuery
 from hexgent.events import (
     ContextCompactionFailedEvent,
     ContextCompactionFinishedEvent,
@@ -85,12 +85,55 @@ class ContextCompactionTest(unittest.TestCase):
         self.assertEqual(outcome.status, "compacted")
         self.assertIsInstance(events[0], ContextCompactionStartedEvent)
         self.assertIsInstance(events[1], ContextCompactionFinishedEvent)
-        self.assertIn("压缩摘要", conversation.active_messages[0]["content"])
-        self.assertIs(conversation.active_messages[-1], latest_message)
+        self.assertIsInstance(conversation.active_messages[0], UserQuery)
+        self.assertEqual(conversation.active_messages[0].content, "较早的问题")
+        self.assertIn("压缩摘要", conversation.active_messages[1]["content"])
+        self.assertEqual(
+            conversation.active_messages[-1].content,
+            latest_message["content"],
+        )
         self.assertEqual(conversation.transcript[: len(transcript_before)], transcript_before)
         self.assertEqual(conversation.transcript[-1]["type"], "context_compaction_boundary")
         self.assertEqual(outcome.input_tokens, 20)
         self.assertEqual(outcome.output_tokens, 8)
+
+    def test_every_user_query_remains_verbatim_after_compaction(self) -> None:
+        """历史压缩不得改写、删除或摘要任何用户 Query 原文。"""
+        conversation = ConversationContext()
+        first = conversation.append_user_query("第一条 Query，保留原始标点！")
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="第一轮回答" * 100)],
+            completes_round=True,
+        )
+        second = conversation.append_user_query("第二条 Query 也必须保持不变。")
+        client = FakeClient(SimpleNamespace(output_text="历史工作摘要", usage=None))
+
+        _, outcome = drain_generator(
+            compact_context_if_needed(
+                conversation,
+                client,
+                "fake",
+                "系统提示词",
+                [],
+                ContextLimits(
+                    context_window_tokens=10,
+                    reserved_output_tokens=1,
+                    safety_margin_tokens=1,
+                    recent_context_tokens=100,
+                ),
+            )
+        )
+
+        self.assertEqual(outcome.status, "compacted")
+        self.assertEqual(conversation.user_queries, (first, second))
+        self.assertEqual(
+            [
+                message["content"]
+                for message in conversation.model_messages()
+                if isinstance(message, dict) and message.get("role") == "user"
+            ],
+            [first.content, second.content],
+        )
 
     def test_tool_call_and_result_are_sent_to_summary_together(self) -> None:
         """同一完整轮次里的工具调用和结果不能被压缩切点拆开。"""

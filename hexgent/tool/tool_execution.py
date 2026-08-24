@@ -15,6 +15,11 @@ from hexgent.tool.tool_permission import (
     check_permission,
 )
 from hexgent.prompt import TOOLS
+from hexgent.context.session_store import (
+    PersistedToolResult,
+    SessionStore,
+    build_persisted_output_message,
+)
 from .tool_context import ToolExecutionContext
 from .tool_registry import RegisteredTool, get_tool
 
@@ -240,8 +245,9 @@ def execute_tool_batch(
     *,
     context: ToolExecutionContext,
     user_confirmation: UserConfirmation,
-    remaining_tool_calls: int,
-    deadline: float,
+    remaining_tool_calls: int | None,
+    deadline: float | None,
+    session_store: SessionStore | None = None,
 ) -> Generator[AgentEvent, None, ToolBatchResult]:
     """执行完整工具批次，并保证每个调用都有配对结果。"""
     from hexgent.events import (
@@ -257,6 +263,7 @@ def execute_tool_batch(
     limit_message: str | None = None
 
     for tool_call in tool_calls:
+        persisted: PersistedToolResult | None = None
         registered_tool = get_tool(tool_call.name)
         description = (
             registered_tool.describe(tool_call.arguments)
@@ -264,17 +271,40 @@ def execute_tool_batch(
             else f"{tool_call.name}()"
         )
         yield ToolStartedEvent(tool_call.name, tool_call.call_id, description)
+        if session_store is not None:
+            session_store.append_transcript(
+                "tool_execution_started",
+                {
+                    "call_id": tool_call.call_id,
+                    "tool_name": tool_call.name,
+                    "arguments": tool_call.arguments,
+                    "description": description,
+                },
+            )
 
         # 2. 每个工具执行前检查批次额度，耗尽后仍为剩余调用配对结果。
         if limit_message is None:
-            if executed_count >= remaining_tool_calls:
+            if (
+                remaining_tool_calls is not None
+                and executed_count >= remaining_tool_calls
+            ):
                 limit_message = "本轮工具执行次数已达到上限"
-            elif monotonic() >= deadline:
+            elif deadline is not None and monotonic() >= deadline:
                 limit_message = "本轮执行时间已达到上限"
 
         if limit_message is not None:
             outputs.append(_budget_tool_result(tool_call.call_id, limit_message))
             yield ToolFinishedEvent(tool_call.name, tool_call.call_id, "skipped")
+            if session_store is not None:
+                session_store.append_transcript(
+                    "tool_execution_finished",
+                    {
+                        "call_id": tool_call.call_id,
+                        "tool_name": tool_call.name,
+                        "status": "skipped",
+                        "output": limit_message,
+                    },
+                )
             continue
 
         # 3. 调用单工具执行管线并累计实际进入执行阶段的调用数量。
@@ -286,14 +316,44 @@ def execute_tool_batch(
         )
         if result.status in {"success", "error"}:
             executed_count += 1
+        model_output = result.output
+        if session_store is not None:
+            try:
+                persisted = session_store.persist_tool_result(
+                    tool_call.call_id,
+                    tool_call.name,
+                    result.output,
+                )
+                if persisted is not None:
+                    model_output = build_persisted_output_message(persisted)
+            except OSError as error:
+                result = ToolExecutionResult(
+                    "error",
+                    f"错误：工具已经执行，但完整结果持久化失败：{error}",
+                    True,
+                )
+                model_output = result.output
         outputs.append(
             {
                 "type": "function_call_output",
                 "call_id": tool_call.call_id,
-                "output": result.output,
+                "output": model_output,
             }
         )
         yield ToolFinishedEvent(tool_call.name, tool_call.call_id, result.status)
+        if session_store is not None:
+            session_store.append_transcript(
+                "tool_execution_finished",
+                {
+                    "call_id": tool_call.call_id,
+                    "tool_name": tool_call.name,
+                    "status": result.status,
+                    "output": result.output if persisted is None else None,
+                    "persisted_output": (
+                        persisted.relative_path if persisted is not None else None
+                    ),
+                },
+            )
 
         # 4. Plan 工具成功后把存储中已经生效的状态投影给界面层。
         if tool_call.name == "create_plan" and result.status == "success":

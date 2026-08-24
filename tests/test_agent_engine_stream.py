@@ -14,6 +14,7 @@ from hexgent.events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
+from hexgent.context import ConversationContext
 from hexgent.plan import Plan, PlanStep
 
 
@@ -37,6 +38,16 @@ class FakeTerminalIO:
 
 class AgentEngineStreamTest(unittest.TestCase):
     """验证终端不会重复打印已经流式输出的最终回答。"""
+
+    def setUp(self) -> None:
+        """终端展示测试使用纯内存上下文，避免写入真实工作区。"""
+        persistent = patch.object(
+            agent_engine_module.ConversationContext,
+            "persistent",
+            return_value=ConversationContext(),
+        )
+        persistent.start()
+        self.addCleanup(persistent.stop)
 
     def test_final_text_is_not_printed_again_on_run_finished(self) -> None:
         """最终事件只应展示耗时，不应再次输出完整回答。"""

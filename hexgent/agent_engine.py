@@ -1,6 +1,8 @@
 
 """Hexgent 命令行入口。"""
 
+from pathlib import Path
+
 from hexgent.events import (
     ContextCompactionFailedEvent,
     ContextCompactionFinishedEvent,
@@ -14,6 +16,7 @@ from hexgent.events import (
     ToolStartedEvent,
 )
 from .context import ConversationContext
+from .config import load_config
 from .loop.agent_loop import agent_loop
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
@@ -57,12 +60,14 @@ def _print_plan(plan: Plan, title: str) -> None:
         print(f"\033[90m  阻塞原因：{plan.blocked_reason}\033[0m")
 
 
-def main() -> None:
+def main(config_path: Path | None = None) -> None:
     """启动 Hexgent 交互会话。"""
     # 1. 初始化终端输入、对话历史和会话级工具上下文。
     terminal_io = TerminalIO()
-    conversation = ConversationContext()
-    tool_context = ToolExecutionContext(InMemoryPlanStore(), find_workspace_root())
+    workdir = find_workspace_root()
+    config = load_config(workdir, config_path)
+    conversation = ConversationContext.persistent(workdir, config.tool_result)
+    tool_context = ToolExecutionContext(InMemoryPlanStore(), workdir)
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
     print("输入内容后按两次回车或输入 /send 发送消息；exit 或 q 可以结束对话。\n")
@@ -84,7 +89,7 @@ def main() -> None:
         if not normalized_query:
             continue
 
-        conversation.append_message({"role": "user", "content": query})
+        conversation.append_user_query(query)
         print("\033[90m正在处理，请稍候……\033[0m")
 
         # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
@@ -92,6 +97,8 @@ def main() -> None:
         for event in agent_loop(
             conversation,
             context=tool_context,
+            limits=config.loop,
+            context_limits=config.context,
             user_confirmation=terminal_io.request_confirmation,
         ):
             if isinstance(event, TextDeltaEvent):

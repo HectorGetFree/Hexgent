@@ -20,8 +20,8 @@ from hexgent.events import (
 )
 from hexgent.context import ContextLimits, ConversationContext
 from hexgent.utils.token_estimator import estimate_request_tokens
-from hexgent.context.builder import build_context
-from hexgent.loop.limits import LoopLimits
+from hexgent.context.context_builder import build_context
+from hexgent.loop.limits import LoopLimits, check_loop_limit
 from hexgent.loop.loop_state import LoopState
 from hexgent.loop.transitions import Continue, Stop
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
@@ -122,6 +122,23 @@ class AgentLoopLimitsTest(unittest.TestCase):
     def setUp(self) -> None:
         """为每个用例创建独立工具上下文。"""
         self.context = ToolExecutionContext(InMemoryPlanStore(), Path.cwd().resolve())
+
+    def test_config_can_explicitly_disable_cross_round_limits(self) -> None:
+        """压缩测试配置可关闭跨轮次预算，默认配置仍保持保护。"""
+        state = LoopState(
+            messages=[],
+            tool_context=self.context,
+            conversation=ConversationContext(),
+            model_rounds=10_000,
+            tool_calls=10_000,
+            input_tokens=10_000_000,
+        )
+
+        limits = LoopLimits(enforce_run_limits=False)
+
+        self.assertFalse(limits.enforce_run_limits)
+        self.assertIsNone(check_loop_limit(state, limits))
+        self.assertTrue(LoopLimits().enforce_run_limits)
 
     def test_round_limit_reserves_one_finalization_response(self) -> None:
         """正常轮次耗尽后应额外生成一次不带工具的收尾响应。"""
@@ -393,11 +410,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
     def test_context_compaction_is_an_explicit_loop_transition(self) -> None:
         """主动压缩应先构造下一轮 State，再调用主模型完成任务。"""
         conversation = ConversationContext()
-        conversation.append_message(
-            {"role": "user", "content": "较早问题" + "旧内容" * 500}
-        )
+        conversation.append_message({"role": "user", "content": "较早问题"})
         conversation.append_messages(
-            [SimpleNamespace(type="message", text="较早回答" + "历史" * 500)],
+            [SimpleNamespace(type="message", text="较早回答" + "历史" * 1000)],
             completes_round=True,
         )
         conversation.append_message({"role": "user", "content": "最新问题"})

@@ -6,9 +6,6 @@ import subprocess
 from .tool_context import ToolExecutionContext
 
 
-MAX_OUTPUT_LENGTH = 50_000
-
-
 def bash(command: str, context: ToolExecutionContext) -> str:
     """执行 Shell 命令。"""
     try:
@@ -21,7 +18,7 @@ def bash(command: str, context: ToolExecutionContext) -> str:
             timeout=120,
         )
         output = (result.stdout + result.stderr).strip()
-        return output[:MAX_OUTPUT_LENGTH] if output else "（无输出）"
+        return output if output else "（无输出）"
     except subprocess.TimeoutExpired:
         return "错误：命令执行超时（120 秒）"
     except (FileNotFoundError, OSError) as error:
@@ -39,7 +36,7 @@ def _resolve_path(path: str, context: ToolExecutionContext) -> Path:
 def read_file(path: str, context: ToolExecutionContext) -> str:
     """读取 UTF-8 文本文件。"""
     content = _resolve_path(path, context).read_text(encoding="utf-8")
-    return content[:MAX_OUTPUT_LENGTH]
+    return content
 
 
 def write_file(path: str, content: str, context: ToolExecutionContext) -> str:
@@ -82,4 +79,4 @@ def glob(pattern: str, context: ToolExecutionContext) -> str:
     output = "\n".join(str(path) for path in visible_matches)
     if len(matches) > len(visible_matches):
         output += f"\n……另有 {len(matches) - len(visible_matches)} 个匹配项"
-    return output[:MAX_OUTPUT_LENGTH]
+    return output

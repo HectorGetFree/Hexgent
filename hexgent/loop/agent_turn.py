@@ -121,15 +121,18 @@ def run_turn(
     request: dict[str, Any] = {
         "model": model,
         "instructions": instructions,
-        "input": state.messages,
+        "input": state.conversation.model_messages(),
     }
     if state.mode == "working":
-        remaining_tokens = limits.max_total_tokens - state.total_tokens
         request["tools"] = TOOLS
-        request["max_output_tokens"] = max(
-            1,
-            min(limits.max_output_tokens_per_round, remaining_tokens),
-        )
+        if limits.enforce_run_limits:
+            remaining_tokens = limits.max_total_tokens - state.total_tokens
+            request["max_output_tokens"] = max(
+                1,
+                min(limits.max_output_tokens_per_round, remaining_tokens),
+            )
+        else:
+            request["max_output_tokens"] = limits.max_output_tokens_per_round
     else:
         request["max_output_tokens"] = limits.finalization_output_tokens
 
@@ -137,6 +140,14 @@ def run_turn(
     try:
         response = yield from call_model(client, **request)
     except ModelCallError as error:
+        state.conversation.record_runtime_event(
+            "model_response_failed",
+            {
+                "mode": state.mode,
+                "model_round": state.model_rounds + 1,
+                "message": str(error),
+            },
+        )
         yield TextDeltaEvent(f"\n\n错误：{error}")
         return _failure_stop(state, str(error))
 
@@ -145,6 +156,16 @@ def run_turn(
         getattr(response, "usage", None)
     )
     tool_calls = [item for item in response.output if item.type == "function_call"]
+    state.conversation.record_runtime_event(
+        "model_response_completed",
+        {
+            "mode": state.mode,
+            "model_round": state.model_rounds + 1,
+            "usage": getattr(response, "usage", None),
+            "output_text": response.output_text,
+            "tool_call_count": len(tool_calls),
+        },
+    )
     state.conversation.append_messages(
         response.output,
         completes_round=not tool_calls,
@@ -182,8 +203,17 @@ def run_turn(
         tool_calls,
         context=state.tool_context,
         user_confirmation=user_confirmation,
-        remaining_tool_calls=max(0, limits.max_tool_calls - state.tool_calls),
-        deadline=state.started_at + limits.max_elapsed_seconds,
+        remaining_tool_calls=(
+            max(0, limits.max_tool_calls - state.tool_calls)
+            if limits.enforce_run_limits
+            else None
+        ),
+        deadline=(
+            state.started_at + limits.max_elapsed_seconds
+            if limits.enforce_run_limits
+            else None
+        ),
+        session_store=state.conversation.session_store,
     )
     state.conversation.append_messages(batch.outputs, completes_round=True)
     next_state = LoopState(

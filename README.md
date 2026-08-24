@@ -29,10 +29,18 @@ uv sync
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install openai python-dotenv
+pip install .
 ```
 
 ## 配置
+
+普通运行参数保存在项目根目录的 `hexgent.toml`，包括：
+
+- Agent Loop 的模型轮次、工具次数、累计 Token 和总时间预算；
+- 活动上下文窗口、压缩阈值和摘要预算；
+- 大工具结果的内联与预览大小。
+
+配置文件不存在或字段缺失时使用代码默认值。密钥不应写入 TOML，仍然放在 `.env` 中：
 
 在项目根目录创建 `.env` 文件：
 
@@ -53,6 +61,14 @@ MODEL_ID=你的模型_ID
 ```bash
 python -m hexgent
 ```
+
+指定其他运行配置：
+
+```bash
+uv run python -m hexgent --config hexgent.compaction-test.toml
+```
+
+该测试配置会在约 20,000 Token 时主动压缩上下文，并关闭跨轮次累计预算，便于观察完整压缩流程。单次模型输出上限和具体工具自身超时仍然有效。
 
 也可使用兼容入口：
 
@@ -100,6 +116,7 @@ Plan 目前仅保存在进程内存中，程序退出后不会恢复。
 ├── hexgent/
 │   ├── agent_engine.py  # CLI 入口与事件渲染
 │   ├── client.py        # OpenAI 客户端与模型配置
+│   ├── config.py        # TOML 普通运行配置加载与校验
 │   ├── context.py       # 系统提示词与 Plan 上下文
 │   ├── plan.py          # Plan 数据模型与内存存储
 │   ├── prompt.py        # 系统提示词和工具 Schema
@@ -109,6 +126,8 @@ Plan 目前仅保存在进程内存中，程序退出后不会恢复。
 │   └── tool/            # 工具注册、校验、权限和执行管线
 ├── tests/               # 单元测试
 ├── docs/                # 设计文档
+├── hexgent.toml         # 默认运行配置
+├── hexgent.compaction-test.toml # 上下文压缩专项测试配置
 ├── pyproject.toml
 └── main.py
 ```

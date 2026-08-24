@@ -1,0 +1,21 @@
+# 上下文压缩专项测试配置，不建议直接用于发布环境。
+
+[loop]
+# 测试时关闭跨轮次预算，单次模型输出和工具自身超时仍然保留。
+enforce_run_limits = false
+max_output_tokens_per_round = 8000
+max_plan_completion_nudges = 1
+
+[context]
+# 在约 20,000 Token 时主动压缩，便于在小型项目中观察压缩过程。
+context_window_tokens = 32000
+reserved_output_tokens = 8000
+safety_margin_tokens = 4000
+summary_output_tokens = 4000
+recent_context_tokens = 8000
+max_compaction_attempts = 2
+
+[tool_result]
+max_inline_characters = 50000
+preview_characters = 2000
+

@@ -42,6 +42,10 @@ def agent_loop(
         conversation=conversation,
     )
     active_context_limits = context_limits or ContextLimits()
+    conversation.record_runtime_event(
+        "agent_run_started",
+        {"limits_enabled": loop_limits.enforce_run_limits},
+    )
 
     while True:
         # 2. 每轮只产生 Continue 或 Stop，yield 事件不参与控制流判断。
@@ -58,5 +62,14 @@ def agent_loop(
             continue
 
         # 3. Stop 是 Agent Loop 的唯一正常出口。
+        conversation.record_runtime_event(
+            "agent_run_finished",
+            {
+                "status": turn_output.terminal.status,
+                "stop_reason": turn_output.terminal.stop_reason,
+                "elapsed_seconds": turn_output.terminal.elapsed_seconds,
+                "output_text": turn_output.terminal.output_text,
+            },
+        )
         yield RunFinishedEvent(turn_output.terminal)
         return

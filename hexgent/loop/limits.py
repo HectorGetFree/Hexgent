@@ -42,12 +42,16 @@ class LoopLimits:
     # 活动 Plan 在模型停止执行后允许发送的继续执行提醒次数。
     max_plan_completion_nudges: int = 1
 
+    # 是否启用模型轮次、工具次数、累计 Token 和总运行时间限制。
+    enforce_run_limits: bool = True
 
 def check_loop_limit(
     state: LoopState,
     limits: LoopLimits,
 ) -> LoopStopReason | None:
     """在正常模型调用入口检查全局执行预算。"""
+    if not limits.enforce_run_limits:
+        return None
     if state.model_rounds >= limits.max_model_rounds:
         return "max_model_rounds"
     if state.tool_calls >= limits.max_tool_calls:
