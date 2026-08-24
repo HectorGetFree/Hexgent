@@ -55,6 +55,7 @@ def _continue_with_finalization(
         input_tokens=state.input_tokens,
         output_tokens=state.output_tokens,
         plan_completion_nudges=state.plan_completion_nudges,
+        reactive_compaction_attempted=state.reactive_compaction_attempted,
         mode="finalizing",
         transition="budget_finalization",
         started_at=state.started_at,
@@ -136,22 +137,66 @@ def run_turn(
     else:
         request["max_output_tokens"] = limits.finalization_output_tokens
 
-    # 5. 模型调用必须产生完整响应，否则直接形成 Error Terminal。
+    # 5. 模型调用必须产生完整响应；上下文过长只允许应急压缩后重试一次。
     try:
         response = yield from call_model(client, **request)
     except ModelCallError as error:
+        can_recover = (
+            error.reason == "prompt_too_long"
+            and not state.reactive_compaction_attempted
+        )
         state.conversation.record_runtime_event(
             "model_response_failed",
             {
                 "mode": state.mode,
                 "model_round": state.model_rounds + 1,
                 "message": str(error),
+                "reason": error.reason,
+                "recoverable": can_recover,
             },
         )
+
+        # 6. 估算遗漏导致 prompt_too_long 时，使用更小近期预算强制压缩。
+        if can_recover:
+            reactive_limits = replace(
+                active_context_limits,
+                recent_context_tokens=(
+                    active_context_limits.reactive_recent_context_tokens
+                ),
+            )
+            reactive_compaction = yield from compact_context_if_needed(
+                state.conversation,
+                client,
+                model,
+                instructions,
+                request_tools,
+                reactive_limits,
+                force=True,
+            )
+            if reactive_compaction.status in {"compacted", "partial"}:
+                next_state = replace(
+                    state,
+                    messages=state.conversation.active_messages,
+                    input_tokens=(
+                        state.input_tokens + reactive_compaction.input_tokens
+                    ),
+                    output_tokens=(
+                        state.output_tokens + reactive_compaction.output_tokens
+                    ),
+                    reactive_compaction_attempted=True,
+                    transition="reactive_context_compacted",
+                )
+                return Continue(next_state, "reactive_context_compacted")
+            error = ModelCallError(
+                reactive_compaction.message or "上下文应急压缩失败",
+                "prompt_too_long",
+            )
+
+        # 7. 不可恢复错误或应急重试耗尽后形成明确 Error Terminal。
         yield TextDeltaEvent(f"\n\n错误：{error}")
         return _failure_stop(state, str(error))
 
-    # 6. 完整响应进入历史，并计算下一轮继承的资源用量。
+    # 8. 完整响应进入历史，并计算下一轮继承的资源用量。
     response_input_tokens, response_output_tokens = state.usage_values(
         getattr(response, "usage", None)
     )
@@ -180,7 +225,7 @@ def run_turn(
         output_tokens=output_tokens,
     )
 
-    # 7. 收尾模式收到有效响应后直接形成限制 Terminal。
+    # 9. 收尾模式收到有效响应后直接形成限制 Terminal。
     if state.mode == "finalizing":
         plan = state.tool_context.plan_store.get_plan()
         if plan is not None and plan.status == "completed":
@@ -194,11 +239,11 @@ def run_turn(
             )
         )
 
-    # 8. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
+    # 10. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
     if not tool_calls:
         return review_plan_exit(response_state, limits, response.output_text)
 
-    # 9. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
+    # 11. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
     batch = yield from execute_tool_batch(
         tool_calls,
         context=state.tool_context,
@@ -225,6 +270,7 @@ def run_turn(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         plan_completion_nudges=state.plan_completion_nudges,
+        reactive_compaction_attempted=state.reactive_compaction_attempted,
         mode="working",
         transition="tool_results_ready",
         started_at=state.started_at,

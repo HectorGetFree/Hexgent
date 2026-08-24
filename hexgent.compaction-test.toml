@@ -13,6 +13,7 @@ reserved_output_tokens = 8000
 safety_margin_tokens = 4000
 summary_output_tokens = 2000
 recent_context_tokens = 8000
+reactive_recent_context_tokens = 4000
 max_compaction_attempts = 2
 min_compaction_savings_tokens = 2000
 min_compaction_savings_ratio = 0.1

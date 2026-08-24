@@ -47,6 +47,8 @@ class FakeResponses:
         """记录请求参数并将下一个完整响应转换为事件流。"""
         self.calls.append(arguments)
         response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
         if hasattr(response, "stream_events"):
             return iter(response.stream_events)
         events = [
@@ -470,6 +472,98 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(len(client.responses.calls), 2)
         self.assertNotIn("tools", client.responses.calls[0])
         self.assertIn("tools", client.responses.calls[1])
+        self.assertEqual(conversation.compaction_count, 1)
+
+    def test_prompt_too_long_triggers_one_reactive_compaction_retry(self) -> None:
+        """API 拒绝过长请求时应强制压缩，并显式重试主模型一次。"""
+        conversation = ConversationContext()
+        conversation.append_user_query("继续检查项目")
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="历史内容" * 500)],
+            completes_round=True,
+        )
+        client = FakeClient(
+            [
+                RuntimeError("prompt_too_long"),
+                make_response([], "<summary>已保留继续检查所需信息。</summary>"),
+                make_response([], "应急压缩后完成"),
+            ]
+        )
+        context_limits = ContextLimits(
+            context_window_tokens=100_000,
+            reserved_output_tokens=1,
+            safety_margin_tokens=1,
+            recent_context_tokens=100,
+            reactive_recent_context_tokens=10,
+            min_compaction_savings_tokens=1,
+            min_compaction_savings_ratio=0.01,
+        )
+
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(turn_module, "get_model", return_value="fake"),
+        ):
+            events, result = run_agent(
+                conversation,
+                self.context,
+                context_limits=context_limits,
+            )
+
+        transitions = [
+            event.reason
+            for event in events
+            if isinstance(event, LoopTransitionEvent)
+        ]
+        self.assertEqual(transitions, ["reactive_context_compacted"])
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(result.output_text, "应急压缩后完成")
+        self.assertEqual(len(client.responses.calls), 3)
+        self.assertEqual(conversation.compaction_count, 1)
+
+    def test_repeated_prompt_too_long_stops_without_second_reactive_retry(self) -> None:
+        """应急压缩后的主模型重试再次过长时必须明确失败。"""
+        conversation = ConversationContext()
+        conversation.append_user_query("继续检查项目")
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="历史内容" * 500)],
+            completes_round=True,
+        )
+        client = FakeClient(
+            [
+                RuntimeError("context_length_exceeded"),
+                make_response([], "<summary>已压缩历史。</summary>"),
+                RuntimeError("prompt_too_long"),
+            ]
+        )
+        context_limits = ContextLimits(
+            context_window_tokens=100_000,
+            reserved_output_tokens=1,
+            safety_margin_tokens=1,
+            recent_context_tokens=100,
+            reactive_recent_context_tokens=10,
+            min_compaction_savings_tokens=1,
+            min_compaction_savings_ratio=0.01,
+        )
+
+        with (
+            patch.object(agent_loop_module, "get_client", return_value=client),
+            patch.object(turn_module, "get_model", return_value="fake"),
+        ):
+            events, result = run_agent(
+                conversation,
+                self.context,
+                context_limits=context_limits,
+            )
+
+        transitions = [
+            event.reason
+            for event in events
+            if isinstance(event, LoopTransitionEvent)
+        ]
+        self.assertEqual(transitions, ["reactive_context_compacted"])
+        self.assertEqual(result.status, "failed")
+        self.assertIn("prompt_too_long", result.output_text)
+        self.assertEqual(len(client.responses.calls), 3)
         self.assertEqual(conversation.compaction_count, 1)
 
     def test_tool_events_wrap_execution_after_completed_response(self) -> None:

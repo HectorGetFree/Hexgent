@@ -22,6 +22,9 @@ class ContextLimits:
     # 压缩后尽量原样保留的最近消息 Token 数量。
     recent_context_tokens: int = 24_000
 
+    # API 拒绝过长请求后，应急压缩尽量原样保留的最近消息 Token 数量。
+    reactive_recent_context_tokens: int = 8_000
+
     # 同一会话允许连续发生的上下文压缩失败次数。
     max_compaction_attempts: int = 2
 

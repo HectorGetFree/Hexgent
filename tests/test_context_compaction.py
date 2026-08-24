@@ -311,6 +311,13 @@ class ContextCompactionTest(unittest.TestCase):
         self.assertEqual(conversation.active_messages, active_before)
         self.assertEqual(conversation.compaction_count, 0)
 
+    def test_summary_prompt_does_not_describe_compaction_as_task_interruption(self) -> None:
+        """摘要提示必须明确压缩是内部过程，不能误导后续主模型。"""
+        from hexgent.context.compaction import COMPACTION_INSTRUCTIONS
+
+        self.assertIn("主 Agent 会自动恢复原任务", COMPACTION_INSTRUCTIONS)
+        self.assertIn("不要把摘要生成描述成任务中断", COMPACTION_INSTRUCTIONS)
+
 
 if __name__ == "__main__":
     unittest.main()

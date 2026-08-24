@@ -30,6 +30,7 @@ CRITICAL：只输出文本，不得调用任何工具，不得生成新的工具
 错误与恢复：
 </summary>
 只保留继续执行所必需的事实。不要复制完整工具输出、工具协议、文件全文、旧最终报告或过期 Plan 快照。
+不要把摘要生成描述成任务中断、执行权限受限或 Agent 无法继续；摘要完成后主 Agent 会自动恢复原任务。
 REMINDER：只允许输出 <summary>...</summary> 文本，不得调用工具。"""
 
 CompactionStatus = Literal[
@@ -149,6 +150,8 @@ def compact_context_if_needed(
     instructions: str,
     tools: list[dict[str, Any]],
     limits: ContextLimits,
+    *,
+    force: bool = False,
 ) -> Generator[AgentEvent, None, CompactionOutcome]:
     """在主模型调用前检查容量，并在需要时压缩较早的完整轮次。"""
     # 1. 估算包含运行时指令和工具定义的完整请求大小。
@@ -157,7 +160,7 @@ def compact_context_if_needed(
         conversation.model_messages(),
         tools,
     )
-    if before_tokens < limits.compaction_threshold_tokens:
+    if not force and before_tokens < limits.compaction_threshold_tokens:
         return CompactionOutcome("not_needed", before_tokens, before_tokens)
 
     # 2. 连续失败达到上限时停止重复调用摘要模型。

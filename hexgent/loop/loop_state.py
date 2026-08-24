@@ -17,6 +17,7 @@ ContinueReason = Literal[
     "tool_results_ready",  # 工具批次结果已回填，继续下一轮模型调用。
     "plan_continuation",  # Plan 仍在执行中，提醒模型继续推进或更新状态。
     "context_compacted",  # 活动上下文已压缩，使用新上下文重试当前轮次。
+    "reactive_context_compacted",  # API 拒绝过长请求后，应急压缩并重试一次。
     "budget_finalization",  # 命中循环预算，进入禁用工具的收尾轮次。
 ]
 
@@ -48,6 +49,9 @@ class LoopState:
 
     # Plan 未完成时已经发送的继续执行提醒次数。
     plan_completion_nudges: int = 0
+
+    # 本次 Agent Run 是否已经因 prompt_too_long 执行过一次应急压缩。
+    reactive_compaction_attempted: bool = False
 
     # working 表示正常工具循环，finalizing 表示无工具收尾轮。
     mode: LoopMode = "working"

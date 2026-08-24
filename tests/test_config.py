@@ -43,6 +43,7 @@ preview_characters = 1000
         self.assertEqual(config.loop.max_model_rounds, 100)
         self.assertEqual(config.context.context_window_tokens, 32_000)
         self.assertEqual(config.context.reserved_output_tokens, 8_000)
+        self.assertEqual(config.context.reactive_recent_context_tokens, 8_000)
         self.assertEqual(config.tool_result.preview_characters, 1_000)
 
     def test_unknown_or_invalid_fields_are_rejected(self) -> None:
@@ -55,6 +56,11 @@ preview_characters = 1000
                 "[context]\ncontext_window_tokens = 10000\n"
                 "reserved_output_tokens = 8000\nsafety_margin_tokens = 4000",
                 "必须小于上下文窗口",
+            ),
+            (
+                "[context]\nrecent_context_tokens = 4000\n"
+                "reactive_recent_context_tokens = 5000",
+                "不能大于 recent_context_tokens",
             ),
         )
         for content, expected_message in cases:
