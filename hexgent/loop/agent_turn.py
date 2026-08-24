@@ -107,6 +107,7 @@ def run_turn(
         active_context_limits,
     )
     if compaction.status in {"compacted", "partial"}:
+        state.tool_context.clear_read_file_cache()
         next_state = replace(
             state,
             messages=state.conversation.active_messages,
@@ -174,6 +175,7 @@ def run_turn(
                 force=True,
             )
             if reactive_compaction.status in {"compacted", "partial"}:
+                state.tool_context.clear_read_file_cache()
                 next_state = replace(
                     state,
                     messages=state.conversation.active_messages,

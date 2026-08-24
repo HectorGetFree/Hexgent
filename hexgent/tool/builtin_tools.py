@@ -1,9 +1,10 @@
 """智能体可以调用的本地工具。"""
 
+from hashlib import sha256
 from pathlib import Path
 import subprocess
 
-from .tool_context import ToolExecutionContext
+from .tool_context import ReadFileCacheEntry, ToolExecutionContext
 
 
 def bash(command: str, context: ToolExecutionContext) -> str:
@@ -34,8 +35,24 @@ def _resolve_path(path: str, context: ToolExecutionContext) -> Path:
 
 
 def read_file(path: str, context: ToolExecutionContext) -> str:
-    """读取 UTF-8 文本文件。"""
-    content = _resolve_path(path, context).read_text(encoding="utf-8")
+    """读取 UTF-8 文本文件，内容未变化时返回轻量占位结果。"""
+    # 1. 读取原始字节并计算内容 Hash，避免依赖修改时间和文件大小。
+    target = _resolve_path(path, context)
+    raw_content = target.read_bytes()
+    content_hash = sha256(raw_content).hexdigest()
+
+    # 2. 当前活动上下文已经见过同一内容时，不再重复返回完整正文。
+    cached = context.read_file_cache.get(target)
+    if cached is not None and cached.content_hash == content_hash:
+        return (
+            f'<file-unchanged path="{target}" sha256="{content_hash}">\n'
+            "文件内容与本会话上次读取时一致，未重复返回完整内容。\n"
+            "</file-unchanged>"
+        )
+
+    # 3. 只有 UTF-8 解码成功后才更新缓存，保证缓存代表成功返回的正文。
+    content = raw_content.decode("utf-8")
+    context.read_file_cache[target] = ReadFileCacheEntry(content_hash)
     return content
 
 

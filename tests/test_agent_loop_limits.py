@@ -26,6 +26,7 @@ from hexgent.loop.loop_state import LoopState
 from hexgent.loop.transitions import Continue, Stop
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import ToolExecutionContext
+from hexgent.tool.tool_context import ReadFileCacheEntry
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
 from hexgent.prompt import TOOLS
@@ -444,6 +445,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
                 make_response([], "继续完成最新问题"),
             ]
         )
+        self.context.read_file_cache[Path("/tmp/already-read.py")] = (
+            ReadFileCacheEntry("cached-hash")
+        )
 
         with (
             patch.object(agent_loop_module, "get_client", return_value=client),
@@ -473,6 +477,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertNotIn("tools", client.responses.calls[0])
         self.assertIn("tools", client.responses.calls[1])
         self.assertEqual(conversation.compaction_count, 1)
+        self.assertEqual(self.context.read_file_cache, {})
 
     def test_prompt_too_long_triggers_one_reactive_compaction_retry(self) -> None:
         """API 拒绝过长请求时应强制压缩，并显式重试主模型一次。"""

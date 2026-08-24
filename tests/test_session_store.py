@@ -18,6 +18,7 @@ from hexgent.context.session_store import (
 )
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
+from hexgent.tool.tool_context import ReadFileCacheEntry
 from hexgent.tool.tool_execution import ToolExecutionResult
 
 
@@ -107,6 +108,9 @@ class SessionStoreTest(unittest.TestCase):
                 ),
             )
             context = ToolExecutionContext(InMemoryPlanStore(), root)
+            context.read_file_cache[root / "example.txt"] = ReadFileCacheEntry(
+                "cached-hash"
+            )
             tool_call = SimpleNamespace(
                 call_id="call-1",
                 name="bash",
@@ -149,6 +153,7 @@ class SessionStoreTest(unittest.TestCase):
                 records[-1]["payload"]["persisted_output"],
                 ".hexgent/sessions/session-batch/tool-results/bash_example__call-1.txt",
             )
+            self.assertEqual(context.read_file_cache, {})
 
     def test_runtime_events_are_written_in_order(self) -> None:
         """Transcript 应保留不进入模型上下文的完整运行时事件顺序。"""
@@ -199,6 +204,9 @@ class SessionStoreTest(unittest.TestCase):
                 ),
             )
             context = ToolExecutionContext(InMemoryPlanStore(), root)
+            context.read_file_cache[root / "example.txt"] = ReadFileCacheEntry(
+                "cached-hash"
+            )
             tool_calls = [
                 SimpleNamespace(
                     call_id=f"call-{index}",
@@ -232,6 +240,7 @@ class SessionStoreTest(unittest.TestCase):
         self.assertIn("<persisted-output", batch.outputs[0]["output"])
         self.assertIn("<persisted-output", batch.outputs[1]["output"])
         self.assertEqual(batch.outputs[2]["output"], "C" * 20)
+        self.assertEqual(context.read_file_cache, {})
 
 if __name__ == "__main__":
     unittest.main()

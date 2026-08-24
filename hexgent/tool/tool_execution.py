@@ -268,6 +268,7 @@ def _apply_batch_result_budget(
     inline_results: list[tuple[int, str, str, str, str]],
     persisted_results: dict[int, PersistedToolResult],
     session_store: SessionStore | None,
+    context: ToolExecutionContext,
 ) -> None:
     """按批次总预算从最大结果开始外置，并限制所有预览的总量。"""
     if session_store is None:
@@ -294,6 +295,7 @@ def _apply_batch_result_budget(
         if persisted is None:
             raise RuntimeError("工具结果批次预算要求外置，但未生成持久化结果")
         persisted_results[output_index] = persisted
+        context.clear_read_file_cache()
         total_inline_tokens -= estimate_value_tokens(raw_output)
 
     # 2. 在所有外置结果之间平均分配总预览预算，并更新模型可见结果。
@@ -398,8 +400,10 @@ def execute_tool_batch(
                     description=description,
                 )
                 if persisted is not None:
+                    context.clear_read_file_cache()
                     model_output = build_persisted_output_message(persisted)
             except OSError as error:
+                context.clear_read_file_cache()
                 result = ToolExecutionResult(
                     "error",
                     f"错误：工具已经执行，但完整结果持久化失败：{error}",
@@ -458,8 +462,10 @@ def execute_tool_batch(
             inline_results,
             persisted_results,
             session_store,
+            context,
         )
     except OSError as error:
+        context.clear_read_file_cache()
         for output in outputs:
             output["output"] = f"错误：工具结果批次持久化失败：{error}"
 
