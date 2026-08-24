@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 
 SESSION_QUERY_SLUG_MAX_LENGTH = 48
+TOOL_RESULT_SLUG_MAX_LENGTH = 80
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
@@ -149,6 +150,7 @@ class SessionStore:
         output: str,
         *,
         force: bool = False,
+        description: str | None = None,
     ) -> PersistedToolResult | None:
         """在结果超过内联预算时保存完整内容并返回模型可见引用。"""
         limits = self.tool_result_limits
@@ -156,8 +158,8 @@ class SessionStore:
             return None
 
         self.tool_results_dir.mkdir(parents=True, exist_ok=True)
-        safe_call_id = re.sub(r"[^a-zA-Z0-9._-]", "_", call_id)
-        result_path = self.tool_results_dir / f"{safe_call_id}.txt"
+        filename = _build_tool_result_filename(call_id, tool_name, description)
+        result_path = self.tool_results_dir / filename
         result_path.write_text(output, encoding="utf-8")
         relative_path = str(result_path.relative_to(self.workdir))
         persisted = PersistedToolResult(
@@ -183,6 +185,27 @@ def _build_query_slug(query: str) -> str:
     safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", normalized)
     safe = safe.strip(" ._")[:SESSION_QUERY_SLUG_MAX_LENGTH].strip(" ._")
     return safe or "空白请求"
+
+
+def _build_tool_result_filename(
+    call_id: str,
+    tool_name: str,
+    description: str | None,
+) -> str:
+    """构造包含工具调用语义和完整 call_id 的安全结果文件名。"""
+    # 1. 优先使用工具自身生成的调用说明，缺失时退回工具名称。
+    readable_source = description or tool_name or "tool_result"
+    readable_source = readable_source.encode("utf-8", errors="replace").decode("utf-8")
+    normalized = re.sub(r"\s+", "_", readable_source).strip()
+    readable_slug = re.sub(r"[^\w.-]", "_", normalized, flags=re.UNICODE)
+    readable_slug = re.sub(r"_+", "_", readable_slug)
+    readable_slug = readable_slug.strip(" ._")[:TOOL_RESULT_SLUG_MAX_LENGTH]
+    readable_slug = readable_slug.rstrip(" ._") or "tool_result"
+
+    # 2. 完整保留经过过滤的 call_id，继续承担唯一定位和结果配对职责。
+    safe_call_id = re.sub(r"[^a-zA-Z0-9._-]", "_", call_id).strip(" ._")
+    safe_call_id = safe_call_id or uuid4().hex
+    return f"{readable_slug}__{safe_call_id}.txt"
 
 
 def _beijing_now() -> datetime:

@@ -76,11 +76,20 @@ class SessionStoreTest(unittest.TestCase):
                 ),
             )
             output = "0123456789完整内容"
-            persisted = store.persist_tool_result("call/1", "bash", output)
+            persisted = store.persist_tool_result(
+                "call/1",
+                "read_file",
+                output,
+                description="read_file(tests/test_agent_loop_limits.py)",
+            )
             message = build_persisted_output_message(persisted)
             result_path = root / persisted.relative_path
 
             self.assertEqual(result_path.read_text(encoding="utf-8"), output)
+            self.assertEqual(
+                result_path.name,
+                "read_file_tests_test_agent_loop_limits.py__call_1.txt",
+            )
             self.assertIn("path=", message)
             self.assertIn("01234", message)
             self.assertNotIn(output, message)
@@ -123,7 +132,12 @@ class SessionStoreTest(unittest.TestCase):
             output = batch.outputs[0]
             self.assertEqual(output["call_id"], "call-1")
             self.assertIn("<persisted-output", output["output"])
-            self.assertTrue((store.tool_results_dir / "call-1.txt").exists())
+            result_paths = list(store.tool_results_dir.glob("*.txt"))
+            self.assertEqual(len(result_paths), 1)
+            self.assertEqual(
+                result_paths[0].name,
+                "bash_example__call-1.txt",
+            )
             records = [
                 json.loads(line)
                 for line in store.transcript_path.read_text(encoding="utf-8").splitlines()
@@ -133,7 +147,7 @@ class SessionStoreTest(unittest.TestCase):
             self.assertIsNone(records[-1]["payload"]["output"])
             self.assertEqual(
                 records[-1]["payload"]["persisted_output"],
-                ".hexgent/sessions/session-batch/tool-results/call-1.txt",
+                ".hexgent/sessions/session-batch/tool-results/bash_example__call-1.txt",
             )
 
     def test_runtime_events_are_written_in_order(self) -> None:

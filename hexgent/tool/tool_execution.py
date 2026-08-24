@@ -265,7 +265,7 @@ def _truncate_to_token_budget(text: str, token_budget: int) -> str:
 
 def _apply_batch_result_budget(
     outputs: list[dict[str, str]],
-    inline_results: list[tuple[int, str, str, str]],
+    inline_results: list[tuple[int, str, str, str, str]],
     persisted_results: dict[int, PersistedToolResult],
     session_store: SessionStore | None,
 ) -> None:
@@ -278,17 +278,18 @@ def _apply_batch_result_budget(
     remaining = list(inline_results)
     total_inline_tokens = sum(
         estimate_value_tokens(output)
-        for _, _, _, output in remaining
+        for _, _, _, output, _ in remaining
     )
     while remaining and total_inline_tokens > limits.max_batch_inline_tokens:
         largest = max(remaining, key=lambda item: estimate_value_tokens(item[3]))
         remaining.remove(largest)
-        output_index, call_id, tool_name, raw_output = largest
+        output_index, call_id, tool_name, raw_output, description = largest
         persisted = session_store.persist_tool_result(
             call_id,
             tool_name,
             raw_output,
             force=True,
+            description=description,
         )
         if persisted is None:
             raise RuntimeError("工具结果批次预算要求外置，但未生成持久化结果")
@@ -328,7 +329,7 @@ def execute_tool_batch(
 
     # 1. 按响应顺序处理工具，持续累计本批次实际执行数量。
     outputs: list[dict[str, str]] = []
-    inline_results: list[tuple[int, str, str, str]] = []
+    inline_results: list[tuple[int, str, str, str, str]] = []
     persisted_results: dict[int, PersistedToolResult] = {}
     executed_count = 0
     limit_message: str | None = None
@@ -394,6 +395,7 @@ def execute_tool_batch(
                     tool_call.call_id,
                     tool_call.name,
                     result.output,
+                    description=description,
                 )
                 if persisted is not None:
                     model_output = build_persisted_output_message(persisted)
@@ -414,7 +416,13 @@ def execute_tool_batch(
         output_index = len(outputs) - 1
         if persisted is None:
             inline_results.append(
-                (output_index, tool_call.call_id, tool_call.name, result.output)
+                (
+                    output_index,
+                    tool_call.call_id,
+                    tool_call.name,
+                    result.output,
+                    description,
+                )
             )
         else:
             persisted_results[output_index] = persisted
