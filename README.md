@@ -121,6 +121,7 @@ Plan 目前仅保存在进程内存中，程序退出后不会恢复。
 │   ├── context.py       # 系统提示词与 Plan 上下文
 │   ├── plan.py          # Plan 数据模型与内存存储
 │   ├── prompt.py        # 系统提示词和工具 Schema
+│   ├── session/         # Session 生命周期、Transcript 与会话工件
 │   ├── terminal_io.py   # 终端输入与权限确认
 │   ├── workspace.py     # 工作区根目录发现
 │   ├── loop/            # Agent 循环与运行限制

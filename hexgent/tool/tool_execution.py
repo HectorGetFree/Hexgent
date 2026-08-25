@@ -16,7 +16,7 @@ from hexgent.tool.tool_permission import (
     check_permission,
 )
 from hexgent.prompt import TOOLS
-from hexgent.context.session_store import (
+from hexgent.session import (
     PersistedToolResult,
     SessionStore,
     build_persisted_output_message,

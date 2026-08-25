@@ -15,11 +15,12 @@ from hexgent.events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
-from .context import ConversationContext
 from .config import load_config
+from .context import ContextManager
 from .loop.agent_loop import agent_loop
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
+from .session import Session
 from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
 from .workspace import find_workspace_root
@@ -67,7 +68,8 @@ def main(config_path: Path | None = None) -> None:
     terminal_io = TerminalIO()
     workdir = find_workspace_root()
     config = load_config(workdir, config_path)
-    conversation = ConversationContext.persistent(workdir, config.tool_result)
+    context_manager = ContextManager()
+    session = Session.persistent(workdir, config.tool_result)
     tool_context = ToolExecutionContext(InMemoryPlanStore(), workdir)
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
@@ -90,17 +92,19 @@ def main(config_path: Path | None = None) -> None:
         if not normalized_query:
             continue
 
-        conversation.append_user_query(query)
+        user_query = context_manager.append_user_query(query)
+        session.record_user_query(user_query)
         print("\033[90m正在处理，请稍候……\033[0m")
 
         # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
         text_is_open = False
         for event in agent_loop(
-            conversation,
+            context_manager,
             context=tool_context,
             limits=config.loop,
             context_limits=config.context,
             user_confirmation=terminal_io.request_confirmation,
+            session=session,
         ):
             if isinstance(event, TextDeltaEvent):
                 if not text_is_open:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any, Literal
 
-from hexgent.context.context import ConversationContext
+from hexgent.context.context_manager import ContextManager
 
 from ..tool.tool_context import ToolExecutionContext
 from .limits import LoopStopReason
@@ -26,14 +26,11 @@ ContinueReason = Literal[
 class LoopState:
     """只保存下一轮模型调用必须继承的数据。"""
 
-    # 下一轮发送给模型的完整消息历史。
-    messages: list[Any]
+    # 跨轮次共享的活动模型上下文与压缩状态。
+    context_manager: ContextManager
 
     # 跨轮次共享的工具上下文，包括工作区和 PlanStore。
     tool_context: ToolExecutionContext
-
-    # 跨用户轮次共享的完整会话记录与活动模型上下文。
-    conversation: ConversationContext | None = None
 
     # 已收到完整响应的正常模型调用次数。
     model_rounds: int = 0
@@ -67,17 +64,17 @@ class LoopState:
 
     def __post_init__(self) -> None:
         """校验工作模式和停止原因之间的状态不变量。"""
-        conversation = self.conversation or ConversationContext.from_messages(
-            self.messages
-        )
-        object.__setattr__(self, "conversation", conversation)
-        object.__setattr__(self, "messages", conversation.active_messages)
         if self.mode == "working" and self.stop_reason is not None:
             raise ValueError("working State 不能包含 stop_reason")
         if self.mode == "finalizing" and self.stop_reason is None:
             raise ValueError("finalizing State 必须包含 stop_reason")
         if self.transition == "budget_finalization" and self.mode != "finalizing":
             raise ValueError("budget_finalization 必须进入 finalizing 模式")
+
+    @property
+    def messages(self) -> list[Any]:
+        """返回下一轮发送给模型的活动消息引用。"""
+        return self.context_manager.active_messages
 
     @property
     def total_tokens(self) -> int:

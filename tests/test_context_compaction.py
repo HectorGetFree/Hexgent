@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 import unittest
 
-from hexgent.context.compaction import compact_context_if_needed
+from hexgent.context.context_compaction import compact_context_if_needed
 from hexgent.utils.token_estimator import estimate_request_tokens
 from hexgent.context.context_budget import ContextLimits
-from hexgent.context.context import ConversationContext, UserQuery
+from hexgent.context.context_manager import ContextManager, UserQuery
 from hexgent.events import (
     ContextCompactionFailedEvent,
     ContextCompactionFinishedEvent,
@@ -49,9 +49,9 @@ def drain_generator(generator):
 class ContextCompactionTest(unittest.TestCase):
     """验证压缩只改变活动上下文，并遵守完整轮次边界。"""
 
-    def test_compaction_preserves_transcript_and_recent_messages(self) -> None:
-        """成功压缩应保留完整记录，并在活动上下文中留下摘要和近期消息。"""
-        conversation = ConversationContext()
+    def test_compaction_returns_boundary_and_preserves_recent_messages(self) -> None:
+        """成功压缩应返回边界记录，并在活动上下文中留下摘要和近期消息。"""
+        conversation = ContextManager()
         conversation.append_message({"role": "user", "content": "较早的问题"})
         conversation.append_messages(
             [SimpleNamespace(type="message", text="较早的回答" * 100)],
@@ -59,7 +59,6 @@ class ContextCompactionTest(unittest.TestCase):
         )
         latest_message = {"role": "user", "content": "最新的问题"}
         conversation.append_message(latest_message)
-        transcript_before = list(conversation.transcript)
         response = SimpleNamespace(
             output_text="<summary>用户先前询问了一个问题，Agent 已经完成回答。</summary>",
             usage=SimpleNamespace(input_tokens=20, output_tokens=8),
@@ -97,14 +96,13 @@ class ContextCompactionTest(unittest.TestCase):
             conversation.active_messages[-1].content,
             latest_message["content"],
         )
-        self.assertEqual(conversation.transcript[: len(transcript_before)], transcript_before)
-        self.assertEqual(conversation.transcript[-1]["type"], "context_compaction_boundary")
+        self.assertEqual(outcome.boundary["type"], "context_compaction_boundary")
         self.assertEqual(outcome.input_tokens, 20)
         self.assertEqual(outcome.output_tokens, 8)
 
-    def test_transcript_keeps_all_queries_but_active_context_keeps_latest(self) -> None:
-        """Transcript 保留全部 Query，活动上下文只强制保留最新 Query。"""
-        conversation = ConversationContext()
+    def test_active_context_keeps_latest_query_after_compaction(self) -> None:
+        """活动上下文压缩后只强制保留最新 Query。"""
+        conversation = ContextManager()
         first = conversation.append_user_query("第一条 Query，保留原始标点！")
         conversation.append_messages(
             [SimpleNamespace(type="message", text="第一轮回答" * 100)],
@@ -134,7 +132,7 @@ class ContextCompactionTest(unittest.TestCase):
         )
 
         self.assertIn(outcome.status, {"compacted", "partial"})
-        self.assertEqual(conversation.user_queries, (first, second))
+        self.assertEqual(conversation.user_queries, (second,))
         self.assertEqual(
             [
                 message["content"]
@@ -143,12 +141,10 @@ class ContextCompactionTest(unittest.TestCase):
             ],
             [second.content],
         )
-        self.assertIn(first.to_message(), conversation.transcript)
-        self.assertIn(second.to_message(), conversation.transcript)
 
     def test_tool_call_and_result_are_sent_to_summary_together(self) -> None:
         """同一完整轮次里的工具调用和结果不能被压缩切点拆开。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_message({"role": "user", "content": "读取文件"})
         tool_call = SimpleNamespace(
             type="function_call",
@@ -193,7 +189,7 @@ class ContextCompactionTest(unittest.TestCase):
 
     def test_no_safe_boundary_reports_failure_without_changing_messages(self) -> None:
         """没有完整轮次边界时不得强行截断活动消息。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_message({"role": "user", "content": "很长的新请求" * 20})
         active_before = list(conversation.active_messages)
         client = FakeClient(SimpleNamespace(output_text="不会调用", usage=None))
@@ -231,7 +227,7 @@ class ContextCompactionTest(unittest.TestCase):
 
     def test_latest_complete_round_can_be_fully_summarized(self) -> None:
         """最近原子轮次过大时应允许使用消息末尾的完整安全边界。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_user_query("检查大型工具批次")
         conversation.append_messages(
             [SimpleNamespace(type="message", text="大型结果" * 500)],
@@ -267,11 +263,11 @@ class ContextCompactionTest(unittest.TestCase):
             client.responses.calls[0]["input"][-1].text,
             "大型结果" * 500,
         )
-        self.assertEqual(conversation.transcript[-1]["compacted_messages"], 2)
+        self.assertEqual(outcome.boundary["compacted_messages"], 2)
 
     def test_ineffective_summary_retries_then_blocks_without_mutation(self) -> None:
         """摘要没有收益时应有限重试，不能提交并反复摘要旧摘要。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_user_query("检查")
         conversation.append_messages(
             [SimpleNamespace(type="message", text="旧内容" * 100)],
@@ -313,7 +309,7 @@ class ContextCompactionTest(unittest.TestCase):
 
     def test_summary_prompt_does_not_describe_compaction_as_task_interruption(self) -> None:
         """摘要提示必须明确压缩是内部过程，不能误导后续主模型。"""
-        from hexgent.context.compaction import COMPACTION_INSTRUCTIONS
+        from hexgent.context.context_compaction import COMPACTION_INSTRUCTIONS
 
         self.assertIn("主 Agent 会自动恢复原任务", COMPACTION_INSTRUCTIONS)
         self.assertIn("不要把摘要生成描述成任务中断", COMPACTION_INSTRUCTIONS)

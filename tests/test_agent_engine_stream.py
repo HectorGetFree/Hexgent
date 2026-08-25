@@ -14,7 +14,8 @@ from hexgent.events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
-from hexgent.context import ConversationContext
+from hexgent.context import ContextManager
+from hexgent.session import Session
 from hexgent.plan import Plan, PlanStep
 
 
@@ -42,9 +43,9 @@ class AgentEngineStreamTest(unittest.TestCase):
     def setUp(self) -> None:
         """终端展示测试使用纯内存上下文，避免写入真实工作区。"""
         persistent = patch.object(
-            agent_engine_module.ConversationContext,
+            agent_engine_module.Session,
             "persistent",
-            return_value=ConversationContext(),
+            return_value=Session(),
         )
         persistent.start()
         self.addCleanup(persistent.stop)

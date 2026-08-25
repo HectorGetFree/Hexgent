@@ -10,7 +10,7 @@ except ModuleNotFoundError:  # Python 3.10 使用兼容实现。
     import tomli as tomllib
 
 from .context.context_budget import ContextLimits
-from .context.session_store import ToolResultLimits
+from .session import ToolResultLimits
 from .loop.limits import LoopLimits
 
 

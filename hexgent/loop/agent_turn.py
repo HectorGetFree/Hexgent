@@ -6,8 +6,9 @@ from typing import Any
 
 from ..client import get_model
 from ..context.context_budget import ContextLimits
-from ..context.compaction import compact_context_if_needed
+from ..context.context_compaction import compact_context_if_needed
 from ..prompt import TOOLS
+from ..session import Session
 from ..tool.tool_execution import UserConfirmation, execute_tool_batch
 from hexgent.context import build_context
 from hexgent.events import (
@@ -43,13 +44,16 @@ def _finalization_message(reason: LoopStopReason) -> dict[str, str]:
 def _continue_with_finalization(
     state: LoopState,
     reason: LoopStopReason,
+    session: Session | None,
 ) -> Continue:
     """构造一次明确进入预算收尾的状态迁移。"""
-    state.conversation.append_message(_finalization_message(reason))
+    message = _finalization_message(reason)
+    state.context_manager.append_message(message)
+    if session is not None:
+        session.record_message(message)
     next_state = LoopState(
-        messages=state.messages,
+        context_manager=state.context_manager,
         tool_context=state.tool_context,
-        conversation=state.conversation,
         model_rounds=state.model_rounds,
         tool_calls=state.tool_calls,
         input_tokens=state.input_tokens,
@@ -82,6 +86,7 @@ def run_turn(
     limits: LoopLimits,
     user_confirmation: UserConfirmation,
     context_limits: ContextLimits | None = None,
+    session: Session | None = None,
 ) -> Generator[AgentEvent, None, TurnOutcome]:
     """执行一个完整轮次，并只返回 Continue 或 Stop。"""
     # 1. 在每个正常轮次的唯一入口统一检查全局预算。
@@ -89,7 +94,7 @@ def run_turn(
         stop_reason = check_loop_limit(state, limits)
         if stop_reason is not None:
             yield LoopLimitReachedEvent(stop_reason)
-            return _continue_with_finalization(state, stop_reason)
+            return _continue_with_finalization(state, stop_reason, session)
 
     # 2. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
@@ -99,7 +104,7 @@ def run_turn(
     # 3. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
     request_tools = TOOLS if state.mode == "working" else []
     compaction = yield from compact_context_if_needed(
-        state.conversation,
+        state.context_manager,
         client,
         model,
         instructions,
@@ -107,10 +112,11 @@ def run_turn(
         active_context_limits,
     )
     if compaction.status in {"compacted", "partial"}:
+        if compaction.boundary is not None and session is not None:
+            session.record_compaction_boundary(compaction.boundary)
         state.tool_context.clear_tool_caches()
         next_state = replace(
             state,
-            messages=state.conversation.active_messages,
             input_tokens=state.input_tokens + compaction.input_tokens,
             output_tokens=state.output_tokens + compaction.output_tokens,
             transition="context_compacted",
@@ -123,7 +129,7 @@ def run_turn(
     request: dict[str, Any] = {
         "model": model,
         "instructions": instructions,
-        "input": state.conversation.model_messages(),
+        "input": state.context_manager.model_messages(),
     }
     if state.mode == "working":
         request["tools"] = TOOLS
@@ -146,16 +152,17 @@ def run_turn(
             error.reason == "prompt_too_long"
             and not state.reactive_compaction_attempted
         )
-        state.conversation.record_runtime_event(
-            "model_response_failed",
-            {
-                "mode": state.mode,
-                "model_round": state.model_rounds + 1,
-                "message": str(error),
-                "reason": error.reason,
-                "recoverable": can_recover,
-            },
-        )
+        if session is not None:
+            session.record_runtime_event(
+                "model_response_failed",
+                {
+                    "mode": state.mode,
+                    "model_round": state.model_rounds + 1,
+                    "message": str(error),
+                    "reason": error.reason,
+                    "recoverable": can_recover,
+                },
+            )
 
         # 6. 估算遗漏导致 prompt_too_long 时，使用更小近期预算强制压缩。
         if can_recover:
@@ -166,7 +173,7 @@ def run_turn(
                 ),
             )
             reactive_compaction = yield from compact_context_if_needed(
-                state.conversation,
+                state.context_manager,
                 client,
                 model,
                 instructions,
@@ -175,10 +182,16 @@ def run_turn(
                 force=True,
             )
             if reactive_compaction.status in {"compacted", "partial"}:
+                if (
+                    reactive_compaction.boundary is not None
+                    and session is not None
+                ):
+                    session.record_compaction_boundary(
+                        reactive_compaction.boundary
+                    )
                 state.tool_context.clear_tool_caches()
                 next_state = replace(
                     state,
-                    messages=state.conversation.active_messages,
                     input_tokens=(
                         state.input_tokens + reactive_compaction.input_tokens
                     ),
@@ -203,20 +216,22 @@ def run_turn(
         getattr(response, "usage", None)
     )
     tool_calls = [item for item in response.output if item.type == "function_call"]
-    state.conversation.record_runtime_event(
-        "model_response_completed",
-        {
-            "mode": state.mode,
-            "model_round": state.model_rounds + 1,
-            "usage": getattr(response, "usage", None),
-            "output_text": response.output_text,
-            "tool_call_count": len(tool_calls),
-        },
+    if session is not None:
+        session.record_runtime_event(
+            "model_response_completed",
+            {
+                "mode": state.mode,
+                "model_round": state.model_rounds + 1,
+                "usage": getattr(response, "usage", None),
+                "output_text": response.output_text,
+                "tool_call_count": len(tool_calls),
+            },
+        )
+    state.context_manager.append_messages(
+        response.output, completes_round=not tool_calls
     )
-    state.conversation.append_messages(
-        response.output,
-        completes_round=not tool_calls,
-    )
+    if session is not None:
+        session.record_messages(response.output)
     model_rounds = state.model_rounds + 1
     input_tokens = state.input_tokens + response_input_tokens
     output_tokens = state.output_tokens + response_output_tokens
@@ -243,7 +258,12 @@ def run_turn(
 
     # 10. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
     if not tool_calls:
-        return review_plan_exit(response_state, limits, response.output_text)
+        return review_plan_exit(
+            response_state,
+            limits,
+            response.output_text,
+            session,
+        )
 
     # 11. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
     batch = yield from execute_tool_batch(
@@ -260,13 +280,14 @@ def run_turn(
             if limits.enforce_run_limits
             else None
         ),
-        session_store=state.conversation.session_store,
+        session_store=session.store if session is not None else None,
     )
-    state.conversation.append_messages(batch.outputs, completes_round=True)
+    state.context_manager.append_messages(batch.outputs, completes_round=True)
+    if session is not None:
+        session.record_messages(batch.outputs)
     next_state = LoopState(
-        messages=state.messages,
+        context_manager=state.context_manager,
         tool_context=state.tool_context,
-        conversation=state.conversation,
         model_rounds=model_rounds,
         tool_calls=state.tool_calls + batch.budgeted_call_count,
         input_tokens=input_tokens,

@@ -2,14 +2,11 @@
 
 from .context_builder import build_context
 from .context_budget import ContextLimits
-from .context import ConversationContext, UserQuery
-from .session_store import SessionStore, ToolResultLimits
+from .context_manager import ContextManager, UserQuery
 
 __all__ = [
-    "ConversationContext",
+    "ContextManager",
     "ContextLimits",
-    "SessionStore",
-    "ToolResultLimits",
     "UserQuery",
     "build_context",
 ]

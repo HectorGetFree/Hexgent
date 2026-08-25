@@ -10,12 +10,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from hexgent.context.context import ConversationContext
-from hexgent.context.session_store import (
+from hexgent.session import (
     SessionStore,
     ToolResultLimits,
     build_persisted_output_message,
 )
+from hexgent.context import ContextManager
+from hexgent.session import Session
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_context import ReadFileCacheEntry
@@ -38,12 +39,28 @@ def drain_generator(generator):
 class SessionStoreTest(unittest.TestCase):
     """验证会话事实和大结果可以从磁盘恢复。"""
 
+    def test_session_does_not_own_context_manager(self) -> None:
+        """Session 与 ContextManager 必须保持平级，不能形成领域包含关系。"""
+        session = Session()
+        context_manager = ContextManager()
+
+        query = context_manager.append_user_query("检查能力边界")
+        session.record_user_query(query)
+
+        self.assertFalse(hasattr(session, "context_manager"))
+        self.assertFalse(hasattr(session, "conversation"))
+        self.assertEqual(context_manager.user_queries, (query,))
+
     def test_user_query_is_appended_to_jsonl_verbatim(self) -> None:
         """用户 Query 应以原文写入追加式 Transcript。"""
         with TemporaryDirectory() as directory:
-            conversation = ConversationContext.persistent(Path(directory))
-            conversation.append_user_query("原始 Query：不要修改空格  和标点！")
-            transcript_path = conversation.session_store.transcript_path
+            context_manager = ContextManager()
+            session = Session.persistent(Path(directory))
+            query = context_manager.append_user_query(
+                "原始 Query：不要修改空格  和标点！"
+            )
+            session.record_user_query(query)
+            transcript_path = session.store.transcript_path
             records = [
                 json.loads(line)
                 for line in transcript_path.read_text(encoding="utf-8").splitlines()
@@ -58,11 +75,11 @@ class SessionStoreTest(unittest.TestCase):
             "原始 Query：不要修改空格  和标点！",
         )
         self.assertRegex(
-            conversation.session_store.session_dir.name,
+            session.store.session_dir.name,
             r"^\d{8}-\d{6}_原始 Query：不要修改空格 和标点！$",
         )
         with self.assertRaises(FrozenInstanceError):
-            conversation.user_queries[0].content = "试图改写"
+            context_manager.user_queries[0].content = "试图改写"
 
     def test_large_tool_result_is_persisted_with_preview(self) -> None:
         """大工具结果应完整落盘，模型上下文只保留路径和预览。"""
@@ -158,22 +175,24 @@ class SessionStoreTest(unittest.TestCase):
     def test_runtime_events_are_written_in_order(self) -> None:
         """Transcript 应保留不进入模型上下文的完整运行时事件顺序。"""
         with TemporaryDirectory() as directory:
-            conversation = ConversationContext.persistent(Path(directory))
-            conversation.append_user_query("检查上下文模块")
-            conversation.record_runtime_event(
+            context_manager = ContextManager()
+            session = Session.persistent(Path(directory))
+            query = context_manager.append_user_query("检查上下文模块")
+            session.record_user_query(query)
+            session.record_runtime_event(
                 "agent_run_started",
                 {"limits_enabled": False},
             )
-            conversation.append_message(
-                {"role": "assistant", "content": "正在检查。"}
-            )
-            conversation.record_runtime_event(
+            message = {"role": "assistant", "content": "正在检查。"}
+            context_manager.append_message(message)
+            session.record_message(message)
+            session.record_runtime_event(
                 "agent_run_finished",
                 {"status": "completed"},
             )
             records = [
                 json.loads(line)
-                for line in conversation.session_store.transcript_path.read_text(
+                for line in session.store.transcript_path.read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]

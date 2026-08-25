@@ -1,10 +1,7 @@
-"""跨模型轮次和用户轮次复用的会话上下文状态。"""
+"""跨模型轮次复用的活动模型上下文。"""
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
-
-from .session_store import SessionStore, ToolResultLimits
 
 
 @dataclass(frozen=True)
@@ -23,11 +20,8 @@ class UserQuery:
 
 
 @dataclass
-class ConversationContext:
-    """分别保存不可变 Query、完整记录和可压缩活动上下文。"""
-
-    # 不因上下文压缩而删除的完整内存会话记录。
-    transcript: list[Any] = field(default_factory=list)
+class ContextManager:
+    """只保存不可变 Query、轮次边界和可压缩活动上下文。"""
 
     # 下一次模型调用使用的活动条目，其中 UserQuery 永远不可被压缩。
     active_messages: list[Any] = field(default_factory=list)
@@ -44,41 +38,27 @@ class ConversationContext:
     # 当前连续压缩流程已经接受的部分有效压缩次数。
     partial_compaction_count: int = 0
 
-    # 可选的会话持久化实现；为空时仅保留内存记录。
-    session_store: SessionStore | None = None
-
-    # 只能通过 append_user_query() 追加的不可变用户 Query 集合。
-    _user_queries: tuple[UserQuery, ...] = field(default_factory=tuple, repr=False)
+    # 下一条用户 Query 使用的活动上下文内递增序号。
+    _next_query_sequence: int = field(default=1, repr=False)
 
     @classmethod
-    def persistent(
-        cls,
-        workdir: Path,
-        tool_result_limits: ToolResultLimits | None = None,
-    ) -> "ConversationContext":
-        """创建一个在工作区中持续写入 JSONL Transcript 的上下文。"""
-        return cls(
-            session_store=SessionStore(
-                workdir,
-                tool_result_limits=tool_result_limits,
-            )
+    def from_messages(cls, messages: list[Any]) -> "ContextManager":
+        """兼容现有列表调用方，并继续共享其活动消息列表。"""
+        context_manager = cls(active_messages=messages)
+        context_manager._next_query_sequence += sum(
+            1 for message in messages if _is_user_message(message)
         )
+        return context_manager
 
-    @classmethod
-    def from_messages(cls, messages: list[Any]) -> "ConversationContext":
-        """兼容现有列表调用方，并提取其中不可变的用户 Query。"""
-        conversation = cls(transcript=messages)
-        for message in messages:
-            if _is_user_message(message):
-                conversation._append_user_query(message["content"], persist=False)
-            else:
-                conversation.active_messages.append(message)
-        return conversation
 
     @property
     def user_queries(self) -> tuple[UserQuery, ...]:
-        """返回无法由调用方原地修改的用户 Query 快照。"""
-        return self._user_queries
+        """返回当前活动上下文中无法原地修改的 Query 快照。"""
+        return tuple(
+            item
+            for item in self.active_messages
+            if isinstance(item, UserQuery)
+        )
 
     def model_messages(self) -> list[Any]:
         """把不可变 Query 物化为原始 user 消息后构造模型输入。"""
@@ -92,24 +72,11 @@ class ConversationContext:
         ]
 
     def append_user_query(self, content: str) -> UserQuery:
-        """原样追加一条用户 Query，并同时记录到 Transcript。"""
-        return self._append_user_query(content, persist=True)
-
-    def _append_user_query(self, content: str, *, persist: bool) -> UserQuery:
-        """创建不可变 Query；兼容初始化时可跳过重复 Transcript 写入。"""
-        query = UserQuery(len(self._user_queries) + 1, content)
-        self._user_queries = (*self._user_queries, query)
+        """原样追加一条只属于活动模型上下文的用户 Query。"""
+        query = UserQuery(self._next_query_sequence, content)
+        self._next_query_sequence += 1
         self.active_messages.append(query)
         self.partial_compaction_count = 0
-        if persist:
-            message = query.to_message()
-            self.transcript.append(message)
-            if self.session_store is not None:
-                self.session_store.start_session(content)
-            self._persist(
-                "user_query",
-                {"sequence": query.sequence, "content": content},
-            )
         return query
 
     def append_message(self, message: Any) -> None:
@@ -117,10 +84,8 @@ class ConversationContext:
         if _is_user_message(message):
             self.append_user_query(message["content"])
             return
-        self.transcript.append(message)
         self.active_messages.append(message)
         self.partial_compaction_count = 0
-        self._persist("message", message)
 
     def append_messages(
         self,
@@ -192,8 +157,8 @@ class ConversationContext:
         summary_tokens: int,
         recent_tokens: int,
         status: str,
-    ) -> None:
-        """提交已经验证收益的候选压缩，并记录完整观测指标。"""
+    ) -> dict[str, Any]:
+        """提交已经验证收益的候选压缩，并返回结构化边界事实。"""
         compacted_messages, compacted_boundaries, preserved_queries = (
             self.build_compacted_messages(cut_index, summary)
         )
@@ -210,28 +175,17 @@ class ConversationContext:
             "recent_tokens": recent_tokens,
             "status": status,
         }
-        self.transcript.append(boundary_record)
-        self._persist("context_compaction_boundary", boundary_record)
         self.compaction_count += 1
         self.consecutive_compaction_failures = 0
         if status == "partial":
             self.partial_compaction_count += 1
         else:
             self.partial_compaction_count = 0
+        return boundary_record
 
     def record_compaction_failure(self) -> None:
         """累计一次压缩失败，供后续熔断判断使用。"""
         self.consecutive_compaction_failures += 1
-
-    def _persist(self, record_type: str, payload: Any) -> None:
-        """在启用持久化时追加一条 Transcript 记录。"""
-        if self.session_store is not None:
-            self.session_store.append_transcript(record_type, payload)
-
-    def record_runtime_event(self, event_type: str, payload: Any) -> None:
-        """记录不进入模型上下文、但属于完整会话过程的运行时事件。"""
-        self._persist(event_type, payload)
-
 
 def _is_user_message(message: Any) -> bool:
     """判断一条消息是否为包含原始文本的用户 Query。"""

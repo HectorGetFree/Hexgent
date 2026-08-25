@@ -14,7 +14,7 @@ from hexgent.events import (
 
 from hexgent.utils.token_estimator import estimate_request_tokens, estimate_value_tokens
 from .context_budget import ContextLimits
-from .context import ConversationContext
+from .context_manager import ContextManager
 
 
 COMPACTION_INSTRUCTIONS = """你负责压缩 Agent 的历史会话上下文。
@@ -64,6 +64,9 @@ class CompactionOutcome:
     # 压缩失败或无法安全继续时的中文原因。
     message: str | None = None
 
+    # 压缩成功提交后应由 Session 持久化的边界事实。
+    boundary: dict[str, Any] | None = None
+
 
 def _usage_values(usage: Any) -> tuple[int, int]:
     """兼容对象和字典形式的模型 Token 用量。"""
@@ -78,18 +81,18 @@ def _usage_values(usage: Any) -> tuple[int, int]:
 
 
 def _select_cut_index(
-    conversation: ConversationContext,
+    context_manager: ContextManager,
     recent_context_tokens: int,
 ) -> int | None:
     """选择保留近期内容且位于完整 API 轮次之后的压缩切点。"""
     eligible_boundaries = [
         boundary
-        for boundary in conversation.round_boundaries
-        if 0 < boundary <= len(conversation.active_messages)
+        for boundary in context_manager.round_boundaries
+        if 0 < boundary <= len(context_manager.active_messages)
     ]
     for boundary in eligible_boundaries:
-        recent_messages = conversation.materialize_messages(
-            conversation.active_messages[boundary:]
+        recent_messages = context_manager.materialize_messages(
+            context_manager.active_messages[boundary:]
         )
         if estimate_value_tokens(recent_messages) <= recent_context_tokens:
             return boundary
@@ -144,7 +147,7 @@ def _read_completed_response(stream: Any) -> Any:
 
 
 def compact_context_if_needed(
-    conversation: ConversationContext,
+    context_manager: ContextManager,
     client: Any,
     model: str,
     instructions: str,
@@ -157,7 +160,7 @@ def compact_context_if_needed(
     # 1. 估算包含运行时指令和工具定义的完整请求大小。
     before_tokens = estimate_request_tokens(
         instructions,
-        conversation.model_messages(),
+        context_manager.model_messages(),
         tools,
     )
     if not force and before_tokens < limits.compaction_threshold_tokens:
@@ -165,7 +168,7 @@ def compact_context_if_needed(
 
     # 2. 连续失败达到上限时停止重复调用摘要模型。
     if (
-        conversation.consecutive_compaction_failures
+        context_manager.consecutive_compaction_failures
         >= limits.max_compaction_attempts
     ):
         message = "上下文压缩已连续失败，已停止重复尝试"
@@ -178,7 +181,7 @@ def compact_context_if_needed(
         return CompactionOutcome(status, before_tokens, before_tokens, message=message)
 
     # 3. 只在完整 API 轮次边界上选择压缩范围。
-    cut_index = _select_cut_index(conversation, limits.recent_context_tokens)
+    cut_index = _select_cut_index(context_manager, limits.recent_context_tokens)
     if cut_index is None:
         message = "当前上下文没有可安全压缩的完整模型轮次"
         yield ContextCompactionFailedEvent(message)
@@ -195,8 +198,8 @@ def compact_context_if_needed(
     total_input_tokens = 0
     total_output_tokens = 0
     failure_reason = "上下文摘要没有产生有效压缩"
-    recent_messages = conversation.materialize_messages(
-        conversation.active_messages[cut_index:]
+    recent_messages = context_manager.materialize_messages(
+        context_manager.active_messages[cut_index:]
     )
     recent_tokens = estimate_value_tokens(recent_messages)
     for attempt in range(1, limits.max_compaction_attempts + 1):
@@ -209,8 +212,8 @@ def compact_context_if_needed(
             stream = client.responses.create(
                 model=model,
                 instructions=COMPACTION_INSTRUCTIONS + retry_instruction,
-                input=conversation.materialize_messages(
-                    conversation.active_messages[:cut_index]
+                input=context_manager.materialize_messages(
+                    context_manager.active_messages[:cut_index]
                 ),
                 max_output_tokens=limits.summary_output_tokens,
                 stream=True,
@@ -235,13 +238,13 @@ def compact_context_if_needed(
             failure_reason = "摘要内容超过配置的摘要 Token 预算"
             continue
 
-        candidate_messages, _, _ = conversation.build_compacted_messages(
+        candidate_messages, _, _ = context_manager.build_compacted_messages(
             cut_index,
             summary,
         )
         after_tokens = estimate_request_tokens(
             instructions,
-            conversation.materialize_messages(candidate_messages),
+            context_manager.materialize_messages(candidate_messages),
             tools,
         )
         if not _has_meaningful_savings(before_tokens, after_tokens, limits):
@@ -257,14 +260,14 @@ def compact_context_if_needed(
         )
         if (
             status == "partial"
-            and conversation.partial_compaction_count
+            and context_manager.partial_compaction_count
             >= limits.max_partial_compactions
         ):
             failure_reason = "上下文仍超过主动阈值，且部分压缩次数已达到上限"
             continue
 
         # 5. 只有验证收益后才提交候选上下文，完整 Transcript 继续保留。
-        conversation.apply_compaction(
+        boundary = context_manager.apply_compaction(
             cut_index,
             summary,
             before_tokens=before_tokens,
@@ -280,10 +283,11 @@ def compact_context_if_needed(
             after_tokens,
             total_input_tokens,
             total_output_tokens,
+            boundary=boundary,
         )
 
     # 6. 所有尝试均无效时累计熔断计数，硬阈值以上明确阻塞。
-    conversation.record_compaction_failure()
+    context_manager.record_compaction_failure()
     message = f"上下文压缩失败：{failure_reason}"
     yield ContextCompactionFailedEvent(message)
     status = (

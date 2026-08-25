@@ -18,7 +18,7 @@ from hexgent.events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
-from hexgent.context import ContextLimits, ConversationContext
+from hexgent.context import ContextLimits, ContextManager
 from hexgent.utils.token_estimator import estimate_request_tokens
 from hexgent.context.context_builder import build_context
 from hexgent.loop.limits import LoopLimits, check_loop_limit
@@ -132,9 +132,8 @@ class AgentLoopLimitsTest(unittest.TestCase):
     def test_config_can_explicitly_disable_cross_round_limits(self) -> None:
         """压缩测试配置可关闭跨轮次预算，默认配置仍保持保护。"""
         state = LoopState(
-            messages=[],
+            context_manager=ContextManager(),
             tool_context=self.context,
-            conversation=ConversationContext(),
             model_rounds=10_000,
             tool_calls=10_000,
             input_tokens=10_000_000,
@@ -174,7 +173,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
     def test_budget_limit_returns_continue_with_finalization_state(self) -> None:
         """预算命中应构造收尾 State，而不是在当前分支直接结束。"""
         client = FakeClient([])
-        state = LoopState(messages=[], tool_context=self.context)
+        state = LoopState(
+            context_manager=ContextManager(), tool_context=self.context
+        )
 
         events, outcome = drain_generator(
             turn_module.run_turn(
@@ -195,7 +196,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
     def test_valid_response_without_tools_returns_stop(self) -> None:
         """有效响应没有工具调用时应产生正常 Stop。"""
         client = FakeClient([make_response([], "完成")])
-        state = LoopState(messages=[], tool_context=self.context)
+        state = LoopState(
+            context_manager=ContextManager(), tool_context=self.context
+        )
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
                 turn_module.run_turn(
@@ -220,7 +223,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
             )
         )
         client = FakeClient([make_response([], "全部完成")])
-        state = LoopState(messages=[], tool_context=self.context)
+        state = LoopState(
+            context_manager=ContextManager(), tool_context=self.context
+        )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
@@ -246,7 +251,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         self.context.plan_store.set_plan(plan)
         client = FakeClient([make_response([], "需要你的授权")])
-        state = LoopState(messages=[], tool_context=self.context)
+        state = LoopState(
+            context_manager=ContextManager(), tool_context=self.context
+        )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
@@ -272,7 +279,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         self.context.plan_store.set_plan(plan)
         client = FakeClient([make_response([], "暂时停止")])
-        state = LoopState(messages=[], tool_context=self.context)
+        state = LoopState(
+            context_manager=ContextManager(), tool_context=self.context
+        )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
@@ -299,7 +308,9 @@ class AgentLoopLimitsTest(unittest.TestCase):
             )
         )
         client = FakeClient([make_response([], "准备结束", input_tokens=7, output_tokens=3)])
-        state = LoopState(messages=[], tool_context=self.context)
+        state = LoopState(
+            context_manager=ContextManager(), tool_context=self.context
+        )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
@@ -415,7 +426,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
     def test_context_compaction_is_an_explicit_loop_transition(self) -> None:
         """主动压缩应先构造下一轮 State，再调用主模型完成任务。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_message({"role": "user", "content": "较早问题"})
         conversation.append_messages(
             [SimpleNamespace(type="message", text="较早回答" + "历史" * 1000)],
@@ -484,7 +495,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
     def test_prompt_too_long_triggers_one_reactive_compaction_retry(self) -> None:
         """API 拒绝过长请求时应强制压缩，并显式重试主模型一次。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_user_query("继续检查项目")
         conversation.append_messages(
             [SimpleNamespace(type="message", text="历史内容" * 500)],
@@ -530,7 +541,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
     def test_context_compaction_clears_exact_tool_call_cache(self) -> None:
         """压缩后原始工具结果可能离开上下文，精确去重缓存必须失效。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_user_query("继续检查")
         conversation.append_messages(
             [SimpleNamespace(type="message", text="历史内容" * 500)],
@@ -556,9 +567,8 @@ class AgentLoopLimitsTest(unittest.TestCase):
             _, outcome = drain_generator(
                 turn_module.run_turn(
                     LoopState(
-                        messages=conversation.active_messages,
+                        context_manager=conversation,
                         tool_context=self.context,
-                        conversation=conversation,
                     ),
                     client,
                     LoopLimits(),
@@ -573,7 +583,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
     def test_repeated_prompt_too_long_stops_without_second_reactive_retry(self) -> None:
         """应急压缩后的主模型重试再次过长时必须明确失败。"""
-        conversation = ConversationContext()
+        conversation = ContextManager()
         conversation.append_user_query("继续检查项目")
         conversation.append_messages(
             [SimpleNamespace(type="message", text="历史内容" * 500)],
