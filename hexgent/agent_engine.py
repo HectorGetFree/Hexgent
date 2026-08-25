@@ -30,6 +30,7 @@ TOOL_STATUS_LABELS = {
     "invalid": "参数无效",
     "denied": "已拒绝",
     "error": "执行错误",
+    "deduplicated": "已去重",
     "skipped": "未执行",
 }
 

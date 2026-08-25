@@ -25,8 +25,11 @@ from hexgent.loop.limits import LoopLimits, check_loop_limit
 from hexgent.loop.loop_state import LoopState
 from hexgent.loop.transitions import Continue, Stop
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
-from hexgent.tool.tool_context import ToolExecutionContext
-from hexgent.tool.tool_context import ReadFileCacheEntry
+from hexgent.tool.tool_context import (
+    ReadFileCacheEntry,
+    ToolCallCacheEntry,
+    ToolExecutionContext,
+)
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
 from hexgent.prompt import TOOLS
@@ -524,6 +527,49 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(result.output_text, "应急压缩后完成")
         self.assertEqual(len(client.responses.calls), 3)
         self.assertEqual(conversation.compaction_count, 1)
+
+    def test_context_compaction_clears_exact_tool_call_cache(self) -> None:
+        """压缩后原始工具结果可能离开上下文，精确去重缓存必须失效。"""
+        conversation = ConversationContext()
+        conversation.append_user_query("继续检查")
+        conversation.append_messages(
+            [SimpleNamespace(type="message", text="历史内容" * 500)],
+            completes_round=True,
+        )
+        self.context.tool_call_cache["fingerprint"] = ToolCallCacheEntry(
+            "call-1",
+            "旧工具结果",
+        )
+        client = FakeClient(
+            [make_response([], "<summary>已保留必要历史。</summary>")]
+        )
+        context_limits = ContextLimits(
+            context_window_tokens=20,
+            reserved_output_tokens=1,
+            safety_margin_tokens=1,
+            recent_context_tokens=10,
+            min_compaction_savings_tokens=1,
+            min_compaction_savings_ratio=0.01,
+        )
+
+        with patch.object(turn_module, "get_model", return_value="fake"):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    LoopState(
+                        messages=conversation.active_messages,
+                        tool_context=self.context,
+                        conversation=conversation,
+                    ),
+                    client,
+                    LoopLimits(),
+                    lambda _tool, _message: "allow",
+                    context_limits,
+                )
+            )
+
+        self.assertIsInstance(outcome, Continue)
+        self.assertEqual(outcome.reason, "context_compacted")
+        self.assertEqual(self.context.tool_call_cache, {})
 
     def test_repeated_prompt_too_long_stops_without_second_reactive_retry(self) -> None:
         """应急压缩后的主模型重试再次过长时必须明确失败。"""

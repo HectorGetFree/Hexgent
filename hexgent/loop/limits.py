@@ -24,7 +24,7 @@ class LoopLimits:
     # 正常工作模式允许调用模型的最大轮数。
     max_model_rounds: int = 100
 
-    # 一次 Agent Loop 允许计入预算的最大工具调用数量。
+    # 一次 Agent Loop 允许计入预算的真实执行和去重工具调用数量。
     max_tool_calls: int = 300
 
     # 所有完整模型响应允许累计消耗的最大 Token 数量。

@@ -38,7 +38,7 @@ class LoopState:
     # 已收到完整响应的正常模型调用次数。
     model_rounds: int = 0
 
-    # 已计入执行预算的实际工具调用次数。
+    # 已计入预算的真实执行和去重工具调用次数。
     tool_calls: int = 0
 
     # 完整模型响应累计报告的输入 Token。

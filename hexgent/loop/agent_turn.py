@@ -107,7 +107,7 @@ def run_turn(
         active_context_limits,
     )
     if compaction.status in {"compacted", "partial"}:
-        state.tool_context.clear_read_file_cache()
+        state.tool_context.clear_tool_caches()
         next_state = replace(
             state,
             messages=state.conversation.active_messages,
@@ -175,7 +175,7 @@ def run_turn(
                 force=True,
             )
             if reactive_compaction.status in {"compacted", "partial"}:
-                state.tool_context.clear_read_file_cache()
+                state.tool_context.clear_tool_caches()
                 next_state = replace(
                     state,
                     messages=state.conversation.active_messages,
@@ -268,7 +268,7 @@ def run_turn(
         tool_context=state.tool_context,
         conversation=state.conversation,
         model_rounds=model_rounds,
-        tool_calls=state.tool_calls + batch.executed_count,
+        tool_calls=state.tool_calls + batch.budgeted_call_count,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         plan_completion_nudges=state.plan_completion_nudges,

@@ -30,6 +30,7 @@ def agent_loop(
         InMemoryPlanStore(),
         Path.cwd().resolve(),
     )
+    execution_context.clear_tool_call_cache()
     loop_limits = limits or LoopLimits()
     conversation = (
         messages

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
-from typing import Any
+from typing import Any, Literal
 
 from .tool_context import ToolExecutionContext
 from .plan_tools import (
@@ -18,6 +18,11 @@ from .builtin_tools import bash, edit_file, glob, read_file, write_file
 ToolFunction = Callable[..., str]
 ToolValidator = Callable[[dict[str, Any], ToolExecutionContext], str | None]
 ToolDescriber = Callable[[dict[str, Any]], str]
+ToolDeduplicationPolicy = Literal[
+    "none",  # 每次调用都必须真实执行，不允许复用结果。
+    "exact",  # 同一 Agent Run 内相同规范化参数可以复用此前成功结果。
+    "content_aware",  # 由工具根据外部内容状态自行判断是否需要返回完整结果。
+]
 
 
 @dataclass(frozen=True)
@@ -38,6 +43,12 @@ class RegisteredTool:
 
     # 复杂工具用于生成调用摘要的自定义方法。
     describer: ToolDescriber | None = None
+
+    # 当前工具使用的重复调用去重策略。
+    deduplication_policy: ToolDeduplicationPolicy = "none"
+
+    # 工具成功执行后是否使其他精确调用缓存失效。
+    invalidates_tool_call_cache: bool = False
 
     def describe(self, raw_arguments: str) -> str:
         """根据工具自身声明生成安全、简短的调用说明。"""
@@ -93,23 +104,36 @@ class RegisteredTool:
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
-    "bash": RegisteredTool(bash, requires_context=True, display_argument="command"),
+    "bash": RegisteredTool(
+        bash,
+        requires_context=True,
+        display_argument="command",
+        invalidates_tool_call_cache=True,
+    ),
     "read_file": RegisteredTool(
         read_file,
         requires_context=True,
         display_argument="path",
+        deduplication_policy="content_aware",
     ),
     "write_file": RegisteredTool(
         write_file,
         requires_context=True,
         display_argument="path",
+        invalidates_tool_call_cache=True,
     ),
     "edit_file": RegisteredTool(
         edit_file,
         requires_context=True,
         display_argument="path",
+        invalidates_tool_call_cache=True,
     ),
-    "glob": RegisteredTool(glob, requires_context=True, display_argument="pattern"),
+    "glob": RegisteredTool(
+        glob,
+        requires_context=True,
+        display_argument="pattern",
+        deduplication_policy="exact",
+    ),
     "create_plan": RegisteredTool(
         create_plan,
         requires_context=True,

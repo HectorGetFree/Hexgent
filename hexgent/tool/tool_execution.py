@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, replace
+from hashlib import sha256
 import inspect
 import json
 from time import monotonic
@@ -21,7 +22,7 @@ from hexgent.context.session_store import (
     build_persisted_output_message,
 )
 from hexgent.utils.token_estimator import estimate_value_tokens
-from .tool_context import ToolExecutionContext
+from .tool_context import ToolCallCacheEntry, ToolExecutionContext
 from .tool_registry import RegisteredTool, get_tool
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ ToolExecutionStatus = Literal[
     "invalid",  # 工具不存在，或调用参数未通过解析与合法性校验。
     "denied",  # 权限管线或用户确认拒绝执行工具。
     "error",  # 工具执行期间发生异常或超时。
+    "deduplicated",  # 相同工具及参数已成功执行，本次复用此前结果引用。
 ]
 UserConfirmation = Callable[[str, str], UserConfirmationResult]
 ToolExecutionNotifier = Callable[[str], None]
@@ -51,19 +53,26 @@ class ToolExecutionResult:
     # 标识该结果是否应被模型视为错误结果。
     is_error: bool
 
+    # 去重命中时指向首次真实执行工具的调用标识。
+    source_call_id: str | None = None
+
+    # 精确去重使用的规范化工具调用指纹。
+    fingerprint: str | None = None
+
 
 @dataclass(frozen=True)
 class ToolBatchResult:
-    """完整工具批次产生的配对结果和实际执行数量。"""
+    """完整工具批次产生的配对结果和预算计数。"""
 
     # 按调用顺序生成的 function_call_output 列表。
     outputs: list[dict[str, str]]
 
-    # 本批次实际计入工具预算的调用数量。
-    executed_count: int
+    # 本批次计入工具预算的真实执行和去重调用数量。
+    budgeted_call_count: int
 
 
 TOOL_SCHEMAS = {tool["name"]: tool["parameters"] for tool in TOOLS}
+MAX_DUPLICATE_TOOL_CALLS = 3
 
 
 def unavailable_user_confirmation(
@@ -185,6 +194,56 @@ def _resolve_permission(
     return None
 
 
+def _build_tool_call_fingerprint(
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> str:
+    """根据工具名和规范化 JSON 参数构造稳定调用指纹。"""
+    canonical_arguments = json.dumps(
+        arguments,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    payload = f"{tool_name}:{canonical_arguments}".encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def _deduplicated_result(
+    fingerprint: str,
+    cached: ToolCallCacheEntry,
+    context: ToolExecutionContext,
+) -> ToolExecutionResult:
+    """为精确重复调用生成轻量结果，并限制同一指纹的重复次数。"""
+    duplicate_count = context.tool_call_duplicate_counts.get(fingerprint, 0) + 1
+    context.tool_call_duplicate_counts[fingerprint] = duplicate_count
+    if duplicate_count >= MAX_DUPLICATE_TOOL_CALLS:
+        output = (
+            "错误：本次 Agent Run 中相同工具和参数的重复调用已达到上限，"
+            "请使用此前结果或调整执行方案"
+        )
+        return ToolExecutionResult(
+            "deduplicated",
+            output,
+            True,
+            cached.source_call_id,
+            fingerprint,
+        )
+    output = (
+        "<duplicate-tool-call\n"
+        f'source_call_id="{cached.source_call_id}">\n'
+        "相同工具和参数已经成功执行，请使用此前工具结果。\n"
+        "</duplicate-tool-call>"
+    )
+    return ToolExecutionResult(
+        "deduplicated",
+        output,
+        False,
+        cached.source_call_id,
+        fingerprint,
+    )
+
+
 def execute_tool_call(
     tool_name: str,
     raw_arguments: str,
@@ -192,6 +251,7 @@ def execute_tool_call(
     context: ToolExecutionContext,
     user_confirmation: UserConfirmation = unavailable_user_confirmation,
     execution_notifier: ToolExecutionNotifier | None = None,
+    call_id: str | None = None,
 ) -> ToolExecutionResult:
     """完成工具查找、参数校验、权限处理和真正执行。"""
     # 1. 校验工具是否存在，并取得对应的工具函数。
@@ -222,16 +282,31 @@ def execute_tool_call(
     if permission_result is not None:
         return permission_result
 
-    # 5. 权限允许后，通知调用方工具即将开始执行。
+    # 5. 精确去重工具在权限允许后查询当前 Agent Run 的成功结果缓存。
+    fingerprint: str | None = None
+    if tool.deduplication_policy == "exact" and call_id is not None:
+        fingerprint = _build_tool_call_fingerprint(tool_name, parsed)
+        cached = context.tool_call_cache.get(fingerprint)
+        if cached is not None:
+            return _deduplicated_result(fingerprint, cached, context)
+
+    # 6. 权限允许且未命中缓存后，通知调用方工具即将开始执行。
     if execution_notifier is not None:
         execution_notifier(tool_name)
 
-    # 6. 真正执行工具，并将正常输出或异常转换为统一结果。
+    # 7. 真正执行工具，并将正常输出或异常转换为统一结果。
     try:
         output = tool.execute(parsed, context)
     except Exception as error:
         return ToolExecutionResult("error", f"错误：{error}", True)
-    return ToolExecutionResult("success", output, False)
+
+    # 8. 副作用工具使精确缓存失效；可去重工具只缓存成功执行结果。
+    if tool.invalidates_tool_call_cache:
+        context.clear_tool_call_cache()
+    if fingerprint is not None and call_id is not None:
+        context.tool_call_cache[fingerprint] = ToolCallCacheEntry(call_id, output)
+        context.tool_call_duplicate_counts[fingerprint] = 0
+    return ToolExecutionResult("success", output, False, fingerprint=fingerprint)
 
 
 def _budget_tool_result(
@@ -295,7 +370,7 @@ def _apply_batch_result_budget(
         if persisted is None:
             raise RuntimeError("工具结果批次预算要求外置，但未生成持久化结果")
         persisted_results[output_index] = persisted
-        context.clear_read_file_cache()
+        context.clear_tool_caches()
         total_inline_tokens -= estimate_value_tokens(raw_output)
 
     # 2. 在所有外置结果之间平均分配总预览预算，并更新模型可见结果。
@@ -333,7 +408,7 @@ def execute_tool_batch(
     outputs: list[dict[str, str]] = []
     inline_results: list[tuple[int, str, str, str, str]] = []
     persisted_results: dict[int, PersistedToolResult] = {}
-    executed_count = 0
+    budgeted_call_count = 0
     limit_message: str | None = None
 
     for tool_call in tool_calls:
@@ -360,7 +435,7 @@ def execute_tool_batch(
         if limit_message is None:
             if (
                 remaining_tool_calls is not None
-                and executed_count >= remaining_tool_calls
+                and budgeted_call_count >= remaining_tool_calls
             ):
                 limit_message = "本轮工具执行次数已达到上限"
             elif deadline is not None and monotonic() >= deadline:
@@ -387,9 +462,10 @@ def execute_tool_batch(
             tool_call.arguments,
             context=context,
             user_confirmation=user_confirmation,
+            call_id=tool_call.call_id,
         )
-        if result.status in {"success", "error"}:
-            executed_count += 1
+        if result.status in {"success", "error", "deduplicated"}:
+            budgeted_call_count += 1
         model_output = result.output
         if session_store is not None:
             try:
@@ -400,10 +476,10 @@ def execute_tool_batch(
                     description=description,
                 )
                 if persisted is not None:
-                    context.clear_read_file_cache()
+                    context.clear_tool_caches()
                     model_output = build_persisted_output_message(persisted)
             except OSError as error:
-                context.clear_read_file_cache()
+                context.clear_tool_caches()
                 result = ToolExecutionResult(
                     "error",
                     f"错误：工具已经执行，但完整结果持久化失败：{error}",
@@ -442,6 +518,8 @@ def execute_tool_batch(
                     "persisted_output": (
                         persisted.relative_path if persisted is not None else None
                     ),
+                    "source_call_id": result.source_call_id,
+                    "fingerprint": result.fingerprint,
                 },
             )
 
@@ -465,8 +543,8 @@ def execute_tool_batch(
             context,
         )
     except OSError as error:
-        context.clear_read_file_cache()
+        context.clear_tool_caches()
         for output in outputs:
             output["output"] = f"错误：工具结果批次持久化失败：{error}"
 
-    return ToolBatchResult(outputs, executed_count)
+    return ToolBatchResult(outputs, budgeted_call_count)
