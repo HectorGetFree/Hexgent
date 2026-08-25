@@ -89,6 +89,30 @@ class WorkspaceTest(unittest.TestCase):
         self.assertNotIn("第一行", result.output)
         self.assertNotIn("第四行", result.output)
 
+    def test_range_covering_small_file_is_normalized_to_full_read(self) -> None:
+        """模型默认传入 1-500 时，小文件应进入完整读取和缓存路径。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "small.py"
+            content = "第一行\n第二行\n第三行\n"
+            target.write_text(content, encoding="utf-8")
+            context = ToolExecutionContext(InMemoryPlanStore(), root.resolve())
+
+            first = execute_tool_call(
+                "read_file",
+                '{"path":"small.py","start_line":1,"line_count":500}',
+                context=context,
+            )
+            second = execute_tool_call(
+                "read_file",
+                '{"path":"small.py"}',
+                context=context,
+            )
+
+        self.assertEqual(first.output, content)
+        self.assertIn("<file-unchanged", second.output)
+        self.assertNotIn("start_line", second.output)
+
     def test_read_file_cache_distinguishes_line_ranges(self) -> None:
         """同一文件不同范围不得互相去重，相同范围才返回占位符。"""
         with TemporaryDirectory() as directory:

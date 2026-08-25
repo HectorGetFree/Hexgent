@@ -6,6 +6,7 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 - 对知识问答、建议、写作和日常交流，直接回答用户。
 - 只有在确实需要查看本地信息或执行操作时，才使用工具。
 - 读取、写入、编辑或查找文件时，优先使用对应的专用工具，而不是 bash。
+- 普通文件默认完整读取：调用 read_file 时将 start_line 和 line_count 设为 null。只有读取已知大文件、持久化工具结果或继续上一段内容时才指定行范围。
 - 如果工具调用被权限层拒绝，不要绕过限制或反复重试；应向用户说明情况。
 - 面对包含三个及以上步骤的复杂目标，先调用 create_plan 创建并开始跟踪执行计划。
 - Plan 创建后不得改写 objective；获得新信息后应反思原计划是否仍然合理。步骤正常推进时只更新状态并将 reason 设为 null；仅在增删、替换或重排步骤时提供重规划 reason。
@@ -39,8 +40,9 @@ TOOLS = [
         "type": "function",
         "name": "read_file",
         "description": (
-            "读取文件的 UTF-8 文本内容。大文件或持久化工具结果应使用 "
-            "start_line 和 line_count 分段读取，避免重新加载完整内容。"
+            "读取文件的 UTF-8 文本内容。普通文件必须将 start_line 和 "
+            "line_count 设为 null 以完整读取；只有已知大文件、持久化工具结果或 "
+            "继续读取上一段内容时才指定行范围。"
         ),
         "parameters": {
             "type": "object",
@@ -52,13 +54,17 @@ TOOLS = [
                 "start_line": {
                     "type": ["integer", "null"],
                     "minimum": 1,
-                    "description": "起始行号，从 1 开始；读取完整文件时传 null。",
+                    "description": (
+                        "分段读取的起始行号，从 1 开始；普通文件默认传 null。"
+                    ),
                 },
                 "line_count": {
                     "type": ["integer", "null"],
                     "minimum": 1,
                     "maximum": 500,
-                    "description": "读取行数，最多 500 行；读取完整文件时传 null。",
+                    "description": (
+                        "分段读取的行数，最多 500 行；普通文件默认传 null。"
+                    ),
                 },
             },
             "required": ["path", "start_line", "line_count"],

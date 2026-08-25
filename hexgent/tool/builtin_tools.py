@@ -78,33 +78,38 @@ def read_file(
     else:
         effective_start = None
         effective_count = None
-    cache_key = ReadFileCacheKey(target, effective_start, effective_count)
-
-    # 3. 当前活动上下文已经见过同一内容和范围时，不再重复返回正文。
-    cached = context.read_file_cache.get(cache_key)
-    if cached is not None and cached.content_hash == content_hash:
-        range_attributes = (
-            f' start_line="{effective_start}" line_count="{effective_count}"'
-            if is_partial
-            else ""
-        )
-        return (
-            f'<file-unchanged path="{target}" sha256="{content_hash}"'
-            f"{range_attributes}>\n"
-            "文件内容与本会话上次读取时一致，未重复返回完整内容。\n"
-            "</file-unchanged>"
-        )
-
-    # 4. 只有 UTF-8 解码成功后才更新缓存，保证缓存代表成功返回的正文。
+    # 3. 只有 UTF-8 解码成功后才更新缓存，保证缓存代表成功返回的正文。
     content = raw_content.decode("utf-8")
     if not is_partial:
+        cache_key = ReadFileCacheKey(target)
+        cached = context.read_file_cache.get(cache_key)
+        if cached is not None and cached.content_hash == content_hash:
+            return _unchanged_file_result(target, content_hash)
         context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
         return content
 
-    # 5. 分段读取只返回实际行范围和总行数，避免外置大结果被整体重新加载。
+    # 4. 覆盖整个文件的首段请求按完整读取处理，避免模型默认 1-500 污染缓存。
     assert effective_start is not None and effective_count is not None
     lines = content.splitlines()
     total_lines = len(lines)
+    if effective_start == 1 and effective_count >= total_lines:
+        cache_key = ReadFileCacheKey(target)
+        cached = context.read_file_cache.get(cache_key)
+        if cached is not None and cached.content_hash == content_hash:
+            return _unchanged_file_result(target, content_hash)
+        context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
+        return content
+
+    # 5. 真正的分段请求按具体范围去重，只返回范围内的内容和行数元数据。
+    cache_key = ReadFileCacheKey(target, effective_start, effective_count)
+    cached = context.read_file_cache.get(cache_key)
+    if cached is not None and cached.content_hash == content_hash:
+        return _unchanged_file_result(
+            target,
+            content_hash,
+            effective_start,
+            effective_count,
+        )
     if total_lines > 0 and effective_start > total_lines:
         return f"错误：起始行 {effective_start} 超出文件总行数 {total_lines}"
     start_index = effective_start - 1
@@ -118,6 +123,26 @@ def read_file(
         f'total_lines="{total_lines}">\n'
         f"{body}\n"
         "</file-content>"
+    )
+
+
+def _unchanged_file_result(
+    target: Path,
+    content_hash: str,
+    start_line: int | None = None,
+    line_count: int | None = None,
+) -> str:
+    """构造完整文件或指定范围未变化时的统一占位结果。"""
+    range_attributes = (
+        f' start_line="{start_line}" line_count="{line_count}"'
+        if start_line is not None and line_count is not None
+        else ""
+    )
+    return (
+        f'<file-unchanged path="{target}" sha256="{content_hash}"'
+        f"{range_attributes}>\n"
+        "文件内容与本会话上次读取时一致，未重复返回完整内容。\n"
+        "</file-unchanged>"
     )
 
 
