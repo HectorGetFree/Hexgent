@@ -27,6 +27,7 @@ from hexgent.loop.transitions import Continue, Stop
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import (
     ReadFileCacheEntry,
+    ReadFileCacheKey,
     ToolCallCacheEntry,
     ToolExecutionContext,
 )
@@ -459,7 +460,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
                 make_response([], "继续完成最新问题"),
             ]
         )
-        self.context.read_file_cache[Path("/tmp/already-read.py")] = (
+        self.context.read_file_cache[ReadFileCacheKey(Path("/tmp/already-read.py"))] = (
             ReadFileCacheEntry("cached-hash")
         )
 
@@ -743,6 +744,20 @@ class AgentLoopLimitsTest(unittest.TestCase):
 
         self.assertEqual(description, "write_file(notes.md)")
         self.assertNotIn("敏感内容", description)
+
+    def test_read_file_description_includes_requested_range(self) -> None:
+        """分段读取的终端摘要应展示路径、起始行和读取行数。"""
+        tool = get_tool("read_file")
+        self.assertIsNotNone(tool)
+
+        description = tool.describe(
+            '{"path":"large.log","start_line":201,"line_count":100}'
+        )
+
+        self.assertEqual(
+            description,
+            "read_file(large.log, 第 201 行起读取 100 行)",
+        )
 
     def test_limit_event_is_emitted_once_before_finalization(self) -> None:
         """循环限制事件应只出现一次，并位于最终结果之前。"""

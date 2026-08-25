@@ -19,8 +19,9 @@ from hexgent.context import ContextManager
 from hexgent.session import Session
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
-from hexgent.tool.tool_context import ReadFileCacheEntry
+from hexgent.tool.tool_context import ReadFileCacheEntry, ReadFileCacheKey
 from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_execution import execute_tool_call
 
 
 tool_execution_module = import_module("hexgent.tool.tool_execution")
@@ -112,6 +113,39 @@ class SessionStoreTest(unittest.TestCase):
             self.assertIn("01234", message)
             self.assertNotIn(output, message)
 
+    def test_persisted_tool_result_can_be_restored_by_line_range(self) -> None:
+        """模型应能通过外置路径只恢复大结果中需要的行范围。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = SessionStore(root, session_id="session-restore")
+            persisted = store.persist_tool_result(
+                "call-restore",
+                "read_file",
+                "第一行\n第二行\n第三行\n第四行\n第五行",
+                force=True,
+                description="read_file(large.txt)",
+            )
+            context = ToolExecutionContext(InMemoryPlanStore(), root)
+
+            result = execute_tool_call(
+                "read_file",
+                json.dumps(
+                    {
+                        "path": persisted.relative_path,
+                        "start_line": 3,
+                        "line_count": 2,
+                    },
+                    ensure_ascii=False,
+                ),
+                context=context,
+            )
+
+        self.assertEqual(result.status, "success")
+        self.assertIn('lines="3-4"', result.output)
+        self.assertIn("第三行\n第四行", result.output)
+        self.assertNotIn("第一行", result.output)
+        self.assertNotIn("第五行", result.output)
+
     def test_tool_batch_returns_persisted_output_reference(self) -> None:
         """工具批次应把大结果替换为带路径的配对结果。"""
         with TemporaryDirectory() as directory:
@@ -125,9 +159,9 @@ class SessionStoreTest(unittest.TestCase):
                 ),
             )
             context = ToolExecutionContext(InMemoryPlanStore(), root)
-            context.read_file_cache[root / "example.txt"] = ReadFileCacheEntry(
-                "cached-hash"
-            )
+            context.read_file_cache[
+                ReadFileCacheKey(root / "example.txt")
+            ] = ReadFileCacheEntry("cached-hash")
             tool_call = SimpleNamespace(
                 call_id="call-1",
                 name="bash",
@@ -223,9 +257,9 @@ class SessionStoreTest(unittest.TestCase):
                 ),
             )
             context = ToolExecutionContext(InMemoryPlanStore(), root)
-            context.read_file_cache[root / "example.txt"] = ReadFileCacheEntry(
-                "cached-hash"
-            )
+            context.read_file_cache[
+                ReadFileCacheKey(root / "example.txt")
+            ] = ReadFileCacheEntry("cached-hash")
             tool_calls = [
                 SimpleNamespace(
                     call_id=f"call-{index}",

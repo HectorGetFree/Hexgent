@@ -65,6 +65,84 @@ class WorkspaceTest(unittest.TestCase):
         self.assertIn("<file-unchanged", second.output)
         self.assertNotIn("不会重复返回的内容", second.output)
 
+    def test_read_file_returns_only_requested_line_range(self) -> None:
+        """分段读取应返回范围元数据，且不把范围外内容加入结果。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "large.txt"
+            target.write_text(
+                "第一行\n第二行\n第三行\n第四行\n第五行\n",
+                encoding="utf-8",
+            )
+            context = ToolExecutionContext(InMemoryPlanStore(), root.resolve())
+
+            result = execute_tool_call(
+                "read_file",
+                '{"path":"large.txt","start_line":2,"line_count":2}',
+                context=context,
+            )
+
+        self.assertEqual(result.status, "success")
+        self.assertIn('lines="2-3"', result.output)
+        self.assertIn('total_lines="5"', result.output)
+        self.assertIn("第二行\n第三行", result.output)
+        self.assertNotIn("第一行", result.output)
+        self.assertNotIn("第四行", result.output)
+
+    def test_read_file_cache_distinguishes_line_ranges(self) -> None:
+        """同一文件不同范围不得互相去重，相同范围才返回占位符。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "large.txt").write_text(
+                "第一行\n第二行\n第三行\n第四行",
+                encoding="utf-8",
+            )
+            context = ToolExecutionContext(InMemoryPlanStore(), root.resolve())
+
+            first_range = execute_tool_call(
+                "read_file",
+                '{"path":"large.txt","start_line":1,"line_count":2}',
+                context=context,
+            )
+            second_range = execute_tool_call(
+                "read_file",
+                '{"path":"large.txt","start_line":3,"line_count":2}',
+                context=context,
+            )
+            repeated_range = execute_tool_call(
+                "read_file",
+                '{"path":"large.txt","start_line":1,"line_count":2}',
+                context=context,
+            )
+
+        self.assertIn("第一行", first_range.output)
+        self.assertIn("第三行", second_range.output)
+        self.assertIn("<file-unchanged", repeated_range.output)
+        self.assertIn('start_line="1"', repeated_range.output)
+
+    def test_read_file_rejects_invalid_line_range(self) -> None:
+        """非法起始行和过大行数应在执行前由参数管线拒绝。"""
+        with TemporaryDirectory() as directory:
+            context = ToolExecutionContext(
+                InMemoryPlanStore(), Path(directory).resolve()
+            )
+
+            invalid_start = execute_tool_call(
+                "read_file",
+                '{"path":"large.txt","start_line":0}',
+                context=context,
+            )
+            invalid_count = execute_tool_call(
+                "read_file",
+                '{"path":"large.txt","line_count":501}',
+                context=context,
+            )
+
+        self.assertEqual(invalid_start.status, "invalid")
+        self.assertIn("start_line", invalid_start.output)
+        self.assertEqual(invalid_count.status, "invalid")
+        self.assertIn("line_count", invalid_count.output)
+
     def test_hash_detects_changed_content_with_same_size_and_modified_time(self) -> None:
         """即使大小和修改时间不变，内容 Hash 变化仍应重新返回全文。"""
         with TemporaryDirectory() as directory:

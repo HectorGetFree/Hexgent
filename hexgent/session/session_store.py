@@ -231,5 +231,6 @@ def build_persisted_output_message(result: PersistedToolResult) -> str:
         f'original_characters="{result.original_characters}">\n'
         f"{result.preview}\n"
         "</persisted-output>\n"
-        "完整输出已保存到上述文件，需要更多内容时请使用 read_file 读取。"
+        "完整输出已保存到上述文件，需要更多内容时请使用 read_file 的 "
+        "start_line 和 line_count 分段读取。"
     )

@@ -7,6 +7,20 @@ from hexgent.plan import PlanStore
 
 
 @dataclass(frozen=True)
+class ReadFileCacheKey:
+    """唯一标识一次文件读取的路径和有效范围。"""
+
+    # 文件在权限检查和工具执行中使用的绝对解析路径。
+    path: Path
+
+    # 分段读取的起始行；完整读取时为空。
+    start_line: int | None = None
+
+    # 分段读取的最大行数；完整读取时为空。
+    line_count: int | None = None
+
+
+@dataclass(frozen=True)
 class ReadFileCacheEntry:
     """一次成功文件读取留下的内容状态。"""
 
@@ -36,7 +50,9 @@ class ToolExecutionContext:
     workdir: Path
 
     # 当前活动模型上下文中已经完整读取过的文件及其内容状态。
-    read_file_cache: dict[Path, ReadFileCacheEntry] = field(default_factory=dict)
+    read_file_cache: dict[ReadFileCacheKey, ReadFileCacheEntry] = field(
+        default_factory=dict
+    )
 
     # 当前 Agent Run 中可通过规范化参数指纹复用的成功工具调用。
     tool_call_cache: dict[str, ToolCallCacheEntry] = field(default_factory=dict)

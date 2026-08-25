@@ -4,7 +4,15 @@ from hashlib import sha256
 from pathlib import Path
 import subprocess
 
-from .tool_context import ReadFileCacheEntry, ToolExecutionContext
+from .tool_context import (
+    ReadFileCacheEntry,
+    ReadFileCacheKey,
+    ToolExecutionContext,
+)
+
+
+DEFAULT_READ_LINE_COUNT = 200
+MAX_READ_LINE_COUNT = 500
 
 
 def bash(command: str, context: ToolExecutionContext) -> str:
@@ -34,26 +42,83 @@ def _resolve_path(path: str, context: ToolExecutionContext) -> Path:
     return target.resolve()
 
 
-def read_file(path: str, context: ToolExecutionContext) -> str:
-    """读取 UTF-8 文本文件，内容未变化时返回轻量占位结果。"""
+def validate_read_file(
+    arguments: dict[str, object],
+    _context: ToolExecutionContext,
+) -> str | None:
+    """校验分段读取范围，避免一次恢复过多文件内容。"""
+    start_line = arguments.get("start_line")
+    line_count = arguments.get("line_count")
+    if isinstance(start_line, int) and start_line < 1:
+        return "参数“start_line”必须大于或等于 1"
+    if isinstance(line_count, int) and not 1 <= line_count <= MAX_READ_LINE_COUNT:
+        return f"参数“line_count”必须在 1 到 {MAX_READ_LINE_COUNT} 之间"
+    return None
+
+
+def read_file(
+    path: str,
+    context: ToolExecutionContext,
+    start_line: int | None = None,
+    line_count: int | None = None,
+) -> str:
+    """读取完整或指定行范围的 UTF-8 文件，内容未变化时返回占位结果。"""
     # 1. 读取原始字节并计算内容 Hash，避免依赖修改时间和文件大小。
     target = _resolve_path(path, context)
     raw_content = target.read_bytes()
     content_hash = sha256(raw_content).hexdigest()
 
-    # 2. 当前活动上下文已经见过同一内容时，不再重复返回完整正文。
-    cached = context.read_file_cache.get(target)
+    # 2. 规范化可选范围；出现任一范围参数时默认从首行读取 200 行。
+    is_partial = start_line is not None or line_count is not None
+    if is_partial:
+        effective_start = start_line if start_line is not None else 1
+        effective_count = (
+            line_count if line_count is not None else DEFAULT_READ_LINE_COUNT
+        )
+    else:
+        effective_start = None
+        effective_count = None
+    cache_key = ReadFileCacheKey(target, effective_start, effective_count)
+
+    # 3. 当前活动上下文已经见过同一内容和范围时，不再重复返回正文。
+    cached = context.read_file_cache.get(cache_key)
     if cached is not None and cached.content_hash == content_hash:
+        range_attributes = (
+            f' start_line="{effective_start}" line_count="{effective_count}"'
+            if is_partial
+            else ""
+        )
         return (
-            f'<file-unchanged path="{target}" sha256="{content_hash}">\n'
+            f'<file-unchanged path="{target}" sha256="{content_hash}"'
+            f"{range_attributes}>\n"
             "文件内容与本会话上次读取时一致，未重复返回完整内容。\n"
             "</file-unchanged>"
         )
 
-    # 3. 只有 UTF-8 解码成功后才更新缓存，保证缓存代表成功返回的正文。
+    # 4. 只有 UTF-8 解码成功后才更新缓存，保证缓存代表成功返回的正文。
     content = raw_content.decode("utf-8")
-    context.read_file_cache[target] = ReadFileCacheEntry(content_hash)
-    return content
+    if not is_partial:
+        context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
+        return content
+
+    # 5. 分段读取只返回实际行范围和总行数，避免外置大结果被整体重新加载。
+    assert effective_start is not None and effective_count is not None
+    lines = content.splitlines()
+    total_lines = len(lines)
+    if total_lines > 0 and effective_start > total_lines:
+        return f"错误：起始行 {effective_start} 超出文件总行数 {total_lines}"
+    start_index = effective_start - 1
+    selected_lines = lines[start_index : start_index + effective_count]
+    actual_start = effective_start if total_lines > 0 else 0
+    actual_end = start_index + len(selected_lines) if total_lines > 0 else 0
+    body = "\n".join(selected_lines)
+    context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
+    return (
+        f'<file-content path="{target}" lines="{actual_start}-{actual_end}" '
+        f'total_lines="{total_lines}">\n'
+        f"{body}\n"
+        "</file-content>"
+    )
 
 
 def write_file(path: str, content: str, context: ToolExecutionContext) -> str:

@@ -86,7 +86,7 @@ Hexgent 为模型提供以下工具：
 | 工具 | 作用 |
 | --- | --- |
 | `bash` | 执行 Shell 命令 |
-| `read_file` | 读取 UTF-8 文件 |
+| `read_file` | 读取完整 UTF-8 文件，或通过行范围分段恢复大结果 |
 | `write_file` | 写入并覆盖 UTF-8 文件 |
 | `edit_file` | 对唯一匹配的文本进行替换 |
 | `glob` | 按 Glob 模式查找文件或目录 |

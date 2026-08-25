@@ -38,14 +38,28 @@ TOOLS = [
     {
         "type": "function",
         "name": "read_file",
-        "description": "读取文件的 UTF-8 文本内容。",
+        "description": (
+            "读取文件的 UTF-8 文本内容。大文件或持久化工具结果应使用 "
+            "start_line 和 line_count 分段读取，避免重新加载完整内容。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
                     "description": "绝对路径或相对于工作目录的路径。",
-                }
+                },
+                "start_line": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "可选的起始行号，从 1 开始。",
+                },
+                "line_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "description": "可选的读取行数，最多 500 行。",
+                },
             },
             "required": ["path"],
             "additionalProperties": False,

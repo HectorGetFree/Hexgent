@@ -12,7 +12,14 @@ from .plan_tools import (
     validate_create_plan,
     validate_update_plan,
 )
-from .builtin_tools import bash, edit_file, glob, read_file, write_file
+from .builtin_tools import (
+    bash,
+    edit_file,
+    glob,
+    read_file,
+    validate_read_file,
+    write_file,
+)
 
 
 ToolFunction = Callable[..., str]
@@ -103,6 +110,20 @@ class RegisteredTool:
         return self.function(**arguments)
 
 
+def _describe_read_file(arguments: dict[str, Any]) -> str:
+    """展示读取路径，并在分段读取时补充有效行范围。"""
+    path = arguments.get("path")
+    if not isinstance(path, str):
+        return ""
+    start_line = arguments.get("start_line")
+    line_count = arguments.get("line_count")
+    if start_line is None and line_count is None:
+        return path
+    effective_start = start_line if isinstance(start_line, int) else 1
+    effective_count = line_count if isinstance(line_count, int) else 200
+    return f"{path}, 第 {effective_start} 行起读取 {effective_count} 行"
+
+
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
     "bash": RegisteredTool(
         bash,
@@ -113,7 +134,8 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
     "read_file": RegisteredTool(
         read_file,
         requires_context=True,
-        display_argument="path",
+        validator=validate_read_file,
+        describer=_describe_read_file,
         deduplication_policy="content_aware",
     ),
     "write_file": RegisteredTool(
