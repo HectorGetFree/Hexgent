@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
@@ -10,8 +11,10 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 
-SESSION_QUERY_SLUG_MAX_LENGTH = 48
-TOOL_RESULT_SLUG_MAX_LENGTH = 80
+SESSION_QUERY_SLUG_MAX_LENGTH = 18
+SESSION_QUERY_HASH_LENGTH = 6
+TOOL_RESULT_SLUG_MAX_LENGTH = 40
+TOOL_RESULT_HASH_LENGTH = 12
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
@@ -44,6 +47,12 @@ class PersistedToolResult:
 
     # 继续保留在模型上下文中的内容预览。
     preview: str
+
+    # 由完整内容 SHA-256 生成的稳定工件标识。
+    artifact_id: str
+
+    # 标识本次调用是否复用了当前 Session 已有的物理工件。
+    reused: bool = False
 
 
 class SessionStore:
@@ -82,6 +91,9 @@ class SessionStore:
         # 首轮 Query 到达前暂存的运行时事件。
         self._pending_records: list[tuple[str, Any]] = []
 
+        # Session 生命周期内按完整内容 Hash 复用的工具结果工件。
+        self._artifact_index: dict[str, PersistedToolResult] = {}
+
     def _build_session_dir(self, session_id: str) -> Path:
         """根据稳定会话标识构造持久化目录。"""
         return self.workdir / ".hexgent" / "sessions" / session_id
@@ -91,7 +103,8 @@ class SessionStore:
         if self.session_id is not None:
             return
         timestamp = _beijing_now().strftime("%Y%m%d-%H%M%S")
-        candidate = f"{timestamp}_{_build_query_slug(query)}"
+        query_hash = sha256(query.encode("utf-8")).hexdigest()[:SESSION_QUERY_HASH_LENGTH]
+        candidate = f"{timestamp}_{_build_query_slug(query)}_{query_hash}"
         session_dir = self._build_session_dir(candidate)
         if session_dir.exists():
             candidate = f"{candidate}_{uuid4().hex[:8]}"
@@ -157,26 +170,73 @@ class SessionStore:
         if not force and len(output) <= limits.max_inline_characters:
             return None
 
-        self.tool_results_dir.mkdir(parents=True, exist_ok=True)
-        filename = _build_tool_result_filename(call_id, tool_name, description)
-        result_path = self.tool_results_dir / filename
-        result_path.write_text(output, encoding="utf-8")
-        relative_path = str(result_path.relative_to(self.workdir))
+        # 1. 工件使用完整内容 Hash 标识，Context 缓存清空不影响 Session 复用。
+        artifact_id = sha256(output.encode("utf-8")).hexdigest()
+        existing = self._find_persisted_tool_result(artifact_id, output)
+        reused = existing is not None
+        if existing is None:
+            self.tool_results_dir.mkdir(parents=True, exist_ok=True)
+            filename = _build_tool_result_filename(
+                tool_name,
+                description,
+                artifact_id,
+            )
+            result_path = self.tool_results_dir / filename
+            result_path.write_text(output, encoding="utf-8")
+            relative_path = str(result_path.relative_to(self.workdir))
+        else:
+            relative_path = existing.relative_path
+
+        # 2. 每次调用都生成独立返回值和 Transcript 映射，但只保存一份正文。
         persisted = PersistedToolResult(
             relative_path=relative_path,
             original_characters=len(output),
             preview=output[: limits.preview_characters],
+            artifact_id=artifact_id,
+            reused=reused,
         )
+        self._artifact_index[artifact_id] = persisted
         self.append_transcript(
             "tool_result_persisted",
             {
                 "call_id": call_id,
                 "tool_name": tool_name,
+                "artifact_id": artifact_id,
                 "relative_path": relative_path,
                 "original_characters": len(output),
+                "reused": reused,
             },
         )
         return persisted
+
+    def _find_persisted_tool_result(
+        self,
+        artifact_id: str,
+        output: str,
+    ) -> PersistedToolResult | None:
+        """从内存索引或 Session 目录查找内容完全一致的已有工件。"""
+        cached = self._artifact_index.get(artifact_id)
+        if cached is not None and (self.workdir / cached.relative_path).is_file():
+            return cached
+
+        if not self.tool_results_dir.is_dir():
+            return None
+        pattern = f"*__{artifact_id[:TOOL_RESULT_HASH_LENGTH]}.txt"
+        for candidate in self.tool_results_dir.glob(pattern):
+            try:
+                existing_output = candidate.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+            if existing_output != output:
+                continue
+            return PersistedToolResult(
+                relative_path=str(candidate.relative_to(self.workdir)),
+                original_characters=len(output),
+                preview=output[: self.tool_result_limits.preview_characters],
+                artifact_id=artifact_id,
+                reused=True,
+            )
+        return None
 
 
 def _build_query_slug(query: str) -> str:
@@ -188,13 +248,17 @@ def _build_query_slug(query: str) -> str:
 
 
 def _build_tool_result_filename(
-    call_id: str,
     tool_name: str,
     description: str | None,
+    artifact_id: str,
 ) -> str:
-    """构造包含工具调用语义和完整 call_id 的安全结果文件名。"""
-    # 1. 优先使用工具自身生成的调用说明，缺失时退回工具名称。
-    readable_source = description or tool_name or "tool_result"
+    """使用短语义名称和内容 Hash 构造稳定的工件文件名。"""
+    # 1. 文件工具只保留目标 basename，避免绝对路径和 Session 名递归膨胀。
+    readable_argument = _extract_readable_argument(description)
+    readable_source = "_".join(
+        part for part in (tool_name, readable_argument) if part
+    )
+    readable_source = readable_source or "tool_result"
     readable_source = readable_source.encode("utf-8", errors="replace").decode("utf-8")
     normalized = re.sub(r"\s+", "_", readable_source).strip()
     readable_slug = re.sub(r"[^\w.-]", "_", normalized, flags=re.UNICODE)
@@ -202,10 +266,20 @@ def _build_tool_result_filename(
     readable_slug = readable_slug.strip(" ._")[:TOOL_RESULT_SLUG_MAX_LENGTH]
     readable_slug = readable_slug.rstrip(" ._") or "tool_result"
 
-    # 2. 完整保留经过过滤的 call_id，继续承担唯一定位和结果配对职责。
-    safe_call_id = re.sub(r"[^a-zA-Z0-9._-]", "_", call_id).strip(" ._")
-    safe_call_id = safe_call_id or uuid4().hex
-    return f"{readable_slug}__{safe_call_id}.txt"
+    # 2. 内容 Hash 负责物理工件唯一性，call_id 只保留在 Transcript 映射中。
+    return f"{readable_slug}__{artifact_id[:TOOL_RESULT_HASH_LENGTH]}.txt"
+
+
+def _extract_readable_argument(description: str | None) -> str:
+    """从工具调用说明中提取适合文件名的短参数。"""
+    if not description:
+        return ""
+    match = re.match(r"^[^(]+\((.*)\)$", description.strip())
+    value = match.group(1) if match else description
+    value = value.split(",", 1)[0].strip()
+    if "/" in value or "\\" in value:
+        return Path(value).name
+    return value
 
 
 def _beijing_now() -> datetime:

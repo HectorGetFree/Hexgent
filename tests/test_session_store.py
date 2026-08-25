@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import FrozenInstanceError
+from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -77,8 +78,9 @@ class SessionStoreTest(unittest.TestCase):
         )
         self.assertRegex(
             session.store.session_dir.name,
-            r"^\d{8}-\d{6}_原始 Query：不要修改空格 和标点！$",
+            r"^\d{8}-\d{6}_原始 Query：不要修改空格 和标_[0-9a-f]{6}$",
         )
+        self.assertLessEqual(len(session.store.session_dir.name), 42)
         with self.assertRaises(FrozenInstanceError):
             context_manager.user_queries[0].content = "试图改写"
 
@@ -107,11 +109,161 @@ class SessionStoreTest(unittest.TestCase):
             self.assertEqual(result_path.read_text(encoding="utf-8"), output)
             self.assertEqual(
                 result_path.name,
-                "read_file_tests_test_agent_loop_limits.py__call_1.txt",
+                (
+                    "read_file_test_agent_loop_limits.py__"
+                    f"{sha256(output.encode('utf-8')).hexdigest()[:12]}.txt"
+                ),
             )
             self.assertIn("path=", message)
             self.assertIn("01234", message)
             self.assertNotIn(output, message)
+
+    def test_identical_large_results_reuse_one_artifact(self) -> None:
+        """同一 Session 中的相同大结果应复用同一物理工件。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = SessionStore(root, session_id="session-reuse")
+            output = "重复的大结果" * 100
+
+            first = store.persist_tool_result(
+                "call-1",
+                "read_file",
+                output,
+                force=True,
+                description="read_file(/tmp/first.log)",
+            )
+            second = store.persist_tool_result(
+                "call-2",
+                "read_file",
+                output,
+                force=True,
+                description="read_file(/tmp/second.log)",
+            )
+            records = [
+                json.loads(line)
+                for line in store.transcript_path.read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+            result_paths = list(store.tool_results_dir.glob("*.txt"))
+
+        self.assertEqual(first.relative_path, second.relative_path)
+        self.assertFalse(first.reused)
+        self.assertTrue(second.reused)
+        self.assertEqual(len(result_paths), 1)
+        persisted_records = [
+            record for record in records if record["type"] == "tool_result_persisted"
+        ]
+        self.assertEqual(
+            [record["payload"]["call_id"] for record in persisted_records],
+            ["call-1", "call-2"],
+        )
+        self.assertEqual(
+            [record["payload"]["reused"] for record in persisted_records],
+            [False, True],
+        )
+
+    def test_tool_batch_reuses_artifact_after_context_cache_clear(self) -> None:
+        """工具批次清空 Context 缓存后仍应复用 Session 工件。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = SessionStore(
+                root,
+                session_id="session-cache-clear",
+                tool_result_limits=ToolResultLimits(max_inline_characters=10),
+            )
+            context = ToolExecutionContext(InMemoryPlanStore(), root)
+            context.read_file_cache[
+                ReadFileCacheKey(root / "large.log")
+            ] = ReadFileCacheEntry("cached-hash")
+            first_call = SimpleNamespace(
+                call_id="call-1",
+                name="read_file",
+                arguments='{"path":"large.log"}',
+            )
+            second_call = SimpleNamespace(
+                call_id="call-2",
+                name="read_file",
+                arguments='{"path":"large.log"}',
+            )
+            large_output = "相同的大结果" * 100
+
+            with patch.object(
+                tool_execution_module,
+                "execute_tool_call",
+                return_value=ToolExecutionResult(
+                    "success", large_output, False
+                ),
+            ):
+                _, first_batch = drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        [first_call],
+                        context=context,
+                        user_confirmation=lambda _tool, _message: "allow",
+                        remaining_tool_calls=1,
+                        deadline=monotonic() + 10,
+                        session_store=store,
+                    )
+                )
+                self.assertEqual(context.read_file_cache, {})
+                _, second_batch = drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        [second_call],
+                        context=context,
+                        user_confirmation=lambda _tool, _message: "allow",
+                        remaining_tool_calls=1,
+                        deadline=monotonic() + 10,
+                        session_store=store,
+                    )
+                )
+            result_paths = list(store.tool_results_dir.glob("*.txt"))
+            records = [
+                json.loads(line)
+                for line in store.transcript_path.read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        self.assertEqual(
+            first_batch.outputs[0]["output"],
+            second_batch.outputs[0]["output"],
+        )
+        self.assertEqual(len(result_paths), 1)
+        persisted_records = [
+            record for record in records if record["type"] == "tool_result_persisted"
+        ]
+        self.assertEqual(
+            [record["payload"]["reused"] for record in persisted_records],
+            [False, True],
+        )
+
+    def test_recreated_store_reuses_content_addressed_artifact(self) -> None:
+        """重建 SessionStore 后也应从磁盘识别并复用已有工件。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = "能够跨 Store 恢复的结果" * 100
+            first_store = SessionStore(root, session_id="session-resume")
+            first = first_store.persist_tool_result(
+                "call-1",
+                "read_file",
+                output,
+                force=True,
+                description="read_file(original.log)",
+            )
+
+            resumed_store = SessionStore(root, session_id="session-resume")
+            resumed = resumed_store.persist_tool_result(
+                "call-2",
+                "read_file",
+                output,
+                force=True,
+                description="read_file(copy.log)",
+            )
+            result_paths = list(resumed_store.tool_results_dir.glob("*.txt"))
+
+        self.assertEqual(first.relative_path, resumed.relative_path)
+        self.assertTrue(resumed.reused)
+        self.assertEqual(len(result_paths), 1)
 
     def test_persisted_tool_result_can_be_restored_by_line_range(self) -> None:
         """模型应能通过外置路径只恢复大结果中需要的行范围。"""
@@ -191,7 +343,7 @@ class SessionStoreTest(unittest.TestCase):
             self.assertEqual(len(result_paths), 1)
             self.assertEqual(
                 result_paths[0].name,
-                "bash_example__call-1.txt",
+                f"bash_example__{sha256(('A' * 20).encode()).hexdigest()[:12]}.txt",
             )
             records = [
                 json.loads(line)
@@ -202,7 +354,10 @@ class SessionStoreTest(unittest.TestCase):
             self.assertIsNone(records[-1]["payload"]["output"])
             self.assertEqual(
                 records[-1]["payload"]["persisted_output"],
-                ".hexgent/sessions/session-batch/tool-results/bash_example__call-1.txt",
+                (
+                    ".hexgent/sessions/session-batch/tool-results/"
+                    f"bash_example__{sha256(('A' * 20).encode()).hexdigest()[:12]}.txt"
+                ),
             )
             self.assertEqual(context.read_file_cache, {})
 

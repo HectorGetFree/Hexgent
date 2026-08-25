@@ -122,6 +122,14 @@ def _matches_json_type(value: Any, expected_type: str | list[str]) -> bool:
     return expected_python_type is None or isinstance(value, expected_python_type)
 
 
+def _allows_null(property_schema: dict[str, Any]) -> bool:
+    """判断字段是否使用可空类型表达模型侧的可选参数。"""
+    expected_type = property_schema.get("type")
+    return expected_type == "null" or (
+        isinstance(expected_type, list) and "null" in expected_type
+    )
+
+
 def _validate_arguments(
     tool_name: str,
     tool: RegisteredTool,
@@ -133,12 +141,16 @@ def _validate_arguments(
     if schema is None:
         return _invalid(f"工具“{tool_name}”缺少参数 Schema")
 
+    properties = schema.get("properties", {})
     required = schema.get("required", [])
-    missing = [name for name in required if name not in arguments]
+    missing = [
+        name
+        for name in required
+        if name not in arguments and not _allows_null(properties.get(name, {}))
+    ]
     if missing:
         return _invalid(f"缺少必填参数：{', '.join(missing)}")
 
-    properties = schema.get("properties", {})
     if schema.get("additionalProperties") is False:
         extra = [name for name in arguments if name not in properties]
         if extra:
