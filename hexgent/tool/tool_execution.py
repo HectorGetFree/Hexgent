@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 import inspect
 import json
@@ -539,10 +539,14 @@ def execute_tool_batch(
         if tool_call.name == "create_plan" and result.status == "success":
             plan = context.plan_store.get_plan()
             if plan is not None:
+                if session_store is not None:
+                    session_store.append_transcript("plan_created", asdict(plan))
                 yield PlanCreatedEvent(plan)
         elif tool_call.name == "update_plan" and result.status == "success":
             plan = context.plan_store.get_plan()
             if plan is not None:
+                if session_store is not None:
+                    session_store.append_transcript("plan_updated", asdict(plan))
                 yield PlanUpdatedEvent(plan)
 
     # 5. 工具全部完成后执行批次总预算，保证大批量小结果不会撑爆上下文。

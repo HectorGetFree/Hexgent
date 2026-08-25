@@ -79,6 +79,9 @@ class SessionStore:
         # 保存超出内联预算的完整工具结果的目录。
         self.tool_results_dir = self.session_dir / "tool-results"
 
+        # 保存每次 Agent Run 结构化报告及索引的目录。
+        self.reports_dir = self.session_dir / "reports"
+
         # 当前会话采用的工具结果内联和预览限制。
         self.tool_result_limits = tool_result_limits or ToolResultLimits()
 
@@ -112,6 +115,7 @@ class SessionStore:
         self.session_dir = self._build_session_dir(candidate)
         self.transcript_path = self.session_dir / "transcript.jsonl"
         self.tool_results_dir = self.session_dir / "tool-results"
+        self.reports_dir = self.session_dir / "reports"
 
     def start_session(self, first_query: str) -> None:
         """确保会话已由首轮 Query 命名，并记录会话开始事实。"""
@@ -155,6 +159,73 @@ class SessionStore:
             )
             transcript.write("\n")
         self._next_sequence += 1
+
+    @property
+    def next_sequence(self) -> int:
+        """返回下一条 Transcript 记录将使用的序号。"""
+        return self._next_sequence
+
+    def next_run_id(self) -> str:
+        """根据现有 Report 文件分配 Session 内下一个运行编号。"""
+        existing_numbers = []
+        if self.reports_dir.is_dir():
+            for path in self.reports_dir.glob("run-*.json"):
+                match = re.fullmatch(r"run-(\d+)\.json", path.name)
+                if match:
+                    existing_numbers.append(int(match.group(1)))
+        next_number = max(existing_numbers, default=0) + 1
+        return f"run-{next_number:03d}"
+
+    def read_transcript(self, start_sequence: int = 1) -> list[dict[str, Any]]:
+        """读取指定序号起的 Transcript 记录，供 Session 构造派生视图。"""
+        if not self.transcript_path.is_file():
+            return []
+        records = []
+        for line in self.transcript_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if record.get("sequence", 0) >= start_sequence:
+                records.append(record)
+        return records
+
+    def persist_run_report(self, report: dict[str, Any]) -> Path:
+        """原子保存单次 Run Report，并更新当前 Session 的报告索引。"""
+        # 1. 每个已经结束的 Run 独占一个不可变 JSON 文件。
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        run_id = report["run_id"]
+        report_path = self.reports_dir / f"{run_id}.json"
+        _write_json_atomically(report_path, report)
+
+        # 2. 索引只保留导航字段，完整详情继续由独立 Run Report 承载。
+        index_path = self.reports_dir / "index.json"
+        if index_path.is_file():
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+        else:
+            index = {
+                "schema_version": 1,
+                "session_id": self.session_id,
+                "runs": [],
+            }
+        index["runs"] = [
+            item for item in index["runs"] if item.get("run_id") != run_id
+        ]
+        index["runs"].append(
+            {
+                "run_id": run_id,
+                "status": report["status"],
+                "user_query": report["user_query"],
+                "started_at": report["started_at"],
+                "finished_at": report["finished_at"],
+                "relative_path": str(report_path.relative_to(self.session_dir)),
+            }
+        )
+        index["run_count"] = len(index["runs"])
+        index["latest_run_id"] = run_id
+        index["latest_status"] = report["status"]
+        index["updated_at"] = report["finished_at"]
+        _write_json_atomically(index_path, index)
+        return report_path
 
     def persist_tool_result(
         self,
@@ -295,6 +366,20 @@ def _json_default(value: Any) -> Any:
     if hasattr(value, "__dict__"):
         return vars(value)
     return str(value)
+
+
+def _write_json_atomically(path: Path, value: Any) -> None:
+    """先写临时文件再替换目标，避免留下半份 JSON 工件。"""
+    temporary_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary_path.write_text(
+            json.dumps(value, ensure_ascii=False, indent=2, default=_json_default)
+            + "\n",
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def build_persisted_output_message(result: PersistedToolResult) -> str:

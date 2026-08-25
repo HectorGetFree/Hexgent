@@ -45,9 +45,9 @@ def agent_loop(
     )
     active_context_limits = context_limits or ContextLimits()
     if session is not None:
-        session.record_runtime_event(
-            "agent_run_started",
-            {"limits_enabled": loop_limits.enforce_run_limits},
+        session.start_run(
+            limits_enabled=loop_limits.enforce_run_limits,
+            plan=execution_context.plan_store.get_plan(),
         )
 
     while True:
@@ -67,14 +67,12 @@ def agent_loop(
 
         # 3. Stop 是 Agent Loop 的唯一正常出口。
         if session is not None:
-            session.record_runtime_event(
-                "agent_run_finished",
-                {
-                    "status": turn_output.terminal.status,
-                    "stop_reason": turn_output.terminal.stop_reason,
-                    "elapsed_seconds": turn_output.terminal.elapsed_seconds,
-                    "output_text": turn_output.terminal.output_text,
-                },
+            session.finish_run(
+                status=turn_output.terminal.status,
+                stop_reason=turn_output.terminal.stop_reason,
+                elapsed_seconds=turn_output.terminal.elapsed_seconds,
+                output_text=turn_output.terminal.output_text,
+                plan=execution_context.plan_store.get_plan(),
             )
         yield RunFinishedEvent(turn_output.terminal)
         return

@@ -18,7 +18,7 @@ from hexgent.session import (
 )
 from hexgent.context import ContextManager
 from hexgent.session import Session
-from hexgent.plan import InMemoryPlanStore
+from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_context import ReadFileCacheEntry, ReadFileCacheKey
 from hexgent.tool.tool_execution import ToolExecutionResult
@@ -395,6 +395,158 @@ class SessionStoreTest(unittest.TestCase):
                 "message",
                 "agent_run_finished",
             ],
+        )
+
+    def test_finished_run_generates_structured_json_report(self) -> None:
+        """Session 应从当前 Run 的事实生成结构化报告和索引。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context_manager = ContextManager()
+            session = Session.persistent(root)
+            query = context_manager.append_user_query("检查 Session 报告")
+            session.record_user_query(query)
+            initial_plan = Plan(
+                "检查报告",
+                "in_progress",
+                [PlanStep("读取事实", "正在读取事实", "in_progress", "step-1")],
+            )
+            session.start_run(limits_enabled=True, plan=initial_plan)
+            session.record_runtime_event(
+                "model_response_completed",
+                {
+                    "usage": {"input_tokens": 120, "output_tokens": 30},
+                    "tool_call_count": 1,
+                },
+            )
+            session.store.append_transcript(
+                "tool_execution_finished",
+                {
+                    "call_id": "call-1",
+                    "tool_name": "read_file",
+                    "status": "success",
+                },
+            )
+            session.store.persist_tool_result(
+                "call-1",
+                "read_file",
+                "大结果" * 100,
+                force=True,
+                description="read_file(example.py)",
+            )
+            session.record_compaction_boundary(
+                {
+                    "summary": "不应复制进报告的压缩摘要",
+                    "before_tokens": 20_000,
+                    "after_tokens": 10_000,
+                    "status": "compacted",
+                }
+            )
+            completed_plan = Plan(
+                "检查报告",
+                "completed",
+                [PlanStep("读取事实", "正在读取事实", "completed", "step-1")],
+                revision=2,
+            )
+            session.record_runtime_event("plan_updated", completed_plan)
+
+            report_path = session.finish_run(
+                status="completed",
+                stop_reason=None,
+                elapsed_seconds=2.5,
+                output_text="检查完成",
+                plan=None,
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            index = json.loads(
+                (session.store.reports_dir / "index.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(report["schema_version"], 1)
+        self.assertEqual(report["run_id"], "run-001")
+        self.assertEqual(report["user_query"], "检查 Session 报告")
+        self.assertEqual(report["usage"]["total_tokens"], 150)
+        self.assertEqual(report["tools"]["by_name"], {"read_file": 1})
+        self.assertEqual(report["context"]["compaction_count"], 1)
+        self.assertNotIn(
+            "summary",
+            report["context"]["compactions"][0],
+        )
+        self.assertEqual(report["context"]["persisted_output_count"], 1)
+        self.assertEqual(report["context"]["unique_artifact_count"], 1)
+        self.assertEqual(report["plan"]["initial"]["revision"], 1)
+        self.assertEqual(report["plan"]["final"]["revision"], 2)
+        self.assertEqual(report["final_output"], "检查完成")
+        self.assertEqual(index["run_count"], 1)
+        self.assertEqual(index["latest_run_id"], "run-001")
+
+    def test_failed_run_still_generates_report(self) -> None:
+        """模型不可恢复失败也必须留下包含诊断信息的 Run Report。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context_manager = ContextManager()
+            session = Session.persistent(root)
+            query = context_manager.append_user_query("执行长任务")
+            session.record_user_query(query)
+            session.start_run(limits_enabled=False, plan=None)
+            session.record_runtime_event(
+                "model_response_failed",
+                {
+                    "message": "服务过载",
+                    "reason": "stream_error",
+                    "recoverable": False,
+                },
+            )
+
+            report_path = session.finish_run(
+                status="failed",
+                stop_reason=None,
+                elapsed_seconds=3.2,
+                output_text="错误：服务过载",
+                plan=None,
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["errors"][0]["message"], "服务过载")
+        self.assertEqual(report["final_output"], "错误：服务过载")
+
+    def test_multiple_runs_update_session_report_index(self) -> None:
+        """同一 Session 的多次运行应使用连续编号并保留全部索引。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context_manager = ContextManager()
+            session = Session.persistent(root)
+
+            generated_paths = []
+            for query_content in ("第一次请求", "继续执行"):
+                query = context_manager.append_user_query(query_content)
+                session.record_user_query(query)
+                session.start_run(limits_enabled=False, plan=None)
+                generated_paths.append(
+                    session.finish_run(
+                        status="completed",
+                        stop_reason=None,
+                        elapsed_seconds=1.0,
+                        output_text="完成",
+                        plan=None,
+                    )
+                )
+            index = json.loads(
+                (session.store.reports_dir / "index.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(
+            [path.name for path in generated_paths],
+            ["run-001.json", "run-002.json"],
+        )
+        self.assertEqual(index["run_count"], 2)
+        self.assertEqual(
+            [run["run_id"] for run in index["runs"]],
+            ["run-001", "run-002"],
         )
 
     def test_batch_budget_persists_largest_inline_results(self) -> None:
