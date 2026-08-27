@@ -82,10 +82,12 @@ def read_file(
     content = raw_content.decode("utf-8")
     if not is_partial:
         cache_key = ReadFileCacheKey(target)
-        cached = context.read_file_cache.get(cache_key)
+        with context.cache_lock:
+            cached = context.read_file_cache.get(cache_key)
         if cached is not None and cached.content_hash == content_hash:
             return _unchanged_file_result(target, content_hash)
-        context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
+        with context.cache_lock:
+            context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
         return content
 
     # 4. 覆盖整个文件的首段请求按完整读取处理，避免模型默认 1-500 污染缓存。
@@ -94,15 +96,18 @@ def read_file(
     total_lines = len(lines)
     if effective_start == 1 and effective_count >= total_lines:
         cache_key = ReadFileCacheKey(target)
-        cached = context.read_file_cache.get(cache_key)
+        with context.cache_lock:
+            cached = context.read_file_cache.get(cache_key)
         if cached is not None and cached.content_hash == content_hash:
             return _unchanged_file_result(target, content_hash)
-        context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
+        with context.cache_lock:
+            context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
         return content
 
     # 5. 真正的分段请求按具体范围去重，只返回范围内的内容和行数元数据。
     cache_key = ReadFileCacheKey(target, effective_start, effective_count)
-    cached = context.read_file_cache.get(cache_key)
+    with context.cache_lock:
+        cached = context.read_file_cache.get(cache_key)
     if cached is not None and cached.content_hash == content_hash:
         return _unchanged_file_result(
             target,
@@ -117,7 +122,8 @@ def read_file(
     actual_start = effective_start if total_lines > 0 else 0
     actual_end = start_index + len(selected_lines) if total_lines > 0 else 0
     body = "\n".join(selected_lines)
-    context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
+    with context.cache_lock:
+        context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
     return (
         f'<file-content path="{target}" lines="{actual_start}-{actual_end}" '
         f'total_lines="{total_lines}">\n'

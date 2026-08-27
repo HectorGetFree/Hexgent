@@ -1,0 +1,158 @@
+"""连续安全工具的有界并行执行测试。"""
+
+from importlib import import_module
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Barrier, get_ident
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+from hexgent.events import ToolFinishedEvent, ToolStartedEvent
+from hexgent.plan import InMemoryPlanStore
+from hexgent.tool.tool_context import ToolExecutionContext
+from hexgent.tool.tool_execution import ToolExecutionResult
+
+
+tool_execution_module = import_module("hexgent.tool.tool_execution")
+
+
+def drain_generator(generator):
+    """收集批次事件并取得生成器最终返回值。"""
+    events = []
+    while True:
+        try:
+            events.append(next(generator))
+        except StopIteration as stopped:
+            return events, stopped.value
+
+
+def make_call(call_id: str, name: str, arguments: str) -> SimpleNamespace:
+    """构造最小模型工具调用对象。"""
+    return SimpleNamespace(call_id=call_id, name=name, arguments=arguments)
+
+
+class ToolParallelExecutionTest(unittest.TestCase):
+    """验证只并行相邻的注册安全工具。"""
+
+    def test_partition_preserves_serial_barriers(self) -> None:
+        """读工具可以连续成组，写工具必须独占并阻断前后分组。"""
+        calls = [
+            make_call("c1", "read_file", '{"path":"a.py"}'),
+            make_call("c2", "glob", '{"pattern":"*.py"}'),
+            make_call(
+                "c3",
+                "write_file",
+                '{"path":"a.py","content":"x"}',
+            ),
+            make_call("c4", "read_file", '{"path":"b.py"}'),
+        ]
+
+        groups = tool_execution_module._partition_tool_calls(calls)
+
+        self.assertEqual(
+            [(group.concurrency_safe, [call.call_id for call in group.calls])
+             for group in groups],
+            [(True, ["c1", "c2"]), (False, ["c3"]), (True, ["c4"])],
+        )
+
+    def test_adjacent_read_calls_execute_concurrently_but_commit_in_order(self) -> None:
+        """两个相邻读取应真正重叠执行，同时保持事件与结果原始顺序。"""
+        with TemporaryDirectory() as directory:
+            context = ToolExecutionContext(
+                InMemoryPlanStore(),
+                Path(directory).resolve(),
+            )
+            calls = [
+                make_call("c1", "read_file", '{"path":"a.py"}'),
+                make_call("c2", "read_file", '{"path":"b.py"}'),
+            ]
+            barrier = Barrier(2)
+            worker_threads: set[int] = set()
+
+            def execute(*_args, **kwargs):
+                worker_threads.add(get_ident())
+                barrier.wait(timeout=2)
+                return ToolExecutionResult(
+                    "success",
+                    f"结果-{kwargs['call_id']}",
+                    False,
+                )
+
+            with patch.object(
+                tool_execution_module,
+                "execute_tool_call",
+                side_effect=execute,
+            ):
+                events, batch = drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        calls,
+                        context=context,
+                        user_confirmation=lambda _tool, _message: "allow",
+                        remaining_tool_calls=None,
+                        deadline=None,
+                    )
+                )
+
+        self.assertEqual(len(worker_threads), 2)
+        self.assertEqual(
+            [event.call_id for event in events if isinstance(event, ToolStartedEvent)],
+            ["c1", "c2"],
+        )
+        self.assertEqual(
+            [event.call_id for event in events if isinstance(event, ToolFinishedEvent)],
+            ["c1", "c2"],
+        )
+        self.assertEqual(
+            [output["call_id"] for output in batch.outputs],
+            ["c1", "c2"],
+        )
+        self.assertEqual(
+            [output["output"] for output in batch.outputs],
+            ["结果-c1", "结果-c2"],
+        )
+
+    def test_permission_confirmation_remains_on_scheduler_thread(self) -> None:
+        """并行读取工作区外文件时，权限询问仍应在调用线程串行完成。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            context = ToolExecutionContext(InMemoryPlanStore(), root)
+            calls = [
+                make_call("c1", "read_file", '{"path":"../a.py"}'),
+                make_call("c2", "read_file", '{"path":"../b.py"}'),
+            ]
+            scheduler_thread = get_ident()
+            confirmation_threads = []
+            barrier = Barrier(2)
+
+            def confirm(_tool_name: str, _message: str) -> str:
+                confirmation_threads.append(get_ident())
+                return "allow"
+
+            def execute(*_args, **_kwargs):
+                barrier.wait(timeout=2)
+                return ToolExecutionResult("success", "ok", False)
+
+            with patch.object(
+                tool_execution_module,
+                "execute_tool_call",
+                side_effect=execute,
+            ):
+                drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        calls,
+                        context=context,
+                        user_confirmation=confirm,
+                        remaining_tool_calls=None,
+                        deadline=None,
+                    )
+                )
+
+        self.assertEqual(
+            confirmation_threads,
+            [scheduler_thread, scheduler_thread],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -57,6 +57,9 @@ class RegisteredTool:
     # 工具成功执行后是否使其他精确调用缓存失效。
     invalidates_tool_call_cache: bool = False
 
+    # 工具是否可以与相邻的其他安全工具并行执行。
+    concurrency_safe: bool = False
+
     def describe(self, raw_arguments: str) -> str:
         """根据工具自身声明生成安全、简短的调用说明。"""
         # 1. 尽力解析原始参数；展示失败不能阻止后续统一参数校验。
@@ -137,6 +140,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         validator=validate_read_file,
         describer=_describe_read_file,
         deduplication_policy="content_aware",
+        concurrency_safe=True,
     ),
     "write_file": RegisteredTool(
         write_file,
@@ -155,6 +159,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         requires_context=True,
         display_argument="pattern",
         deduplication_policy="exact",
+        concurrency_safe=True,
     ),
     "create_plan": RegisteredTool(
         create_plan,

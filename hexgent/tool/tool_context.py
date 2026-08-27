@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 
 from hexgent.plan import PlanStore
 
@@ -60,14 +61,19 @@ class ToolExecutionContext:
     # 当前 Agent Run 中每个工具调用指纹已经命中的重复次数。
     tool_call_duplicate_counts: dict[str, int] = field(default_factory=dict)
 
+    # 保护并行只读工具共享的缓存字典，不覆盖实际文件 I/O。
+    cache_lock: Lock = field(default_factory=Lock, repr=False, compare=False)
+
     def clear_read_file_cache(self) -> None:
         """在旧文件正文可能离开活动上下文后清空读取状态。"""
-        self.read_file_cache.clear()
+        with self.cache_lock:
+            self.read_file_cache.clear()
 
     def clear_tool_call_cache(self) -> None:
         """清空当前 Agent Run 的精确工具调用缓存和重复计数。"""
-        self.tool_call_cache.clear()
-        self.tool_call_duplicate_counts.clear()
+        with self.cache_lock:
+            self.tool_call_cache.clear()
+            self.tool_call_duplicate_counts.clear()
 
     def clear_tool_caches(self) -> None:
         """在活动上下文失效时清空全部模型可见工具缓存。"""

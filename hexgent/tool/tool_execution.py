@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 import inspect
@@ -71,8 +72,57 @@ class ToolBatchResult:
     budgeted_call_count: int
 
 
+@dataclass(frozen=True)
+class PreparedToolCall:
+    """已经完成参数与权限检查、可以进入执行阶段的工具调用。"""
+
+    # 当前调用对应的注册工具。
+    tool: RegisteredTool
+
+    # 已解析且通过 Schema 与工具专属校验的参数。
+    arguments: dict[str, Any]
+
+    # 精确去重工具使用的规范化调用指纹。
+    fingerprint: str | None
+
+
+@dataclass(frozen=True)
+class ToolCallGroup:
+    """保持模型原始顺序的一组连续工具调用。"""
+
+    # 当前分组是否允许使用线程池并行执行。
+    concurrency_safe: bool
+
+    # 当前分组包含的连续原始工具调用。
+    calls: list[Any]
+
+
+@dataclass
+class ScheduledToolCall:
+    """一个已经完成主线程调度、等待执行或提交结果的调用。"""
+
+    # 模型返回的原始工具调用对象。
+    tool_call: Any
+
+    # 提供给 UI 和 Transcript 的安全调用摘要。
+    description: str
+
+    # 参数权限检查成功后等待执行的调用；无需执行时为空。
+    prepared: PreparedToolCall | None = None
+
+    # 参数拒绝、去重或真实执行后得到的结果。
+    result: ToolExecutionResult | None = None
+
+    # 因工具次数或运行时间预算不足而跳过的原因。
+    skipped_message: str | None = None
+
+    # 当前并行组内相同精确调用首次使用的调用标识。
+    pending_duplicate_source_call_id: str | None = None
+
+
 TOOL_SCHEMAS = {tool["name"]: tool["parameters"] for tool in TOOLS}
 MAX_DUPLICATE_TOOL_CALLS = 3
+MAX_CONCURRENT_TOOL_CALLS = 4
 
 
 def unavailable_user_confirmation(
@@ -227,8 +277,11 @@ def _deduplicated_result(
     context: ToolExecutionContext,
 ) -> ToolExecutionResult:
     """为精确重复调用生成轻量结果，并限制同一指纹的重复次数。"""
-    duplicate_count = context.tool_call_duplicate_counts.get(fingerprint, 0) + 1
-    context.tool_call_duplicate_counts[fingerprint] = duplicate_count
+    with context.cache_lock:
+        duplicate_count = (
+            context.tool_call_duplicate_counts.get(fingerprint, 0) + 1
+        )
+        context.tool_call_duplicate_counts[fingerprint] = duplicate_count
     if duplicate_count >= MAX_DUPLICATE_TOOL_CALLS:
         output = (
             "错误：本次 Agent Run 中相同工具和参数的重复调用已达到上限，"
@@ -256,16 +309,28 @@ def _deduplicated_result(
     )
 
 
-def execute_tool_call(
+def _partition_tool_calls(tool_calls: list[Any]) -> list[ToolCallGroup]:
+    """按原始顺序合并相邻安全调用，并让每个不安全调用独占分组。"""
+    groups: list[ToolCallGroup] = []
+    for tool_call in tool_calls:
+        tool = get_tool(tool_call.name)
+        concurrency_safe = tool is not None and tool.concurrency_safe
+        if concurrency_safe and groups and groups[-1].concurrency_safe:
+            groups[-1].calls.append(tool_call)
+            continue
+        groups.append(ToolCallGroup(concurrency_safe, [tool_call]))
+    return groups
+
+
+def _prepare_tool_call(
     tool_name: str,
     raw_arguments: str,
-    *,  # 表示后面的参数只能用参数名传递
+    *,
     context: ToolExecutionContext,
-    user_confirmation: UserConfirmation = unavailable_user_confirmation,
-    execution_notifier: ToolExecutionNotifier | None = None,
-    call_id: str | None = None,
-) -> ToolExecutionResult:
-    """完成工具查找、参数校验、权限处理和真正执行。"""
+    user_confirmation: UserConfirmation,
+    call_id: str | None,
+) -> PreparedToolCall | ToolExecutionResult:
+    """在主线程完成工具查找、参数、权限和去重检查。"""
     # 1. 校验工具是否存在，并取得对应的工具函数。
     tool = get_tool(tool_name)
     if tool is None:
@@ -285,7 +350,7 @@ def execute_tool_call(
     if validation_error is not None:
         return validation_error
 
-    # 4. 计算权限决策，并处理直接拒绝或等待用户确认的情况。
+    # 4. 权限判断和用户确认始终在调度主线程串行完成。
     permission_result = _resolve_permission(
         tool_name,
         check_permission(tool_name, parsed, context),
@@ -294,31 +359,83 @@ def execute_tool_call(
     if permission_result is not None:
         return permission_result
 
-    # 5. 精确去重工具在权限允许后查询当前 Agent Run 的成功结果缓存。
+    # 5. 精确去重检查此前已经完成并进入缓存的调用。
     fingerprint: str | None = None
     if tool.deduplication_policy == "exact" and call_id is not None:
         fingerprint = _build_tool_call_fingerprint(tool_name, parsed)
-        cached = context.tool_call_cache.get(fingerprint)
+        with context.cache_lock:
+            cached = context.tool_call_cache.get(fingerprint)
         if cached is not None:
             return _deduplicated_result(fingerprint, cached, context)
 
-    # 6. 权限允许且未命中缓存后，通知调用方工具即将开始执行。
-    if execution_notifier is not None:
-        execution_notifier(tool_name)
+    return PreparedToolCall(tool, parsed, fingerprint)
 
-    # 7. 真正执行工具，并将正常输出或异常转换为统一结果。
+
+def _execute_prepared_tool_call(
+    prepared: PreparedToolCall,
+    *,
+    context: ToolExecutionContext,
+    call_id: str | None,
+) -> ToolExecutionResult:
+    """只执行已经允许的工具函数，并提交工具级缓存副作用。"""
+    # 1. 真正执行工具，并将正常输出或异常转换为统一结果。
     try:
-        output = tool.execute(parsed, context)
+        output = prepared.tool.execute(prepared.arguments, context)
     except Exception as error:
         return ToolExecutionResult("error", f"错误：{error}", True)
 
-    # 8. 副作用工具使精确缓存失效；可去重工具只缓存成功执行结果。
-    if tool.invalidates_tool_call_cache:
+    # 2. 副作用工具使精确缓存失效；安全工具提交自身成功结果。
+    if prepared.tool.invalidates_tool_call_cache:
         context.clear_tool_call_cache()
-    if fingerprint is not None and call_id is not None:
-        context.tool_call_cache[fingerprint] = ToolCallCacheEntry(call_id, output)
-        context.tool_call_duplicate_counts[fingerprint] = 0
-    return ToolExecutionResult("success", output, False, fingerprint=fingerprint)
+    if prepared.fingerprint is not None and call_id is not None:
+        with context.cache_lock:
+            context.tool_call_cache[prepared.fingerprint] = ToolCallCacheEntry(
+                call_id,
+                output,
+            )
+            context.tool_call_duplicate_counts[prepared.fingerprint] = 0
+    return ToolExecutionResult(
+        "success",
+        output,
+        False,
+        fingerprint=prepared.fingerprint,
+    )
+
+
+def execute_tool_call(
+    tool_name: str,
+    raw_arguments: str,
+    *,  # 表示后面的参数只能用参数名传递
+    context: ToolExecutionContext,
+    user_confirmation: UserConfirmation = unavailable_user_confirmation,
+    execution_notifier: ToolExecutionNotifier | None = None,
+    call_id: str | None = None,
+    prepared_call: PreparedToolCall | None = None,
+) -> ToolExecutionResult:
+    """完成工具查找、参数校验、权限处理和真正执行。"""
+    # 1. 普通调用现场完成准备；批次调用复用主线程已经完成的准备结果。
+    prepared: PreparedToolCall | ToolExecutionResult = prepared_call or (
+        _prepare_tool_call(
+            tool_name,
+            raw_arguments,
+            context=context,
+            user_confirmation=user_confirmation,
+            call_id=call_id,
+        )
+    )
+    if isinstance(prepared, ToolExecutionResult):
+        return prepared
+
+    # 2. 权限允许且未命中缓存后，通知调用方工具即将开始执行。
+    if execution_notifier is not None:
+        execution_notifier(tool_name)
+
+    # 3. 执行已准备调用并提交工具级缓存副作用。
+    return _execute_prepared_tool_call(
+        prepared,
+        context=context,
+        call_id=call_id,
+    )
 
 
 def _budget_tool_result(
@@ -399,6 +516,51 @@ def _apply_batch_result_budget(
         )
 
 
+def _execute_scheduled_group(
+    scheduled_calls: list[ScheduledToolCall],
+    *,
+    concurrency_safe: bool,
+    context: ToolExecutionContext,
+    user_confirmation: UserConfirmation,
+) -> None:
+    """执行一个连续分组，并把结果写回原顺序的调度条目。"""
+    executable = [
+        item
+        for item in scheduled_calls
+        if item.prepared is not None
+        and item.pending_duplicate_source_call_id is None
+    ]
+    if not executable:
+        return
+
+    def execute(item: ScheduledToolCall) -> ToolExecutionResult:
+        """复用单工具公开管线的执行入口，跳过已经完成的准备阶段。"""
+        return execute_tool_call(
+            item.tool_call.name,
+            item.tool_call.arguments,
+            context=context,
+            user_confirmation=user_confirmation,
+            call_id=item.tool_call.call_id,
+            prepared_call=item.prepared,
+        )
+
+    # 1. 至少两个安全调用才创建有界线程池，单调用避免额外调度开销。
+    if concurrency_safe and len(executable) > 1:
+        worker_count = min(MAX_CONCURRENT_TOOL_CALLS, len(executable))
+        with ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="hexgent-tool",
+        ) as executor:
+            futures = [executor.submit(execute, item) for item in executable]
+            for item, future in zip(executable, futures):
+                item.result = future.result()
+        return
+
+    # 2. 不安全工具和单个安全工具继续在调度线程内串行执行。
+    for item in executable:
+        item.result = execute(item)
+
+
 def execute_tool_batch(
     tool_calls: list[Any],
     *,
@@ -416,140 +578,224 @@ def execute_tool_batch(
         ToolStartedEvent,
     )
 
-    # 1. 按响应顺序处理工具，持续累计本批次实际执行数量。
+    # 1. 初始化批次结果容器，并按相邻安全性划分执行分组。
     outputs: list[dict[str, str]] = []
     inline_results: list[tuple[int, str, str, str, str]] = []
     persisted_results: dict[int, PersistedToolResult] = {}
     budgeted_call_count = 0
     limit_message: str | None = None
+    groups = _partition_tool_calls(tool_calls)
 
-    for tool_call in tool_calls:
-        persisted: PersistedToolResult | None = None
-        registered_tool = get_tool(tool_call.name)
-        description = (
-            registered_tool.describe(tool_call.arguments)
-            if registered_tool is not None
-            else f"{tool_call.name}()"
-        )
-        yield ToolStartedEvent(tool_call.name, tool_call.call_id, description)
-        if session_store is not None:
-            session_store.append_transcript(
-                "tool_execution_started",
-                {
-                    "call_id": tool_call.call_id,
-                    "tool_name": tool_call.name,
-                    "arguments": tool_call.arguments,
-                    "description": description,
-                },
+    for group in groups:
+        # 2. 主线程依次完成事件、参数、权限、去重和预算准备。
+        scheduled_calls: list[ScheduledToolCall] = []
+        pending_fingerprints: dict[str, str] = {}
+        reserved_budget_count = 0
+        for tool_call in group.calls:
+            registered_tool = get_tool(tool_call.name)
+            description = (
+                registered_tool.describe(tool_call.arguments)
+                if registered_tool is not None
+                else f"{tool_call.name}()"
             )
+            yield ToolStartedEvent(tool_call.name, tool_call.call_id, description)
+            if session_store is not None:
+                session_store.append_transcript(
+                    "tool_execution_started",
+                    {
+                        "call_id": tool_call.call_id,
+                        "tool_name": tool_call.name,
+                        "arguments": tool_call.arguments,
+                        "description": description,
+                    },
+                )
 
-        # 2. 每个工具执行前检查批次额度，耗尽后仍为剩余调用配对结果。
-        if limit_message is None:
-            if (
-                remaining_tool_calls is not None
-                and budgeted_call_count >= remaining_tool_calls
-            ):
-                limit_message = "本轮工具执行次数已达到上限"
-            elif deadline is not None and monotonic() >= deadline:
-                limit_message = "本轮执行时间已达到上限"
+            if limit_message is None:
+                if (
+                    remaining_tool_calls is not None
+                    and budgeted_call_count + reserved_budget_count
+                    >= remaining_tool_calls
+                ):
+                    limit_message = "本轮工具执行次数已达到上限"
+                elif deadline is not None and monotonic() >= deadline:
+                    limit_message = "本轮执行时间已达到上限"
 
-        if limit_message is not None:
-            outputs.append(_budget_tool_result(tool_call.call_id, limit_message))
-            yield ToolFinishedEvent(tool_call.name, tool_call.call_id, "skipped")
+            scheduled = ScheduledToolCall(tool_call, description)
+            if limit_message is not None:
+                scheduled.skipped_message = limit_message
+            else:
+                prepared = _prepare_tool_call(
+                    tool_call.name,
+                    tool_call.arguments,
+                    context=context,
+                    user_confirmation=user_confirmation,
+                    call_id=tool_call.call_id,
+                )
+                if isinstance(prepared, ToolExecutionResult):
+                    scheduled.result = prepared
+                    if prepared.status == "deduplicated":
+                        reserved_budget_count += 1
+                else:
+                    if (
+                        prepared.fingerprint is not None
+                        and prepared.fingerprint in pending_fingerprints
+                    ):
+                        scheduled.prepared = prepared
+                        scheduled.pending_duplicate_source_call_id = (
+                            pending_fingerprints[prepared.fingerprint]
+                        )
+                    else:
+                        scheduled.prepared = prepared
+                        if prepared.fingerprint is not None:
+                            pending_fingerprints[prepared.fingerprint] = (
+                                tool_call.call_id
+                            )
+                    reserved_budget_count += 1
+            scheduled_calls.append(scheduled)
+
+        # 3. 只有当前连续安全组的已准备调用进入有界线程池。
+        _execute_scheduled_group(
+            scheduled_calls,
+            concurrency_safe=group.concurrency_safe,
+            context=context,
+            user_confirmation=user_confirmation,
+        )
+
+        # 4. 首次调用完成后再生成组内重复结果，保持重复计数语义稳定。
+        for scheduled in scheduled_calls:
+            source_call_id = scheduled.pending_duplicate_source_call_id
+            if source_call_id is None:
+                continue
+            assert scheduled.prepared is not None
+            source = next(
+                item
+                for item in scheduled_calls
+                if item.tool_call.call_id == source_call_id
+            )
+            if source.result is not None and source.result.status == "success":
+                assert scheduled.prepared.fingerprint is not None
+                scheduled.result = _deduplicated_result(
+                    scheduled.prepared.fingerprint,
+                    ToolCallCacheEntry(source_call_id, source.result.output),
+                    context,
+                )
+            else:
+                scheduled.result = execute_tool_call(
+                    scheduled.tool_call.name,
+                    scheduled.tool_call.arguments,
+                    context=context,
+                    user_confirmation=user_confirmation,
+                    call_id=scheduled.tool_call.call_id,
+                    prepared_call=scheduled.prepared,
+                )
+
+        # 5. 回到主线程按模型原始顺序持久化、发事件并构造配对结果。
+        for scheduled in scheduled_calls:
+            tool_call = scheduled.tool_call
+            if scheduled.skipped_message is not None:
+                outputs.append(
+                    _budget_tool_result(
+                        tool_call.call_id,
+                        scheduled.skipped_message,
+                    )
+                )
+                yield ToolFinishedEvent(
+                    tool_call.name,
+                    tool_call.call_id,
+                    "skipped",
+                )
+                if session_store is not None:
+                    session_store.append_transcript(
+                        "tool_execution_finished",
+                        {
+                            "call_id": tool_call.call_id,
+                            "tool_name": tool_call.name,
+                            "status": "skipped",
+                            "output": scheduled.skipped_message,
+                        },
+                    )
+                continue
+
+            result = scheduled.result
+            if result is None:
+                raise RuntimeError("工具调度完成后缺少执行结果")
+            if result.status in {"success", "error", "deduplicated"}:
+                budgeted_call_count += 1
+
+            persisted: PersistedToolResult | None = None
+            model_output = result.output
+            if session_store is not None:
+                try:
+                    persisted = session_store.persist_tool_result(
+                        tool_call.call_id,
+                        tool_call.name,
+                        result.output,
+                        description=scheduled.description,
+                    )
+                    if persisted is not None:
+                        context.clear_tool_caches()
+                        model_output = build_persisted_output_message(persisted)
+                except OSError as error:
+                    context.clear_tool_caches()
+                    result = ToolExecutionResult(
+                        "error",
+                        f"错误：工具已经执行，但完整结果持久化失败：{error}",
+                        True,
+                    )
+                    model_output = result.output
+
+            outputs.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_call.call_id,
+                    "output": model_output,
+                }
+            )
+            output_index = len(outputs) - 1
+            if persisted is None:
+                inline_results.append(
+                    (
+                        output_index,
+                        tool_call.call_id,
+                        tool_call.name,
+                        result.output,
+                        scheduled.description,
+                    )
+                )
+            else:
+                persisted_results[output_index] = persisted
+            yield ToolFinishedEvent(tool_call.name, tool_call.call_id, result.status)
             if session_store is not None:
                 session_store.append_transcript(
                     "tool_execution_finished",
                     {
                         "call_id": tool_call.call_id,
                         "tool_name": tool_call.name,
-                        "status": "skipped",
-                        "output": limit_message,
+                        "status": result.status,
+                        "output": result.output if persisted is None else None,
+                        "persisted_output": (
+                            persisted.relative_path if persisted is not None else None
+                        ),
+                        "source_call_id": result.source_call_id,
+                        "fingerprint": result.fingerprint,
                     },
                 )
-            continue
 
-        # 3. 调用单工具执行管线并累计实际进入执行阶段的调用数量。
-        result = execute_tool_call(
-            tool_call.name,
-            tool_call.arguments,
-            context=context,
-            user_confirmation=user_confirmation,
-            call_id=tool_call.call_id,
-        )
-        if result.status in {"success", "error", "deduplicated"}:
-            budgeted_call_count += 1
-        model_output = result.output
-        if session_store is not None:
-            try:
-                persisted = session_store.persist_tool_result(
-                    tool_call.call_id,
-                    tool_call.name,
-                    result.output,
-                    description=description,
-                )
-                if persisted is not None:
-                    context.clear_tool_caches()
-                    model_output = build_persisted_output_message(persisted)
-            except OSError as error:
-                context.clear_tool_caches()
-                result = ToolExecutionResult(
-                    "error",
-                    f"错误：工具已经执行，但完整结果持久化失败：{error}",
-                    True,
-                )
-                model_output = result.output
-        outputs.append(
-            {
-                "type": "function_call_output",
-                "call_id": tool_call.call_id,
-                "output": model_output,
-            }
-        )
-        output_index = len(outputs) - 1
-        if persisted is None:
-            inline_results.append(
-                (
-                    output_index,
-                    tool_call.call_id,
-                    tool_call.name,
-                    result.output,
-                    description,
-                )
-            )
-        else:
-            persisted_results[output_index] = persisted
-        yield ToolFinishedEvent(tool_call.name, tool_call.call_id, result.status)
-        if session_store is not None:
-            session_store.append_transcript(
-                "tool_execution_finished",
-                {
-                    "call_id": tool_call.call_id,
-                    "tool_name": tool_call.name,
-                    "status": result.status,
-                    "output": result.output if persisted is None else None,
-                    "persisted_output": (
-                        persisted.relative_path if persisted is not None else None
-                    ),
-                    "source_call_id": result.source_call_id,
-                    "fingerprint": result.fingerprint,
-                },
-            )
+            # 6. Plan 工具串行执行后投影已经生效的最新状态。
+            if tool_call.name == "create_plan" and result.status == "success":
+                plan = context.plan_store.get_plan()
+                if plan is not None:
+                    if session_store is not None:
+                        session_store.append_transcript("plan_created", asdict(plan))
+                    yield PlanCreatedEvent(plan)
+            elif tool_call.name == "update_plan" and result.status == "success":
+                plan = context.plan_store.get_plan()
+                if plan is not None:
+                    if session_store is not None:
+                        session_store.append_transcript("plan_updated", asdict(plan))
+                    yield PlanUpdatedEvent(plan)
 
-        # 4. Plan 工具成功后把存储中已经生效的状态投影给界面层。
-        if tool_call.name == "create_plan" and result.status == "success":
-            plan = context.plan_store.get_plan()
-            if plan is not None:
-                if session_store is not None:
-                    session_store.append_transcript("plan_created", asdict(plan))
-                yield PlanCreatedEvent(plan)
-        elif tool_call.name == "update_plan" and result.status == "success":
-            plan = context.plan_store.get_plan()
-            if plan is not None:
-                if session_store is not None:
-                    session_store.append_transcript("plan_updated", asdict(plan))
-                yield PlanUpdatedEvent(plan)
-
-    # 5. 工具全部完成后执行批次总预算，保证大批量小结果不会撑爆上下文。
+    # 7. 工具全部完成后执行批次总预算，保证大批量小结果不会撑爆上下文。
     try:
         _apply_batch_result_budget(
             outputs,
