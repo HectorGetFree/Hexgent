@@ -9,13 +9,14 @@ from .tool_context import (
     ReadFileCacheKey,
     ToolExecutionContext,
 )
+from .tool_result import ToolHandlerResult
 
 
 DEFAULT_READ_LINE_COUNT = 200
 MAX_READ_LINE_COUNT = 500
 
 
-def bash(command: str, context: ToolExecutionContext) -> str:
+def bash(command: str, context: ToolExecutionContext) -> str | ToolHandlerResult:
     """执行 Shell 命令。"""
     try:
         result = subprocess.run(
@@ -27,11 +28,26 @@ def bash(command: str, context: ToolExecutionContext) -> str:
             timeout=120,
         )
         output = (result.stdout + result.stderr).strip()
+        if result.returncode != 0:
+            return ToolHandlerResult.failed(
+                "business_failure",
+                f"命令退出码为 {result.returncode}：{output or '无输出'}",
+                side_effect_state="unknown",
+            )
         return output if output else "（无输出）"
     except subprocess.TimeoutExpired:
-        return "错误：命令执行超时（120 秒）"
+        return ToolHandlerResult.failed(
+            "tool_timeout",
+            "命令执行超时（120 秒）",
+            side_effect_state="unknown",
+        )
     except (FileNotFoundError, OSError) as error:
-        return f"错误：{error}"
+        return ToolHandlerResult.failed(
+            "external_dependency_failed",
+            str(error),
+            retryable=True,
+            side_effect_state="unknown",
+        )
 
 
 def _resolve_path(path: str, context: ToolExecutionContext) -> Path:
@@ -61,7 +77,7 @@ def read_file(
     context: ToolExecutionContext,
     start_line: int | None = None,
     line_count: int | None = None,
-) -> str:
+) -> str | ToolHandlerResult:
     """读取完整或指定行范围的 UTF-8 文件，内容未变化时返回占位结果。"""
     # 1. 读取原始字节并计算内容 Hash，避免依赖修改时间和文件大小。
     target = _resolve_path(path, context)
@@ -116,7 +132,10 @@ def read_file(
             effective_count,
         )
     if total_lines > 0 and effective_start > total_lines:
-        return f"错误：起始行 {effective_start} 超出文件总行数 {total_lines}"
+        return ToolHandlerResult.failed(
+            "business_failure",
+            f"起始行 {effective_start} 超出文件总行数 {total_lines}",
+        )
     start_index = effective_start - 1
     selected_lines = lines[start_index : start_index + effective_count]
     actual_start = effective_start if total_lines > 0 else 0
@@ -165,18 +184,30 @@ def edit_file(
     old_text: str,
     new_text: str,
     context: ToolExecutionContext,
-) -> str:
+) -> str | ToolHandlerResult:
     """仅当原文本在 UTF-8 文件中出现一次时执行替换。"""
     if not old_text:
-        return "错误：原文本不能为空"
+        return ToolHandlerResult.failed(
+            "business_failure",
+            "原文本不能为空",
+            side_effect_state="not_started",
+        )
 
     target = _resolve_path(path, context)
     content = target.read_text(encoding="utf-8")
     occurrences = content.count(old_text)
     if occurrences == 0:
-        return "错误：未找到原文本"
+        return ToolHandlerResult.failed(
+            "business_failure",
+            "未找到原文本",
+            side_effect_state="not_started",
+        )
     if occurrences > 1:
-        return f"错误：原文本出现了 {occurrences} 次，请提供更多上下文以确保唯一匹配"
+        return ToolHandlerResult.failed(
+            "business_failure",
+            f"原文本出现了 {occurrences} 次，请提供更多上下文以确保唯一匹配",
+            side_effect_state="not_started",
+        )
 
     target.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
     return f"已编辑 {target}"

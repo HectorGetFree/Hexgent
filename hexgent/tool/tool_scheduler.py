@@ -24,6 +24,7 @@ from .tool_execution import (
     _prepare_tool_call,
 )
 from .tool_registry import get_tool
+from .tool_result import ToolFailure
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
@@ -246,7 +247,14 @@ def _execute_scheduled_group(
                 item.result = future.result()
             except Exception as error:
                 item.result = ToolExecutionResult(
-                    "error", f"错误：并行工具执行失败：{error}", True
+                    "error",
+                    f"错误：并行工具执行失败：{error}",
+                    True,
+                    failure=ToolFailure(
+                        "tool_internal_error",
+                        "scheduling",
+                        f"并行工具执行失败：{error}",
+                    ),
                 )
             yield ToolExecutionCompletedEvent(
                 item.tool_call.name,
@@ -265,6 +273,11 @@ def _execute_scheduled_group(
                 "error",
                 f"错误：并行工具批次超过 {limits.batch_timeout_seconds:g} 秒限制",
                 True,
+                failure=ToolFailure(
+                    "tool_timeout",
+                    "scheduling",
+                    f"并行工具批次超过 {limits.batch_timeout_seconds:g} 秒限制",
+                ),
             )
             future.cancel()
             yield ToolExecutionCompletedEvent(
@@ -480,6 +493,12 @@ def execute_tool_batch(
                         "error",
                         f"错误：工具已经执行，但完整结果持久化失败：{error}",
                         True,
+                        failure=ToolFailure(
+                            "output_persistence_failed",
+                            "persistence",
+                            f"工具已经执行，但完整结果持久化失败：{error}",
+                            side_effect_state="committed",
+                        ),
                     )
                     model_output = result.output
                     scheduled.result = result
@@ -520,6 +539,11 @@ def execute_tool_batch(
                         ),
                         "source_call_id": result.source_call_id,
                         "fingerprint": result.fingerprint,
+                        "failure": (
+                            asdict(result.failure)
+                            if result.failure is not None
+                            else None
+                        ),
                     },
                 )
 

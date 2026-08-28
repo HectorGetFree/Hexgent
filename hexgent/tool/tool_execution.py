@@ -18,6 +18,13 @@ from hexgent.session import SessionStore
 from .tool_cache import build_deduplicated_output, build_tool_call_fingerprint
 from .tool_context import ToolCallCacheEntry, ToolExecutionContext
 from .tool_registry import RegisteredTool, get_tool
+from .tool_result import (
+    SideEffectState,
+    ToolFailure,
+    ToolFailureCode,
+    ToolFailurePhase,
+    ToolHandlerResult,
+)
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
@@ -53,6 +60,9 @@ class ToolExecutionResult:
     # 精确去重使用的规范化工具调用指纹。
     fingerprint: str | None = None
 
+    # 失败结果的稳定机器可读原因；成功结果为空。
+    failure: ToolFailure | None = None
+
 
 @dataclass(frozen=True)
 class PreparedToolCall:
@@ -79,9 +89,40 @@ def unavailable_user_confirmation(
     return "unavailable"
 
 
+def _failure_result(
+    status: ToolExecutionStatus,
+    code: ToolFailureCode,
+    phase: ToolFailurePhase,
+    message: str,
+    *,
+    retryable: bool = False,
+    side_effect_state: SideEffectState = "none",
+) -> ToolExecutionResult:
+    """构造兼容现有状态协议的结构化失败结果。"""
+    failure = ToolFailure(
+        code,
+        phase,
+        message,
+        retryable,
+        side_effect_state,
+    )
+    return ToolExecutionResult(
+        status,
+        f"错误：{message}",
+        True,
+        failure=failure,
+    )
+
+
 def _invalid(message: str) -> ToolExecutionResult:
     """创建参数无效结果。"""
-    return ToolExecutionResult("invalid", f"错误：{message}", True)
+    return _failure_result(
+        "invalid",
+        "invalid_arguments",
+        "validation",
+        message,
+        side_effect_state="not_started",
+    )
 
 
 def _parse_arguments(raw_arguments: str) -> ToolExecutionResult | dict[str, Any]:
@@ -178,26 +219,33 @@ def _resolve_permission(
 ) -> ToolExecutionResult | None:
     """处理 deny 和 ask，将允许决策继续传向执行阶段。"""
     if decision.behavior == "deny":
-        return ToolExecutionResult(
+        message = decision.message or "工具调用已被拒绝"
+        return _failure_result(
             "denied",
-            decision.message or "错误：工具调用已被拒绝",
-            True,
+            "permission_denied",
+            "permission",
+            message.removeprefix("错误："),
+            side_effect_state="not_started",
         )
 
     if decision.behavior == "ask":
         message = decision.message or "本次工具调用需要用户确认"
         confirmation = user_confirmation(tool_name, message)
         if confirmation == "deny":
-            return ToolExecutionResult(
+            return _failure_result(
                 "denied",
-                f"错误：用户拒绝本次操作：{message}",
-                True,
+                "user_denied",
+                "permission",
+                f"用户拒绝本次操作：{message}",
+                side_effect_state="not_started",
             )
         if confirmation == "unavailable":
-            return ToolExecutionResult(
+            return _failure_result(
                 "error",
-                "错误：当前输入环境无法读取权限确认，本次工具调用未执行",
-                True,
+                "confirmation_unavailable",
+                "permission",
+                "当前输入环境无法读取权限确认，本次工具调用未执行",
+                side_effect_state="not_started",
             )
     return None
 
@@ -217,12 +265,22 @@ def _deduplicated_result(
 ) -> ToolExecutionResult:
     """为精确重复调用生成轻量结果，并限制同一指纹的重复次数。"""
     output, is_error = build_deduplicated_output(fingerprint, cached, context)
+    failure = (
+        ToolFailure(
+            "duplicate_call_limit",
+            "scheduling",
+            output.removeprefix("错误："),
+        )
+        if is_error
+        else None
+    )
     return ToolExecutionResult(
         "deduplicated",
         output,
         is_error,
         cached.source_call_id,
         fingerprint,
+        failure,
     )
 
 
@@ -238,10 +296,12 @@ def _prepare_tool_call(
     # 1. 校验工具是否存在，并取得对应的工具函数。
     tool = get_tool(tool_name)
     if tool is None:
-        return ToolExecutionResult(
+        return _failure_result(
             "invalid",
-            f"错误：未知工具“{tool_name}”",
-            True,
+            "unknown_tool",
+            "lookup",
+            f"未知工具“{tool_name}”",
+            side_effect_state="not_started",
         )
 
     # 2. 将模型生成的原始参数解析为 JSON 对象。
@@ -282,13 +342,51 @@ def _execute_prepared_tool_call(
     call_id: str | None,
 ) -> ToolExecutionResult:
     """只执行已经允许的工具函数，并提交工具级缓存副作用。"""
-    # 1. 真正执行工具，并将正常输出或异常转换为统一结果。
+    # 1. 真正执行工具，并把基础设施异常转换为结构化失败。
     try:
-        output = prepared.tool.execute(prepared.arguments, context)
+        handler_result = prepared.tool.execute(prepared.arguments, context)
+    except OSError as error:
+        return _failure_result(
+            "error",
+            "external_dependency_failed",
+            "execution",
+            str(error),
+        )
     except Exception as error:
-        return ToolExecutionResult("error", f"错误：{error}", True)
+        return _failure_result(
+            "error",
+            "tool_internal_error",
+            "execution",
+            str(error),
+        )
 
-    # 2. 副作用工具使精确缓存失效；安全工具提交自身成功结果。
+    # 2. 兼容普通成功字符串，并校验结构化处理器结果的完整性。
+    if isinstance(handler_result, str):
+        handler_result = ToolHandlerResult.success(handler_result)
+    if not isinstance(handler_result, ToolHandlerResult):
+        return _failure_result(
+            "error",
+            "invalid_tool_output",
+            "output_validation",
+            "工具返回值必须是字符串或 ToolHandlerResult",
+        )
+    if not handler_result.ok:
+        if handler_result.failure is None:
+            return _failure_result(
+                "error",
+                "invalid_tool_output",
+                "output_validation",
+                "工具失败结果缺少结构化 failure",
+            )
+        return ToolExecutionResult(
+            "error",
+            handler_result.output,
+            True,
+            failure=handler_result.failure,
+        )
+    output = handler_result.output
+
+    # 3. 副作用工具使精确缓存失效；安全工具提交自身成功结果。
     if prepared.tool.invalidates_tool_call_cache:
         context.clear_tool_call_cache()
     if prepared.fingerprint is not None and call_id is not None:

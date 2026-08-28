@@ -74,7 +74,7 @@ class ToolDeduplicationTest(unittest.TestCase):
                 for index in range(1, 5)
             ]
 
-            _, batch = drain_generator(
+            events, batch = drain_generator(
                 execute_tool_batch(
                     calls,
                     context=context,
@@ -87,6 +87,10 @@ class ToolDeduplicationTest(unittest.TestCase):
         self.assertEqual(len(batch.outputs), 4)
         self.assertIn("重复调用已达到上限", batch.outputs[-1]["output"])
         self.assertEqual(batch.budgeted_call_count, 4)
+        finished = [
+            event for event in events if isinstance(event, ToolFinishedEvent)
+        ]
+        self.assertEqual(finished[-1].status, "deduplicated")
 
     def test_side_effect_tool_invalidates_exact_call_cache(self) -> None:
         """写入工具成功后，之前缓存的 glob 结果必须失效。"""

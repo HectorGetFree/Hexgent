@@ -20,9 +20,10 @@ from .builtin_tools import (
     validate_read_file,
     write_file,
 )
+from .tool_result import ToolHandlerResult
 
 
-ToolFunction = Callable[..., str]
+ToolFunction = Callable[..., str | ToolHandlerResult]
 ToolValidator = Callable[[dict[str, Any], ToolExecutionContext], str | None]
 ToolDescriber = Callable[[dict[str, Any]], str]
 ToolDeduplicationPolicy = Literal[
@@ -106,7 +107,7 @@ class RegisteredTool:
         self,
         arguments: dict[str, Any],
         context: ToolExecutionContext,
-    ) -> str:
+    ) -> str | ToolHandlerResult:
         """根据工具声明注入上下文并执行函数。"""
         if self.requires_context:
             return self.function(**arguments, context=context)

@@ -158,6 +158,7 @@ def build_run_report(
             "tool_name": record["payload"].get("tool_name"),
             "call_id": record["payload"].get("call_id"),
             "status": record["payload"].get("status"),
+            "failure": record["payload"].get("failure"),
         }
         for record in tool_records
         if record["payload"].get("status") in {"invalid", "denied", "error"}
