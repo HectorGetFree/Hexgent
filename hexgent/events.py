@@ -7,6 +7,7 @@ from hexgent.plan import Plan
 from hexgent.tool.tool_execution import ToolExecutionStatus
 from hexgent.loop.limits import LoopStopReason
 from hexgent.loop.loop_state import ContinueReason
+from hexgent.loop.interrupt import InterruptReason
 
 
 ToolEventStatus = ToolExecutionStatus | Literal[
@@ -18,13 +19,14 @@ TerminalStatus = Literal[
     "incomplete",  # Agent Run 已停止，但用户目标尚未完整完成。
     "limit_reached",  # Agent Run 命中循环预算并完成收尾。
     "failed",  # Agent Run 因不可恢复错误而终止。
+    "interrupted",  # 当前 Run 已安全中断，Session、Context 和 Plan 仍可继续使用。
     "cancelled",  # Agent Run 被用户或上层调用方主动取消。
 ]
 PlanStopReason = Literal[
     "plan_blocked",  # 当前 Plan 已进入阻塞状态。
     "plan_still_active",  # 模型停止调用工具时，当前 Plan 仍未完成。
 ]
-RunStopReason: TypeAlias = LoopStopReason | PlanStopReason
+RunStopReason: TypeAlias = LoopStopReason | PlanStopReason | InterruptReason
 
 
 @dataclass(frozen=True)

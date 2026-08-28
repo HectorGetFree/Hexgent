@@ -18,6 +18,7 @@ from .limits import LoopLimits
 from .loop_state import LoopState
 from .transitions import Continue
 from .agent_turn import run_turn
+from .interrupt import InterruptController
 
 
 def agent_loop(
@@ -30,6 +31,7 @@ def agent_loop(
     tool_parallel_limits: ToolParallelLimits | None = None,
     tool_retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
+    interrupt_controller: InterruptController | None = None,
 ) -> Generator[AgentEvent, None, None]:
     """持续驱动单轮状态迁移，并在唯一出口发送最终事件。"""
     # 1. 初始化不可变的循环配置和第一轮完整 State。
@@ -68,6 +70,7 @@ def agent_loop(
             tool_parallel_limits,
             tool_retry_limits,
             permission_context,
+            interrupt_controller,
         )
         if isinstance(turn_output, Continue):
             yield LoopTransitionEvent(turn_output.reason)

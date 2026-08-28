@@ -182,6 +182,11 @@ def main(config_path: Path | None = None) -> None:
                         "\033[90mPlan 尚未完成，本次运行已停止；"
                         "可以输入“继续”恢复执行。\033[0m"
                     )
+                elif event.result.status == "interrupted":
+                    print(
+                        "\033[90m当前运行已中断；Session、Context 和 Plan 已保留，"
+                        "可以输入“继续”恢复执行。\033[0m"
+                    )
                 print(
                     f"\033[90m本次用时：{event.result.elapsed_seconds:.1f} 秒\033[0m\n"
                 )

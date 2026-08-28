@@ -35,6 +35,7 @@ from .tool_retry import (
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
+    from hexgent.loop.interrupt import InterruptController
 
 
 ToolExecutionStatus = Literal[
@@ -578,6 +579,7 @@ def execute_tool_batch(
     parallel_limits: Any = None,
     retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
+    interrupt_controller: InterruptController | None = None,
 ) -> Generator[AgentEvent, None, Any]:
     """兼容旧导入路径，并在调用时惰性委托给批次调度器。"""
     from .tool_scheduler import execute_tool_batch as schedule_tool_batch
@@ -593,6 +595,7 @@ def execute_tool_batch(
             parallel_limits=parallel_limits,
             retry_limits=retry_limits,
             permission_context=permission_context,
+            interrupt_controller=interrupt_controller,
         )
     )
 

@@ -27,6 +27,7 @@ from .tool_registry import get_tool
 from .tool_result import ToolFailure
 from .tool_retry import ToolRetryLimits
 from .tool_permission_pipeline import PermissionContext
+from hexgent.loop.interrupt import InterruptController
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
@@ -111,6 +112,22 @@ def _budget_tool_result(call_id: str, message: str) -> dict[str, str]:
         "call_id": call_id,
         "output": f"错误：{message}，本次工具调用未执行",
     }
+
+
+def _interrupted_tool_result() -> ToolExecutionResult:
+    """为尚未开始的工具构造可与 Tool Call 配对的中断结果。"""
+    message = "当前 Run 已被中断，本次工具调用未执行"
+    return ToolExecutionResult(
+        "error",
+        f"错误：{message}",
+        True,
+        failure=ToolFailure(
+            "execution_interrupted",
+            "scheduling",
+            message,
+            side_effect_state="not_started",
+        ),
+    )
 
 
 def _truncate_to_token_budget(text: str, token_budget: int) -> str:
@@ -332,6 +349,7 @@ def execute_tool_batch(
     parallel_limits: ToolParallelLimits | None = None,
     retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
+    interrupt_controller: InterruptController | None = None,
 ) -> Generator[AgentEvent, None, ToolBatchResult]:
     """调度完整工具批次，并保证每个调用都有配对结果。"""
     from hexgent.events import (
@@ -387,7 +405,12 @@ def execute_tool_batch(
                     limit_message = "本轮执行时间已达到上限"
 
             scheduled = ScheduledToolCall(tool_call, description)
-            if limit_message is not None:
+            if (
+                interrupt_controller is not None
+                and interrupt_controller.interrupted
+            ):
+                scheduled.result = _interrupted_tool_result()
+            elif limit_message is not None:
                 scheduled.skipped_message = limit_message
             else:
                 prepared = _prepare_tool_call(

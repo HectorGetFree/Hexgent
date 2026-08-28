@@ -30,6 +30,7 @@ ToolFailureCode = Literal[
     "business_failure",  # 工具技术执行完成，但业务操作没有成功。
     "duplicate_call_limit",  # 相同工具调用超过当前 Run 的复用次数限制。
     "output_persistence_failed",  # 工具成功后，其完整结果无法可靠持久化。
+    "execution_interrupted",  # 当前 Run 被中断，工具尚未开始或未能继续执行。
 ]
 SideEffectState = Literal[
     "none",  # 当前工具不产生外部副作用。

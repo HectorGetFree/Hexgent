@@ -23,7 +23,8 @@ from hexgent.events import (
     LoopLimitReachedEvent,
     TextDeltaEvent,
 )
-from .call_model import ModelCallError, call_model
+from .call_model import ModelCallError, ModelCallInterrupted, call_model
+from .interrupt import InterruptController, InterruptReason
 from .limits import (
     LoopLimits,
     LoopStopReason,
@@ -86,6 +87,28 @@ def _failure_stop(state: LoopState, message: str) -> Stop:
     )
 
 
+def _interrupt_stop(
+    state: LoopState,
+    reason: InterruptReason,
+    session: Session | None,
+    phase: str,
+) -> Stop:
+    """记录安全中断边界并结束当前 Agent Loop。"""
+    if session is not None:
+        session.record_runtime_event(
+            "agent_run_interrupted",
+            {"reason": reason, "phase": phase},
+        )
+    return Stop(
+        AgentLoopResult(
+            output_text="",
+            elapsed_seconds=state.elapsed_seconds,
+            stop_reason=reason,
+            status="interrupted",
+        )
+    )
+
+
 def run_turn(
     state: LoopState,
     client: Any,
@@ -96,21 +119,32 @@ def run_turn(
     tool_parallel_limits: ToolParallelLimits | None = None,
     tool_retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
+    interrupt_controller: InterruptController | None = None,
 ) -> Generator[AgentEvent, None, TurnOutcome]:
     """执行一个完整轮次，并只返回 Continue 或 Stop。"""
-    # 1. 在每个正常轮次的唯一入口统一检查全局预算。
+    # 1. 中断优先于预算和任何新的模型或工具工作。
+    if interrupt_controller is not None and interrupt_controller.interrupted:
+        assert interrupt_controller.reason is not None
+        return _interrupt_stop(
+            state,
+            interrupt_controller.reason,
+            session,
+            "turn_entry",
+        )
+
+    # 2. 在每个正常轮次的唯一入口统一检查全局预算。
     if state.mode == "working":
         stop_reason = check_loop_limit(state, limits)
         if stop_reason is not None:
             yield LoopLimitReachedEvent(stop_reason)
             return _continue_with_finalization(state, stop_reason, session)
 
-    # 2. 根据工作或收尾模式准备本轮模型请求。
+    # 3. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
     instructions = build_context(state.tool_context)
     active_context_limits = context_limits or ContextLimits()
 
-    # 3. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
+    # 4. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
     request_tools = TOOLS if state.mode == "working" else []
     compaction = yield from compact_context_if_needed(
         state.context_manager,
@@ -133,8 +167,16 @@ def run_turn(
         return Continue(next_state, "context_compacted")
     if compaction.status == "blocked":
         return _failure_stop(state, compaction.message or "上下文无法安全压缩")
+    if interrupt_controller is not None and interrupt_controller.interrupted:
+        assert interrupt_controller.reason is not None
+        return _interrupt_stop(
+            state,
+            interrupt_controller.reason,
+            session,
+            "context_preparation",
+        )
 
-    # 4. 组装主模型请求；压缩摘要调用不计入正常模型轮次。
+    # 5. 组装主模型请求；压缩摘要调用不计入正常模型轮次。
     request: dict[str, Any] = {
         "model": model,
         "instructions": instructions,
@@ -153,9 +195,28 @@ def run_turn(
     else:
         request["max_output_tokens"] = limits.finalization_output_tokens
 
-    # 5. 模型调用必须产生完整响应；上下文过长只允许应急压缩后重试一次。
+    # 6. 模型调用必须产生完整响应；上下文过长只允许应急压缩后重试一次。
     try:
-        response = yield from call_model(client, **request)
+        response = yield from call_model(
+            client,
+            interrupt_controller=interrupt_controller,
+            **request,
+        )
+    except ModelCallInterrupted as interrupted:
+        if session is not None:
+            session.record_runtime_event(
+                "model_stream_interrupted",
+                {
+                    "reason": interrupted.reason,
+                    "model_round": state.model_rounds + 1,
+                },
+            )
+        return _interrupt_stop(
+            state,
+            interrupted.reason,
+            session,
+            "model_stream",
+        )
     except ModelCallError as error:
         can_recover = (
             error.reason == "prompt_too_long"
@@ -173,7 +234,7 @@ def run_turn(
                 },
             )
 
-        # 6. 估算遗漏导致 prompt_too_long 时，使用更小近期预算强制压缩。
+        # 7. 估算遗漏导致 prompt_too_long 时，使用更小近期预算强制压缩。
         if can_recover:
             reactive_limits = replace(
                 active_context_limits,
@@ -216,11 +277,11 @@ def run_turn(
                 "prompt_too_long",
             )
 
-        # 7. 不可恢复错误或应急重试耗尽后形成明确 Error Terminal。
+        # 8. 不可恢复错误或应急重试耗尽后形成明确 Error Terminal。
         yield TextDeltaEvent(f"\n\n错误：{error}")
         return _failure_stop(state, str(error))
 
-    # 8. 完整响应进入历史，并计算下一轮继承的资源用量。
+    # 9. 完整响应进入历史，并计算下一轮继承的资源用量。
     response_input_tokens, response_output_tokens = state.usage_values(
         getattr(response, "usage", None)
     )
@@ -251,7 +312,7 @@ def run_turn(
         output_tokens=output_tokens,
     )
 
-    # 9. 收尾模式收到有效响应后直接形成限制 Terminal。
+    # 10. 收尾模式收到有效响应后直接形成限制 Terminal。
     if state.mode == "finalizing":
         plan = state.tool_context.plan_store.get_plan()
         if plan is not None and plan.status == "completed":
@@ -265,7 +326,7 @@ def run_turn(
             )
         )
 
-    # 10. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
+    # 11. 没有工具调用时，统一交给 Plan 退出审查决定继续或终止。
     if not tool_calls:
         return review_plan_exit(
             response_state,
@@ -274,7 +335,7 @@ def run_turn(
             session,
         )
 
-    # 11. 执行工具批次并构造下一轮 State，预算统一由下一轮入口判断。
+    # 12. 执行工具批次；中断后仍需先提交完整配对结果。
     batch = yield from execute_tool_batch(
         tool_calls,
         context=state.tool_context,
@@ -293,10 +354,21 @@ def run_turn(
         parallel_limits=tool_parallel_limits,
         retry_limits=tool_retry_limits,
         permission_context=permission_context,
+        interrupt_controller=interrupt_controller,
     )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
     if session is not None:
         session.record_messages(batch.outputs)
+    if interrupt_controller is not None and interrupt_controller.interrupted:
+        assert interrupt_controller.reason is not None
+        return _interrupt_stop(
+            response_state,
+            interrupt_controller.reason,
+            session,
+            "tool_batch",
+        )
+
+    # 13. 工具结果已完整提交，构造下一轮 State。
     next_state = LoopState(
         context_manager=state.context_manager,
         tool_context=state.tool_context,
