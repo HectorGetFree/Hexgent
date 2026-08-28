@@ -3,7 +3,7 @@
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Barrier, get_ident
+from threading import Barrier, Event, get_ident
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -11,6 +11,7 @@ from unittest.mock import patch
 from hexgent.events import (
     ToolBatchFinishedEvent,
     ToolBatchStartedEvent,
+    ToolExecutionCompletedEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
 )
@@ -181,6 +182,62 @@ class ToolParallelExecutionTest(unittest.TestCase):
             event for event in events if isinstance(event, ToolBatchFinishedEvent)
         ]
         self.assertEqual(finished[0].failed_count, 2)
+
+    def test_execution_completion_is_immediate_but_model_outputs_stay_ordered(
+        self,
+    ) -> None:
+        """UI 按真实完成顺序收到事件，模型结果仍保持原调用顺序。"""
+        from time import sleep
+
+        with TemporaryDirectory() as directory:
+            context = ToolExecutionContext(
+                InMemoryPlanStore(), Path(directory).resolve()
+            )
+            calls = [
+                make_call("slow", "read_file", '{"path":"slow.py"}'),
+                make_call("fast", "read_file", '{"path":"fast.py"}'),
+            ]
+            fast_finished = Event()
+
+            def execute(*_args, **kwargs):
+                if kwargs["call_id"] == "fast":
+                    fast_finished.set()
+                else:
+                    fast_finished.wait(timeout=2)
+                    sleep(0.03)
+                return ToolExecutionResult(
+                    "success", f"结果-{kwargs['call_id']}", False
+                )
+
+            with patch.object(
+                tool_execution_module, "execute_tool_call", side_effect=execute
+            ):
+                events, batch = drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        calls,
+                        context=context,
+                        user_confirmation=lambda _tool, _message: "allow",
+                        remaining_tool_calls=None,
+                        deadline=None,
+                    )
+                )
+
+        execution_completed = [
+            event.call_id
+            for event in events
+            if isinstance(event, ToolExecutionCompletedEvent)
+        ]
+        final_finished = [
+            event.call_id
+            for event in events
+            if isinstance(event, ToolFinishedEvent)
+        ]
+        self.assertEqual(execution_completed, ["fast", "slow"])
+        self.assertEqual(final_finished, ["slow", "fast"])
+        self.assertEqual(
+            [output["call_id"] for output in batch.outputs],
+            ["slow", "fast"],
+        )
 
     def test_permission_confirmation_remains_on_scheduler_thread(self) -> None:
         """并行读取工作区外文件时，权限询问仍应在调用线程串行完成。"""

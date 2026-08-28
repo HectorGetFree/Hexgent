@@ -14,6 +14,7 @@ from hexgent.events import (
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
+    ToolExecutionCompletedEvent,
     ToolBatchFinishedEvent,
     ToolBatchStartedEvent,
 )
@@ -100,6 +101,7 @@ def main(config_path: Path | None = None) -> None:
 
         # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
         text_is_open = False
+        execution_completed_calls: dict[str, str] = {}
         for event in agent_loop(
             context_manager,
             context=tool_context,
@@ -119,10 +121,20 @@ def main(config_path: Path | None = None) -> None:
                     print()
                 print(f"\033[90m开始处理工具：{event.description}\033[0m")
                 text_is_open = False
-            elif isinstance(event, ToolFinishedEvent):
+            elif isinstance(event, ToolExecutionCompletedEvent):
+                execution_completed_calls[event.call_id] = event.status
                 status_label = TOOL_STATUS_LABELS[event.status]
                 print(
                     f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
+                )
+            elif isinstance(event, ToolFinishedEvent):
+                execution_status = execution_completed_calls.get(event.call_id)
+                if execution_status == event.status:
+                    continue
+                status_label = TOOL_STATUS_LABELS[event.status]
+                prefix = "工具结果处理结束" if execution_status is not None else "工具结束"
+                print(
+                    f"\033[90m{prefix}：{event.tool_name}，状态：{status_label}\033[0m"
                 )
             elif isinstance(event, ToolBatchStartedEvent):
                 print(

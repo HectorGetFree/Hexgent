@@ -67,6 +67,20 @@ class ToolStartedEvent:
 
 
 @dataclass(frozen=True)
+class ToolExecutionCompletedEvent:
+    """并行工具函数已经真实完成，但结果尚未按顺序提交。"""
+
+    # 当前完成执行的注册工具名称。
+    tool_name: str
+
+    # 模型工具调用与结果配对使用的唯一标识。
+    call_id: str
+
+    # 工具函数执行阶段产生的状态；后续持久化仍可能改变最终状态。
+    status: ToolExecutionStatus
+
+
+@dataclass(frozen=True)
 class ToolFinishedEvent:
     """一个工具调用完成执行管线。"""
 
@@ -193,6 +207,7 @@ class RunFinishedEvent:
 AgentEvent: TypeAlias = (
     TextDeltaEvent
     | ToolStartedEvent
+    | ToolExecutionCompletedEvent
     | ToolFinishedEvent
     | ToolBatchStartedEvent
     | ToolBatchFinishedEvent

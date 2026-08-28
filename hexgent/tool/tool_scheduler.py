@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
 from dataclasses import asdict, dataclass, replace
 from time import monotonic
 from typing import TYPE_CHECKING, Any
@@ -199,8 +199,10 @@ def _execute_scheduled_group(
     context: ToolExecutionContext,
     user_confirmation: UserConfirmation,
     limits: ToolParallelLimits,
-) -> tuple[bool, float]:
-    """执行一个连续分组，返回是否并行以及批次总耗时。"""
+) -> Generator[AgentEvent, None, tuple[bool, float]]:
+    """执行连续分组，并立即发送并行工具的真实完成事件。"""
+    from hexgent.events import ToolExecutionCompletedEvent
+
     executable = [
         item
         for item in scheduled_calls
@@ -225,40 +227,51 @@ def _execute_scheduled_group(
         max_workers=worker_count,
         thread_name_prefix="hexgent-tool",
     )
-    futures: list[Future[ToolExecutionResult]] = [
+    future_to_item: dict[Future[ToolExecutionResult], ScheduledToolCall] = {
         executor.submit(
             _run_scheduled_call, item, context, user_confirmation
-        )
+        ): item
         for item in executable
-    ]
+    }
 
-    # 2. 按模型原始顺序收集结果，但所有 Future 的执行本身保持重叠。
-    batch_deadline = started_at + limits.batch_timeout_seconds
+    # 2. 按真实完成顺序取得 Future，立即向 UI 报告执行阶段结果。
     timed_out = False
-    for index, (item, future) in enumerate(zip(executable, futures)):
-        remaining_seconds = batch_deadline - monotonic()
-        if remaining_seconds <= 0:
-            timed_out = True
-        if not timed_out:
+    try:
+        for future in as_completed(
+            future_to_item,
+            timeout=limits.batch_timeout_seconds,
+        ):
+            item = future_to_item[future]
             try:
-                item.result = future.result(timeout=remaining_seconds)
-                continue
-            except TimeoutError:
-                timed_out = True
+                item.result = future.result()
             except Exception as error:
                 item.result = ToolExecutionResult(
                     "error", f"错误：并行工具执行失败：{error}", True
                 )
-                continue
-        item.result = ToolExecutionResult(
-            "error",
-            f"错误：并行工具批次超过 {limits.batch_timeout_seconds:g} 秒限制",
-            True,
-        )
-        for pending in futures[index:]:
-            pending.cancel()
+            yield ToolExecutionCompletedEvent(
+                item.tool_call.name,
+                item.tool_call.call_id,
+                item.result.status,
+            )
+    except TimeoutError:
+        timed_out = True
 
-    # 3. 已运行线程无法被 Python 强制终止，因此超时后不再阻塞等待。
+    # 3. 超时调用按原顺序获得配对错误；已运行线程不再阻塞等待。
+    if timed_out:
+        for future, item in future_to_item.items():
+            if item.result is not None:
+                continue
+            item.result = ToolExecutionResult(
+                "error",
+                f"错误：并行工具批次超过 {limits.batch_timeout_seconds:g} 秒限制",
+                True,
+            )
+            future.cancel()
+            yield ToolExecutionCompletedEvent(
+                item.tool_call.name,
+                item.tool_call.call_id,
+                item.result.status,
+            )
     executor.shutdown(wait=not timed_out, cancel_futures=timed_out)
     return True, monotonic() - started_at
 
@@ -387,7 +400,7 @@ def execute_tool_batch(
                 executable_count,
                 min(limits.max_workers, executable_count),
             )
-        _, elapsed_seconds = _execute_scheduled_group(
+        _, elapsed_seconds = yield from _execute_scheduled_group(
             scheduled_calls,
             concurrency_safe=group.concurrency_safe,
             context=context,

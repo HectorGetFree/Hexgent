@@ -13,6 +13,7 @@ from hexgent.events import (
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
+    ToolExecutionCompletedEvent,
 )
 from hexgent.context import ContextManager
 from hexgent.session import Session
@@ -147,6 +148,33 @@ class AgentEngineStreamTest(unittest.TestCase):
         self.assertIn("2. [进行中] 总结结果", rendered)
         self.assertIn("3. [待处理] 补充验证", rendered)
         self.assertNotIn("工具结束：create_plan，状态：成功，用时", rendered)
+
+    def test_parallel_execution_completion_is_not_printed_twice(self) -> None:
+        """并行工具即时完成后，最终顺序提交事件不应重复展示。"""
+        events = iter(
+            [
+                ToolStartedEvent("read_file", "c1", "read_file(a.py)"),
+                ToolExecutionCompletedEvent("read_file", "c1", "success"),
+                ToolFinishedEvent("read_file", "c1", "success"),
+                RunFinishedEvent(AgentLoopResult("", 0.1)),
+            ]
+        )
+        output = StringIO()
+        with (
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["读取文件", "q"]),
+            ),
+            patch.object(agent_engine_module, "agent_loop", return_value=events),
+            patch("sys.stdout", output),
+        ):
+            agent_engine_module.main()
+
+        self.assertEqual(
+            output.getvalue().count("工具结束：read_file，状态：成功"),
+            1,
+        )
 
     def test_limit_result_returns_to_next_user_input(self) -> None:
         """预算收尾结束后 CLI 应继续接收下一条用户输入。"""
