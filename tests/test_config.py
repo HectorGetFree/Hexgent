@@ -38,6 +38,11 @@ preview_characters = 1000
 enabled = false
 max_workers = 8
 batch_timeout_seconds = 15.0
+
+[tool_retry]
+enabled = true
+max_attempts = 4
+initial_backoff_seconds = 0.1
 """.strip(),
                 encoding="utf-8",
             )
@@ -53,6 +58,9 @@ batch_timeout_seconds = 15.0
         self.assertFalse(config.tool_parallel.enabled)
         self.assertEqual(config.tool_parallel.max_workers, 8)
         self.assertEqual(config.tool_parallel.batch_timeout_seconds, 15.0)
+        self.assertTrue(config.tool_retry.enabled)
+        self.assertEqual(config.tool_retry.max_attempts, 4)
+        self.assertEqual(config.tool_retry.initial_backoff_seconds, 0.1)
 
     def test_unknown_or_invalid_fields_are_rejected(self) -> None:
         """未知字段和错误类型不能被静默忽略。"""
@@ -61,6 +69,7 @@ batch_timeout_seconds = 15.0
             ("[loop]\nmax_model_rounds = '100'", "必须是整数"),
             ("[tool_result]\npreview_characters = 0", "必须大于 0"),
             ("[tool_parallel]\nmax_workers = 0", "必须大于 0"),
+            ("[tool_retry]\nmax_attempts = 0", "必须大于 0"),
             (
                 "[context]\ncontext_window_tokens = 10000\n"
                 "reserved_output_tokens = 8000\nsafety_margin_tokens = 4000",

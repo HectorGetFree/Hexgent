@@ -426,6 +426,22 @@ class SessionStoreTest(unittest.TestCase):
                     "status": "success",
                 },
             )
+            session.store.append_transcript(
+                "tool_execution_finished",
+                {
+                    "call_id": "call-2",
+                    "tool_name": "edit_file",
+                    "status": "error",
+                    "failure": {
+                        "code": "business_failure",
+                        "phase": "execution",
+                        "message": "未找到原文本",
+                        "retryable": False,
+                        "side_effect_state": "not_started",
+                        "retry_after_seconds": None,
+                    },
+                },
+            )
             session.store.persist_tool_result(
                 "call-1",
                 "read_file",
@@ -463,11 +479,18 @@ class SessionStoreTest(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(report["schema_version"], 1)
+        self.assertEqual(report["schema_version"], 2)
         self.assertEqual(report["run_id"], "run-001")
         self.assertEqual(report["user_query"], "检查 Session 报告")
         self.assertEqual(report["usage"]["total_tokens"], 150)
-        self.assertEqual(report["tools"]["by_name"], {"read_file": 1})
+        self.assertEqual(
+            report["tools"]["by_name"],
+            {"edit_file": 1, "read_file": 1},
+        )
+        self.assertEqual(
+            report["tools"]["by_failure_code"],
+            {"business_failure": 1},
+        )
         self.assertEqual(report["context"]["compaction_count"], 1)
         self.assertNotIn(
             "summary",

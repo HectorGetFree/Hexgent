@@ -16,7 +16,7 @@ DEFAULT_READ_LINE_COUNT = 200
 MAX_READ_LINE_COUNT = 500
 
 
-def bash(command: str, context: ToolExecutionContext) -> str | ToolHandlerResult:
+def bash(command: str, context: ToolExecutionContext) -> ToolHandlerResult:
     """执行 Shell 命令。"""
     try:
         result = subprocess.run(
@@ -34,7 +34,14 @@ def bash(command: str, context: ToolExecutionContext) -> str | ToolHandlerResult
                 f"命令退出码为 {result.returncode}：{output or '无输出'}",
                 side_effect_state="unknown",
             )
-        return output if output else "（无输出）"
+        return ToolHandlerResult.success(
+            output if output else "（无输出）",
+            {
+                "exit_code": result.returncode,
+                "stdout_characters": len(result.stdout),
+                "stderr_characters": len(result.stderr),
+            },
+        )
     except subprocess.TimeoutExpired:
         return ToolHandlerResult.failed(
             "tool_timeout",
@@ -77,7 +84,7 @@ def read_file(
     context: ToolExecutionContext,
     start_line: int | None = None,
     line_count: int | None = None,
-) -> str | ToolHandlerResult:
+) -> ToolHandlerResult:
     """读取完整或指定行范围的 UTF-8 文件，内容未变化时返回占位结果。"""
     # 1. 读取原始字节并计算内容 Hash，避免依赖修改时间和文件大小。
     target = _resolve_path(path, context)
@@ -104,7 +111,18 @@ def read_file(
             return _unchanged_file_result(target, content_hash)
         with context.cache_lock:
             context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
-        return content
+        return ToolHandlerResult.success(
+            content,
+            _read_file_metadata(
+                target,
+                content_hash,
+                "full",
+                False,
+                1 if content else 0,
+                len(content.splitlines()),
+                len(content.splitlines()),
+            ),
+        )
 
     # 4. 覆盖整个文件的首段请求按完整读取处理，避免模型默认 1-500 污染缓存。
     assert effective_start is not None and effective_count is not None
@@ -118,7 +136,18 @@ def read_file(
             return _unchanged_file_result(target, content_hash)
         with context.cache_lock:
             context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
-        return content
+        return ToolHandlerResult.success(
+            content,
+            _read_file_metadata(
+                target,
+                content_hash,
+                "full",
+                False,
+                1 if total_lines else 0,
+                total_lines,
+                total_lines,
+            ),
+        )
 
     # 5. 真正的分段请求按具体范围去重，只返回范围内的内容和行数元数据。
     cache_key = ReadFileCacheKey(target, effective_start, effective_count)
@@ -143,11 +172,22 @@ def read_file(
     body = "\n".join(selected_lines)
     with context.cache_lock:
         context.read_file_cache[cache_key] = ReadFileCacheEntry(content_hash)
-    return (
-        f'<file-content path="{target}" lines="{actual_start}-{actual_end}" '
-        f'total_lines="{total_lines}">\n'
-        f"{body}\n"
-        "</file-content>"
+    return ToolHandlerResult.success(
+        (
+            f'<file-content path="{target}" lines="{actual_start}-{actual_end}" '
+            f'total_lines="{total_lines}">\n'
+            f"{body}\n"
+            "</file-content>"
+        ),
+        _read_file_metadata(
+            target,
+            content_hash,
+            "partial",
+            False,
+            actual_start,
+            actual_end,
+            total_lines,
+        ),
     )
 
 
@@ -156,27 +196,67 @@ def _unchanged_file_result(
     content_hash: str,
     start_line: int | None = None,
     line_count: int | None = None,
-) -> str:
+) -> ToolHandlerResult:
     """构造完整文件或指定范围未变化时的统一占位结果。"""
     range_attributes = (
         f' start_line="{start_line}" line_count="{line_count}"'
         if start_line is not None and line_count is not None
         else ""
     )
-    return (
-        f'<file-unchanged path="{target}" sha256="{content_hash}"'
-        f"{range_attributes}>\n"
-        "文件内容与本会话上次读取时一致，未重复返回完整内容。\n"
-        "</file-unchanged>"
+    mode = "partial" if start_line is not None else "full"
+    return ToolHandlerResult.success(
+        (
+            f'<file-unchanged path="{target}" sha256="{content_hash}"'
+            f"{range_attributes}>\n"
+            "文件内容与本会话上次读取时一致，未重复返回完整内容。\n"
+            "</file-unchanged>"
+        ),
+        _read_file_metadata(
+            target,
+            content_hash,
+            mode,
+            True,
+            start_line,
+            None,
+            None,
+        ),
     )
 
 
-def write_file(path: str, content: str, context: ToolExecutionContext) -> str:
+def _read_file_metadata(
+    target: Path,
+    content_hash: str,
+    mode: str,
+    unchanged: bool,
+    start_line: int | None,
+    end_line: int | None,
+    total_lines: int | None,
+) -> dict[str, object]:
+    """构造不重复正文的 read_file 结构化输出。"""
+    return {
+        "path": str(target),
+        "sha256": content_hash,
+        "mode": mode,
+        "unchanged": unchanged,
+        "start_line": start_line,
+        "end_line": end_line,
+        "total_lines": total_lines,
+    }
+
+
+def write_file(
+    path: str,
+    content: str,
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
     """写入 UTF-8 文本文件，并在需要时创建父目录。"""
     target = _resolve_path(path, context)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return f"已向 {target} 写入 {len(content)} 个字符"
+    return ToolHandlerResult.success(
+        f"已向 {target} 写入 {len(content)} 个字符",
+        {"path": str(target), "characters": len(content)},
+    )
 
 
 def edit_file(
@@ -184,7 +264,7 @@ def edit_file(
     old_text: str,
     new_text: str,
     context: ToolExecutionContext,
-) -> str | ToolHandlerResult:
+) -> ToolHandlerResult:
     """仅当原文本在 UTF-8 文件中出现一次时执行替换。"""
     if not old_text:
         return ToolHandlerResult.failed(
@@ -210,17 +290,30 @@ def edit_file(
         )
 
     target.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
-    return f"已编辑 {target}"
+    return ToolHandlerResult.success(
+        f"已编辑 {target}",
+        {"path": str(target), "replacements": 1},
+    )
 
 
-def glob(pattern: str, context: ToolExecutionContext) -> str:
+def glob(pattern: str, context: ToolExecutionContext) -> ToolHandlerResult:
     """返回工作目录中符合 Glob 模式的路径。"""
     matches = sorted(context.workdir.glob(pattern))
     if not matches:
-        return "（没有匹配项）"
+        return ToolHandlerResult.success(
+            "（没有匹配项）",
+            {"match_count": 0, "returned_count": 0, "truncated": False},
+        )
 
     visible_matches = matches[:1000]
     output = "\n".join(str(path) for path in visible_matches)
     if len(matches) > len(visible_matches):
         output += f"\n……另有 {len(matches) - len(visible_matches)} 个匹配项"
-    return output
+    return ToolHandlerResult.success(
+        output,
+        {
+            "match_count": len(matches),
+            "returned_count": len(visible_matches),
+            "truncated": len(matches) > len(visible_matches),
+        },
+    )

@@ -11,6 +11,7 @@ from ..session import Session
 from ..tool.tool_context import ToolExecutionContext
 from ..tool.tool_execution import UserConfirmation, unavailable_user_confirmation
 from ..tool.tool_scheduler import ToolParallelLimits
+from ..tool.tool_retry import ToolRetryLimits
 from hexgent.events import AgentEvent, LoopTransitionEvent, RunFinishedEvent
 from .limits import LoopLimits
 from .loop_state import LoopState
@@ -26,6 +27,7 @@ def agent_loop(
     context_limits: ContextLimits | None = None,
     session: Session | None = None,
     tool_parallel_limits: ToolParallelLimits | None = None,
+    tool_retry_limits: ToolRetryLimits | None = None,
 ) -> Generator[AgentEvent, None, None]:
     """持续驱动单轮状态迁移，并在唯一出口发送最终事件。"""
     # 1. 初始化不可变的循环配置和第一轮完整 State。
@@ -62,6 +64,7 @@ def agent_loop(
             active_context_limits,
             session,
             tool_parallel_limits,
+            tool_retry_limits,
         )
         if isinstance(turn_output, Continue):
             yield LoopTransitionEvent(turn_output.reason)

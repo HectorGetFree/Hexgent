@@ -14,6 +14,7 @@ from ..tool.tool_scheduler import (
     ToolParallelLimits,
     execute_tool_batch,
 )
+from ..tool.tool_retry import ToolRetryLimits
 from hexgent.context import build_context
 from hexgent.events import (
     AgentEvent,
@@ -92,6 +93,7 @@ def run_turn(
     context_limits: ContextLimits | None = None,
     session: Session | None = None,
     tool_parallel_limits: ToolParallelLimits | None = None,
+    tool_retry_limits: ToolRetryLimits | None = None,
 ) -> Generator[AgentEvent, None, TurnOutcome]:
     """执行一个完整轮次，并只返回 Continue 或 Stop。"""
     # 1. 在每个正常轮次的唯一入口统一检查全局预算。
@@ -287,6 +289,7 @@ def run_turn(
         ),
         session_store=session.store if session is not None else None,
         parallel_limits=tool_parallel_limits,
+        retry_limits=tool_retry_limits,
     )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
     if session is not None:

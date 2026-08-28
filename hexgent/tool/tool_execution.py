@@ -6,6 +6,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass
 import inspect
 import json
+from time import sleep
 from typing import TYPE_CHECKING, Any, Literal
 
 from hexgent.tool.tool_permission import (
@@ -24,6 +25,11 @@ from .tool_result import (
     ToolFailureCode,
     ToolFailurePhase,
     ToolHandlerResult,
+)
+from .tool_retry import (
+    ToolRetryLimits,
+    retry_backoff_seconds,
+    should_retry_tool_failure,
 )
 
 if TYPE_CHECKING:
@@ -63,6 +69,12 @@ class ToolExecutionResult:
     # 失败结果的稳定机器可读原因；成功结果为空。
     failure: ToolFailure | None = None
 
+    # 包含首次执行在内，当前结果实际经过的处理器执行次数。
+    attempt_count: int = 1
+
+    # 已通过工具输出 Schema 的轻量结构化成功数据。
+    data: dict[str, Any] | None = None
+
 
 @dataclass(frozen=True)
 class PreparedToolCall:
@@ -97,6 +109,7 @@ def _failure_result(
     *,
     retryable: bool = False,
     side_effect_state: SideEffectState = "none",
+    retry_after_seconds: float | None = None,
 ) -> ToolExecutionResult:
     """构造兼容现有状态协议的结构化失败结果。"""
     failure = ToolFailure(
@@ -105,6 +118,7 @@ def _failure_result(
         message,
         retryable,
         side_effect_state,
+        retry_after_seconds,
     )
     return ToolExecutionResult(
         status,
@@ -351,6 +365,7 @@ def _execute_prepared_tool_call(
             "external_dependency_failed",
             "execution",
             str(error),
+            retryable=True,
         )
     except Exception as error:
         return _failure_result(
@@ -360,15 +375,13 @@ def _execute_prepared_tool_call(
             str(error),
         )
 
-    # 2. 兼容普通成功字符串，并校验结构化处理器结果的完整性。
-    if isinstance(handler_result, str):
-        handler_result = ToolHandlerResult.success(handler_result)
+    # 2. 严格区分处理器协议错误、业务失败和业务成功。
     if not isinstance(handler_result, ToolHandlerResult):
         return _failure_result(
             "error",
             "invalid_tool_output",
             "output_validation",
-            "工具返回值必须是字符串或 ToolHandlerResult",
+            "工具返回值必须是 ToolHandlerResult",
         )
     if not handler_result.ok:
         if handler_result.failure is None:
@@ -383,6 +396,21 @@ def _execute_prepared_tool_call(
             handler_result.output,
             True,
             failure=handler_result.failure,
+        )
+    if handler_result.failure is not None:
+        return _failure_result(
+            "error",
+            "invalid_tool_output",
+            "output_validation",
+            "工具成功结果不能携带 failure",
+        )
+    output_validation_error = prepared.tool.validate_output(handler_result)
+    if output_validation_error is not None:
+        return _failure_result(
+            "error",
+            "invalid_tool_output",
+            "output_validation",
+            output_validation_error,
         )
     output = handler_result.output
 
@@ -401,6 +429,7 @@ def _execute_prepared_tool_call(
         output,
         False,
         fingerprint=prepared.fingerprint,
+        data=handler_result.data,
     )
 
 
@@ -413,6 +442,7 @@ def execute_tool_call(
     execution_notifier: ToolExecutionNotifier | None = None,
     call_id: str | None = None,
     prepared_call: PreparedToolCall | None = None,
+    retry_limits: ToolRetryLimits | None = None,
 ) -> ToolExecutionResult:
     """完成工具查找、参数校验、权限处理和真正执行。"""
     # 1. 普通调用现场完成准备；批次调用复用主线程已经完成的准备结果。
@@ -432,12 +462,44 @@ def execute_tool_call(
     if execution_notifier is not None:
         execution_notifier(tool_name)
 
-    # 3. 执行已准备调用并提交工具级缓存副作用。
-    return _execute_prepared_tool_call(
-        prepared,
-        context=context,
-        call_id=call_id,
-    )
+    # 3. 按稳定失败元数据、安全声明和副作用状态决定是否自动重试。
+    active_retry_limits = retry_limits or ToolRetryLimits()
+    attempt_count = 0
+    while True:
+        attempt_count += 1
+        result = _execute_prepared_tool_call(
+            prepared,
+            context=context,
+            call_id=call_id,
+        )
+        result = ToolExecutionResult(
+            result.status,
+            result.output,
+            result.is_error,
+            result.source_call_id,
+            result.fingerprint,
+            result.failure,
+            attempt_count,
+            result.data,
+        )
+        if not should_retry_tool_failure(
+            result.failure,
+            automatic_retry_safe=prepared.tool.automatic_retry_safe,
+            attempt_count=attempt_count,
+            limits=active_retry_limits,
+        ):
+            return result
+
+        # 4. 有界退避发生在线程工作单元内部，不阻塞其他并行安全工具。
+        backoff_seconds = retry_backoff_seconds(
+            attempt_count,
+            active_retry_limits,
+        )
+        if result.failure is not None:
+            suggested_delay = result.failure.retry_after_seconds
+            if suggested_delay is not None:
+                backoff_seconds = max(backoff_seconds, suggested_delay)
+        sleep(backoff_seconds)
 
 
 def execute_tool_batch(
@@ -449,6 +511,7 @@ def execute_tool_batch(
     deadline: float | None,
     session_store: SessionStore | None = None,
     parallel_limits: Any = None,
+    retry_limits: ToolRetryLimits | None = None,
 ) -> Generator[AgentEvent, None, Any]:
     """兼容旧导入路径，并在调用时惰性委托给批次调度器。"""
     from .tool_scheduler import execute_tool_batch as schedule_tool_batch
@@ -462,6 +525,7 @@ def execute_tool_batch(
             deadline=deadline,
             session_store=session_store,
             parallel_limits=parallel_limits,
+            retry_limits=retry_limits,
         )
     )
 

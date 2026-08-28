@@ -110,6 +110,7 @@ def main(config_path: Path | None = None) -> None:
             user_confirmation=terminal_io.request_confirmation,
             session=session,
             tool_parallel_limits=config.tool_parallel,
+            tool_retry_limits=config.tool_retry,
         ):
             if isinstance(event, TextDeltaEvent):
                 if not text_is_open:

@@ -4,6 +4,7 @@ from typing import Any
 
 from hexgent.plan import Plan, PlanStatus, PlanStep, PlanStepStatus
 from hexgent.tool.tool_context import ToolExecutionContext
+from hexgent.tool.tool_result import ToolHandlerResult
 
 
 def _parse_steps(steps: list[dict[str, Any]]) -> list[PlanStep]:
@@ -194,7 +195,11 @@ def validate_create_plan(arguments: dict[str, Any], context: ToolExecutionContex
     return None
 
 
-def create_plan(objective: str, steps: list[dict[str, Any]], context: ToolExecutionContext) -> str:
+def create_plan(
+    objective: str,
+    steps: list[dict[str, Any]],
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
     """根据用户整体目标创建一个 Plan。"""
     # 1. 解析步骤并建立固定目标的 Plan。
     parsed_steps = _parse_steps(steps)
@@ -203,7 +208,15 @@ def create_plan(objective: str, steps: list[dict[str, Any]], context: ToolExecut
 
     # 2. 保存 Plan 并返回创建结果。
     context.plan_store.set_plan(plan)
-    return f"Plan 已创建：{plan.objective}，共 {len(plan.steps)} 个步骤"
+    return ToolHandlerResult.success(
+        f"Plan 已创建：{plan.objective}，共 {len(plan.steps)} 个步骤",
+        {
+            "status": plan.status,
+            "revision": plan.revision,
+            "step_count": len(plan.steps),
+            "completed_count": 0,
+        },
+    )
 
 
 def validate_update_plan(arguments: dict[str, Any], context: ToolExecutionContext) -> str | None:
@@ -236,7 +249,7 @@ def update_plan(
     blocked_reason: str | None,
     steps: list[dict[str, Any]],
     context: ToolExecutionContext,
-) -> str:
+) -> ToolHandlerResult:
     """在保持目标不变的前提下更新 Plan 状态和执行步骤。"""
     # 1. 读取当前 Plan 并解析新的完整步骤计划。
     current_plan = context.plan_store.get_plan()
@@ -269,7 +282,15 @@ def update_plan(
         )
     )
     completed_count = sum(step.status == "completed" for step in parsed_steps)
-    return (
-        f"Plan 已更新至 revision {next_revision}：状态 {status}，"
-        f"已完成 {completed_count}/{len(parsed_steps)} 个步骤"
+    return ToolHandlerResult.success(
+        (
+            f"Plan 已更新至 revision {next_revision}：状态 {status}，"
+            f"已完成 {completed_count}/{len(parsed_steps)} 个步骤"
+        ),
+        {
+            "status": status,
+            "revision": next_revision,
+            "step_count": len(parsed_steps),
+            "completed_count": completed_count,
+        },
     )

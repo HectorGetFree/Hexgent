@@ -13,10 +13,16 @@ from .context.context_budget import ContextLimits
 from .session import ToolResultLimits
 from .loop.limits import LoopLimits
 from .tool.tool_scheduler import ToolParallelLimits
+from .tool.tool_retry import ToolRetryLimits
 
 
 ConfigSection = TypeVar(
-    "ConfigSection", LoopLimits, ContextLimits, ToolResultLimits, ToolParallelLimits
+    "ConfigSection",
+    LoopLimits,
+    ContextLimits,
+    ToolResultLimits,
+    ToolParallelLimits,
+    ToolRetryLimits,
 )
 
 
@@ -39,6 +45,9 @@ class HexgentConfig:
 
     # 安全工具批次的并行开关、并发数和超时配置。
     tool_parallel: ToolParallelLimits = ToolParallelLimits()
+
+    # 工具瞬时失败的安全自动重试配置。
+    tool_retry: ToolRetryLimits = ToolRetryLimits()
 
 
 def load_config(
@@ -65,7 +74,13 @@ def load_config(
         raise ConfigError(f"无法读取配置文件 {path}：{error}") from error
 
     # 3. 拒绝未知顶层配置，避免拼写错误被静默忽略。
-    known_sections = {"loop", "context", "tool_result", "tool_parallel"}
+    known_sections = {
+        "loop",
+        "context",
+        "tool_result",
+        "tool_parallel",
+        "tool_retry",
+    }
     unknown_sections = set(raw_config) - known_sections
     if unknown_sections:
         names = "、".join(sorted(unknown_sections))
@@ -88,6 +103,11 @@ def load_config(
             "tool_parallel",
             raw_config.get("tool_parallel"),
             ToolParallelLimits,
+        ),
+        tool_retry=_load_section(
+            "tool_retry",
+            raw_config.get("tool_retry"),
+            ToolRetryLimits,
         ),
     )
     _validate_relationships(config)

@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 
-RUN_REPORT_SCHEMA_VERSION = 1
+RUN_REPORT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class RunReport:
     # Run 开始和结束时的 Plan 快照。
     plan: dict[str, Any]
 
-    # 工具调用总数以及按名称、状态聚合的计数。
+    # 工具调用总数以及按名称、状态、失败码聚合的计数。
     tools: dict[str, Any]
 
     # 上下文压缩和大结果外置的聚合事实。
@@ -107,6 +107,12 @@ def build_run_report(
     )
     tools_by_status = Counter(
         record["payload"].get("status", "unknown") for record in tool_records
+    )
+    tools_by_failure_code = Counter(
+        failure["code"]
+        for record in tool_records
+        if isinstance((failure := record["payload"].get("failure")), dict)
+        and isinstance(failure.get("code"), str)
     )
 
     # 4. 保存每次压缩的前后预算，并对内容寻址工件按 artifact_id 去重。
@@ -198,6 +204,7 @@ def build_run_report(
             "total": len(tool_records),
             "by_name": dict(sorted(tools_by_name.items())),
             "by_status": dict(sorted(tools_by_status.items())),
+            "by_failure_code": dict(sorted(tools_by_failure_code.items())),
         },
         context={
             "compaction_count": len(compactions),

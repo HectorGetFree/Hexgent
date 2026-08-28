@@ -21,9 +21,10 @@ from .builtin_tools import (
     write_file,
 )
 from .tool_result import ToolHandlerResult
+from .tool_output import ToolOutputValidator, validate_json_output
 
 
-ToolFunction = Callable[..., str | ToolHandlerResult]
+ToolFunction = Callable[..., ToolHandlerResult]
 ToolValidator = Callable[[dict[str, Any], ToolExecutionContext], str | None]
 ToolDescriber = Callable[[dict[str, Any]], str]
 ToolDeduplicationPolicy = Literal[
@@ -60,6 +61,15 @@ class RegisteredTool:
 
     # 工具是否可以与相邻的其他安全工具并行执行。
     concurrency_safe: bool = False
+
+    # 工具在无副作用失败后是否允许执行器使用相同参数自动重试。
+    automatic_retry_safe: bool = False
+
+    # 工具成功结果中 data 字段需要满足的 JSON Schema。
+    output_schema: dict[str, Any] | None = None
+
+    # JSON Schema 通过后执行的可选工具专属输出校验。
+    output_validator: ToolOutputValidator | None = None
 
     def describe(self, raw_arguments: str) -> str:
         """根据工具自身声明生成安全、简短的调用说明。"""
@@ -107,11 +117,28 @@ class RegisteredTool:
         self,
         arguments: dict[str, Any],
         context: ToolExecutionContext,
-    ) -> str | ToolHandlerResult:
+    ) -> ToolHandlerResult:
         """根据工具声明注入上下文并执行函数。"""
         if self.requires_context:
             return self.function(**arguments, context=context)
         return self.function(**arguments)
+
+    def validate_output(self, result: ToolHandlerResult) -> str | None:
+        """校验工具成功结果的正文、JSON 数据和专属输出约束。"""
+        # 1. 迁移期间没有声明 Schema 的工具继续保持原有字符串协议。
+        if not isinstance(result.output, str):
+            return "工具成功结果的 output 必须是字符串"
+        if self.output_schema is None:
+            return None
+        error = validate_json_output(result.data, self.output_schema)
+        if error is not None:
+            return error
+
+        # 2. 通用 Schema 通过后再执行工具自身的语义校验。
+        if self.output_validator is None:
+            return None
+        assert result.data is not None
+        return self.output_validator(result.data)
 
 
 def _describe_read_file(arguments: dict[str, Any]) -> str:
@@ -128,12 +155,79 @@ def _describe_read_file(arguments: dict[str, Any]) -> str:
     return f"{path}, 第 {effective_start} 行起读取 {effective_count} 行"
 
 
+TEXT_METADATA_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "characters": {"type": "integer"},
+    },
+    "required": ["path", "characters"],
+    "additionalProperties": False,
+}
+READ_FILE_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string"},
+        "mode": {"type": "string", "enum": ["full", "partial"]},
+        "unchanged": {"type": "boolean"},
+        "start_line": {"type": ["integer", "null"]},
+        "end_line": {"type": ["integer", "null"]},
+        "total_lines": {"type": ["integer", "null"]},
+    },
+    "required": [
+        "path",
+        "sha256",
+        "mode",
+        "unchanged",
+        "start_line",
+        "end_line",
+        "total_lines",
+    ],
+    "additionalProperties": False,
+}
+GLOB_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "match_count": {"type": "integer"},
+        "returned_count": {"type": "integer"},
+        "truncated": {"type": "boolean"},
+    },
+    "required": ["match_count", "returned_count", "truncated"],
+    "additionalProperties": False,
+}
+PLAN_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed", "blocked"],
+        },
+        "revision": {"type": "integer"},
+        "step_count": {"type": "integer"},
+        "completed_count": {"type": "integer"},
+    },
+    "required": ["status", "revision", "step_count", "completed_count"],
+    "additionalProperties": False,
+}
+
+
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
     "bash": RegisteredTool(
         bash,
         requires_context=True,
         display_argument="command",
         invalidates_tool_call_cache=True,
+        output_schema={
+            "type": "object",
+            "properties": {
+                "exit_code": {"type": "integer"},
+                "stdout_characters": {"type": "integer"},
+                "stderr_characters": {"type": "integer"},
+            },
+            "required": ["exit_code", "stdout_characters", "stderr_characters"],
+            "additionalProperties": False,
+        },
     ),
     "read_file": RegisteredTool(
         read_file,
@@ -142,18 +236,30 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         describer=_describe_read_file,
         deduplication_policy="content_aware",
         concurrency_safe=True,
+        automatic_retry_safe=True,
+        output_schema=READ_FILE_OUTPUT_SCHEMA,
     ),
     "write_file": RegisteredTool(
         write_file,
         requires_context=True,
         display_argument="path",
         invalidates_tool_call_cache=True,
+        output_schema=TEXT_METADATA_SCHEMA,
     ),
     "edit_file": RegisteredTool(
         edit_file,
         requires_context=True,
         display_argument="path",
         invalidates_tool_call_cache=True,
+        output_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "replacements": {"type": "integer"},
+            },
+            "required": ["path", "replacements"],
+            "additionalProperties": False,
+        },
     ),
     "glob": RegisteredTool(
         glob,
@@ -161,18 +267,22 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         display_argument="pattern",
         deduplication_policy="exact",
         concurrency_safe=True,
+        automatic_retry_safe=True,
+        output_schema=GLOB_OUTPUT_SCHEMA,
     ),
     "create_plan": RegisteredTool(
         create_plan,
         requires_context=True,
         validator=validate_create_plan,
         display_argument="objective",
+        output_schema=PLAN_OUTPUT_SCHEMA,
     ),
     "update_plan": RegisteredTool(
         update_plan,
         requires_context=True,
         validator=validate_update_plan,
         display_argument="status",
+        output_schema=PLAN_OUTPUT_SCHEMA,
     ),
 }
 

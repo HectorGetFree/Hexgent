@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 ToolFailurePhase = Literal[
@@ -25,6 +25,7 @@ ToolFailureCode = Literal[
     "tool_timeout",  # 工具或并行批次超过执行时间限制。
     "tool_internal_error",  # 工具实现抛出未预期的内部异常。
     "external_dependency_failed",  # 文件系统、进程或外部服务调用失败。
+    "rate_limited",  # 外部依赖触发限流，可按服务端建议时间重试。
     "invalid_tool_output",  # 工具返回值不符合处理器输出协议。
     "business_failure",  # 工具技术执行完成，但业务操作没有成功。
     "duplicate_call_limit",  # 相同工具调用超过当前 Run 的复用次数限制。
@@ -57,6 +58,9 @@ class ToolFailure:
     # 副作用是否开始、提交或处于无法确定的状态。
     side_effect_state: SideEffectState = "none"
 
+    # 外部依赖建议的最短重试等待秒数；没有建议时为空。
+    retry_after_seconds: float | None = None
+
 
 @dataclass(frozen=True)
 class ToolHandlerResult:
@@ -71,10 +75,17 @@ class ToolHandlerResult:
     # 业务失败的结构化原因；成功时必须为空。
     failure: ToolFailure | None = None
 
+    # 按工具输出 Schema 校验的轻量 JSON 数据；不得重复保存大正文。
+    data: dict[str, Any] | None = None
+
     @classmethod
-    def success(cls, output: str) -> "ToolHandlerResult":
+    def success(
+        cls,
+        output: str,
+        data: dict[str, Any] | None = None,
+    ) -> "ToolHandlerResult":
         """构造业务成功结果。"""
-        return cls(True, output)
+        return cls(True, output, None, data)
 
     @classmethod
     def failed(
@@ -85,6 +96,7 @@ class ToolHandlerResult:
         phase: ToolFailurePhase = "execution",
         retryable: bool = False,
         side_effect_state: SideEffectState = "none",
+        retry_after_seconds: float | None = None,
     ) -> "ToolHandlerResult":
         """构造带有稳定失败元数据的业务失败结果。"""
         return cls(
@@ -96,5 +108,6 @@ class ToolHandlerResult:
                 message,
                 retryable,
                 side_effect_state,
+                retry_after_seconds,
             ),
         )
