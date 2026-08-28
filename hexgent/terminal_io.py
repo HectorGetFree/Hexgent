@@ -1,6 +1,6 @@
 """Hexgent 命令行的统一输入输出边界。"""
 
-from .tool.tool_permission import UserConfirmationResult
+from .tool.tool_permission_pipeline import UserConfirmationResult
 
 
 class TerminalIO:

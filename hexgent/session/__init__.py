@@ -1,6 +1,6 @@
 """导出 Session 生命周期与持久化能力。"""
 
-from .session import Session
+from .session import Session, SessionSettings
 from .run_report import RunReport, build_run_report
 from .session_store import (
     PersistedToolResult,
@@ -13,6 +13,7 @@ __all__ = [
     "PersistedToolResult",
     "RunReport",
     "Session",
+    "SessionSettings",
     "SessionStore",
     "ToolResultLimits",
     "build_persisted_output_message",

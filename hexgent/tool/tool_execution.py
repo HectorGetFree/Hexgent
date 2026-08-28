@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import inspect
 import json
 from time import sleep
 from typing import TYPE_CHECKING, Any, Literal
 
-from hexgent.tool.tool_permission import (
-    PermissionDecision,
+from hexgent.tool.tool_permission_pipeline import (
+    PermissionContext,
+    PermissionEvaluation,
     UserConfirmationResult,
-    check_permission,
+    evaluate_permission,
 )
 from hexgent.prompt import TOOLS
 from hexgent.session import SessionStore
@@ -45,6 +46,7 @@ ToolExecutionStatus = Literal[
 ]
 UserConfirmation = Callable[[str, str], UserConfirmationResult]
 ToolExecutionNotifier = Callable[[str], None]
+PermissionEventRecorder = Callable[[str, dict[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -228,12 +230,36 @@ def _validate_arguments(
 
 def _resolve_permission(
     tool_name: str,
-    decision: PermissionDecision,
+    decision: PermissionEvaluation,
     user_confirmation: UserConfirmation,
+    *,
+    call_id: str | None = None,
+    permission_event_recorder: PermissionEventRecorder | None = None,
 ) -> ToolExecutionResult | None:
     """处理 deny 和 ask，将允许决策继续传向执行阶段。"""
+    # 1. 保存规则与 Mode 形成的原始评估，审批结果不能覆盖评估依据。
+    if permission_event_recorder is not None:
+        permission_event_recorder(
+            "permission_evaluated",
+            {
+                "call_id": call_id,
+                "tool_name": tool_name,
+                **asdict(decision),
+            },
+        )
+
     if decision.behavior == "deny":
         message = decision.message or "工具调用已被拒绝"
+        if permission_event_recorder is not None:
+            permission_event_recorder(
+                "permission_resolved",
+                {
+                    "call_id": call_id,
+                    "tool_name": tool_name,
+                    "behavior": "deny",
+                    "resolution": "policy_denied",
+                },
+            )
         return _failure_result(
             "denied",
             "permission_denied",
@@ -245,6 +271,21 @@ def _resolve_permission(
     if decision.behavior == "ask":
         message = decision.message or "本次工具调用需要用户确认"
         confirmation = user_confirmation(tool_name, message)
+        if permission_event_recorder is not None:
+            resolution_by_confirmation = {
+                "allow": "user_allowed",
+                "deny": "user_denied",
+                "unavailable": "confirmation_unavailable",
+            }
+            permission_event_recorder(
+                "permission_resolved",
+                {
+                    "call_id": call_id,
+                    "tool_name": tool_name,
+                    "behavior": "allow" if confirmation == "allow" else "deny",
+                    "resolution": resolution_by_confirmation[confirmation],
+                },
+            )
         if confirmation == "deny":
             return _failure_result(
                 "denied",
@@ -261,6 +302,16 @@ def _resolve_permission(
                 "当前输入环境无法读取权限确认，本次工具调用未执行",
                 side_effect_state="not_started",
             )
+    elif permission_event_recorder is not None:
+        permission_event_recorder(
+            "permission_resolved",
+            {
+                "call_id": call_id,
+                "tool_name": tool_name,
+                "behavior": "allow",
+                "resolution": "policy_allowed",
+            },
+        )
     return None
 
 
@@ -305,6 +356,8 @@ def _prepare_tool_call(
     context: ToolExecutionContext,
     user_confirmation: UserConfirmation,
     call_id: str | None,
+    permission_context: PermissionContext | None = None,
+    permission_event_recorder: PermissionEventRecorder | None = None,
 ) -> PreparedToolCall | ToolExecutionResult:
     """在主线程完成工具查找、参数、权限和去重检查。"""
     # 1. 校验工具是否存在，并取得对应的工具函数。
@@ -331,8 +384,16 @@ def _prepare_tool_call(
     # 4. 权限判断和用户确认始终在调度主线程串行完成。
     permission_result = _resolve_permission(
         tool_name,
-        check_permission(tool_name, parsed, context),
+        evaluate_permission(
+            tool_name,
+            tool,
+            parsed,
+            context,
+            permission_context,
+        ),
         user_confirmation,
+        call_id=call_id,
+        permission_event_recorder=permission_event_recorder,
     )
     if permission_result is not None:
         return permission_result
@@ -443,6 +504,8 @@ def execute_tool_call(
     call_id: str | None = None,
     prepared_call: PreparedToolCall | None = None,
     retry_limits: ToolRetryLimits | None = None,
+    permission_context: PermissionContext | None = None,
+    permission_event_recorder: PermissionEventRecorder | None = None,
 ) -> ToolExecutionResult:
     """完成工具查找、参数校验、权限处理和真正执行。"""
     # 1. 普通调用现场完成准备；批次调用复用主线程已经完成的准备结果。
@@ -453,6 +516,8 @@ def execute_tool_call(
             context=context,
             user_confirmation=user_confirmation,
             call_id=call_id,
+            permission_context=permission_context,
+            permission_event_recorder=permission_event_recorder,
         )
     )
     if isinstance(prepared, ToolExecutionResult):
@@ -512,6 +577,7 @@ def execute_tool_batch(
     session_store: SessionStore | None = None,
     parallel_limits: Any = None,
     retry_limits: ToolRetryLimits | None = None,
+    permission_context: PermissionContext | None = None,
 ) -> Generator[AgentEvent, None, Any]:
     """兼容旧导入路径，并在调用时惰性委托给批次调度器。"""
     from .tool_scheduler import execute_tool_batch as schedule_tool_batch
@@ -526,6 +592,7 @@ def execute_tool_batch(
             session_store=session_store,
             parallel_limits=parallel_limits,
             retry_limits=retry_limits,
+            permission_context=permission_context,
         )
     )
 

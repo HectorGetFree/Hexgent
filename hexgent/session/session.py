@@ -6,8 +6,17 @@ from typing import Any
 
 from ..context.context_manager import UserQuery
 from ..plan import Plan
+from ..tool.tool_permission_pipeline import PermissionContext, PermissionMode
 from .run_report import build_run_report
 from .session_store import SessionStore, ToolResultLimits
+
+
+@dataclass(frozen=True)
+class SessionSettings:
+    """当前 Session 独立持有且可被执行层快照的运行设置。"""
+
+    # 当前 Session 采用的工具权限模式。
+    permission_mode: PermissionMode = "default"
 
 
 @dataclass
@@ -17,8 +26,14 @@ class Session:
     # 可选的 JSONL Transcript 与会话工件存储。
     store: SessionStore | None = None
 
+    # 当前会话实际采用的权限设置，初始化后不受全局配置变化影响。
+    settings: SessionSettings = field(default_factory=SessionSettings)
+
     # 最近一次由 Context 接受的用户原始 Query。
     _latest_user_query: str | None = field(default=None, init=False, repr=False)
+
+    # 标识当前 Session 的权限模式是否已经写入 Transcript。
+    _permission_mode_recorded: bool = field(default=False, init=False, repr=False)
 
     # 当前正在执行且尚未生成 Report 的运行编号。
     _active_run_id: str | None = field(default=None, init=False, repr=False)
@@ -35,15 +50,30 @@ class Session:
         cls,
         workdir: Path,
         tool_result_limits: ToolResultLimits | None = None,
+        settings: SessionSettings | None = None,
     ) -> "Session":
         """创建持续写入工作区 Session 目录的会话。"""
-        return cls(SessionStore(workdir, tool_result_limits=tool_result_limits))
+        return cls(
+            SessionStore(workdir, tool_result_limits=tool_result_limits),
+            settings or SessionSettings(),
+        )
+
+    @property
+    def permission_context(self) -> PermissionContext:
+        """取得当前 Session 权限模式的不可变执行快照。"""
+        return PermissionContext(self.settings.permission_mode)
 
     def record_user_query(self, query: UserQuery) -> None:
         """先初始化 Session，再原样记录已被 Context 接受的 Query。"""
         self._latest_user_query = query.content
         if self.store is not None:
             self.store.start_session(query.content)
+            if not self._permission_mode_recorded:
+                self.store.append_transcript(
+                    "permission_mode_selected",
+                    {"mode": self.settings.permission_mode},
+                )
+                self._permission_mode_recorded = True
             self.store.append_transcript(
                 "user_query",
                 {"sequence": query.sequence, "content": query.content},

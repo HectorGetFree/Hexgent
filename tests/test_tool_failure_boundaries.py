@@ -73,6 +73,7 @@ class ToolFailureBoundariesTest(unittest.TestCase):
                 "edit_file",
                 '{"path":"a.txt","old_text":"不存在","new_text":"新内容"}',
                 context=context,
+                user_confirmation=lambda _tool, _message: "allow",
             )
 
         self.assertEqual(result.status, "error")
@@ -87,7 +88,10 @@ class ToolFailureBoundariesTest(unittest.TestCase):
                 InMemoryPlanStore(), Path(directory).resolve()
             )
             result = execute_tool_call(
-                "bash", '{"command":"exit 7"}', context=context
+                "bash",
+                '{"command":"exit 7"}',
+                context=context,
+                user_confirmation=lambda _tool, _message: "allow",
             )
 
         self.assertEqual(result.status, "error")
@@ -313,6 +317,7 @@ class ToolFailureBoundariesTest(unittest.TestCase):
                 "{}",
                 context=context,
                 retry_limits=retry_limits,
+                user_confirmation=lambda _tool, _message: "allow",
             )
 
     @staticmethod

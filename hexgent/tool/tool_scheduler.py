@@ -26,6 +26,7 @@ from .tool_execution import (
 from .tool_registry import get_tool
 from .tool_result import ToolFailure
 from .tool_retry import ToolRetryLimits
+from .tool_permission_pipeline import PermissionContext
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
@@ -180,6 +181,7 @@ def _run_scheduled_call(
     context: ToolExecutionContext,
     user_confirmation: UserConfirmation,
     retry_limits: ToolRetryLimits,
+    permission_context: PermissionContext | None,
 ) -> ToolExecutionResult:
     """执行一个已经完成主线程准备的工具调用。"""
     # 惰性取用执行函数，既避免模块循环，也保留测试替换执行入口的能力。
@@ -193,6 +195,7 @@ def _run_scheduled_call(
         call_id=item.tool_call.call_id,
         prepared_call=item.prepared,
         retry_limits=retry_limits,
+        permission_context=permission_context,
     )
 
 
@@ -204,6 +207,7 @@ def _execute_scheduled_group(
     user_confirmation: UserConfirmation,
     limits: ToolParallelLimits,
     retry_limits: ToolRetryLimits,
+    permission_context: PermissionContext | None,
 ) -> Generator[AgentEvent, None, tuple[bool, float]]:
     """执行连续分组，并立即发送并行工具的真实完成事件。"""
     from hexgent.events import ToolExecutionCompletedEvent
@@ -222,7 +226,11 @@ def _execute_scheduled_group(
     if not run_in_parallel:
         for item in executable:
             item.result = _run_scheduled_call(
-                item, context, user_confirmation, retry_limits
+                item,
+                context,
+                user_confirmation,
+                retry_limits,
+                permission_context,
             )
         return False, monotonic() - started_at
 
@@ -234,7 +242,12 @@ def _execute_scheduled_group(
     )
     future_to_item: dict[Future[ToolExecutionResult], ScheduledToolCall] = {
         executor.submit(
-            _run_scheduled_call, item, context, user_confirmation, retry_limits
+            _run_scheduled_call,
+            item,
+            context,
+            user_confirmation,
+            retry_limits,
+            permission_context,
         ): item
         for item in executable
     }
@@ -318,6 +331,7 @@ def execute_tool_batch(
     session_store: SessionStore | None = None,
     parallel_limits: ToolParallelLimits | None = None,
     retry_limits: ToolRetryLimits | None = None,
+    permission_context: PermissionContext | None = None,
 ) -> Generator[AgentEvent, None, ToolBatchResult]:
     """调度完整工具批次，并保证每个调用都有配对结果。"""
     from hexgent.events import (
@@ -382,6 +396,12 @@ def execute_tool_batch(
                     context=context,
                     user_confirmation=user_confirmation,
                     call_id=tool_call.call_id,
+                    permission_context=permission_context,
+                    permission_event_recorder=(
+                        session_store.append_transcript
+                        if session_store is not None
+                        else None
+                    ),
                 )
                 if isinstance(prepared, ToolExecutionResult):
                     scheduled.result = prepared
@@ -426,6 +446,7 @@ def execute_tool_batch(
             user_confirmation=user_confirmation,
             limits=limits,
             retry_limits=active_retry_limits,
+            permission_context=permission_context,
         )
 
         # 4. 首次调用成功后生成组内重复结果；失败时重新真实执行。
@@ -452,6 +473,7 @@ def execute_tool_batch(
                     context,
                     user_confirmation,
                     active_retry_limits,
+                    permission_context,
                 )
 
         # 5. 按模型原始顺序持久化、发事件并构造配对结果。

@@ -43,6 +43,9 @@ batch_timeout_seconds = 15.0
 enabled = true
 max_attempts = 4
 initial_backoff_seconds = 0.1
+
+[permission]
+default_mode = "accept_edits"
 """.strip(),
                 encoding="utf-8",
             )
@@ -61,6 +64,7 @@ initial_backoff_seconds = 0.1
         self.assertTrue(config.tool_retry.enabled)
         self.assertEqual(config.tool_retry.max_attempts, 4)
         self.assertEqual(config.tool_retry.initial_backoff_seconds, 0.1)
+        self.assertEqual(config.permission.default_mode, "accept_edits")
 
     def test_unknown_or_invalid_fields_are_rejected(self) -> None:
         """未知字段和错误类型不能被静默忽略。"""
@@ -70,6 +74,7 @@ initial_backoff_seconds = 0.1
             ("[tool_result]\npreview_characters = 0", "必须大于 0"),
             ("[tool_parallel]\nmax_workers = 0", "必须大于 0"),
             ("[tool_retry]\nmax_attempts = 0", "必须大于 0"),
+            ("[permission]\ndefault_mode = 'unknown'", "必须是以下值之一"),
             (
                 "[context]\ncontext_window_tokens = 10000\n"
                 "reserved_output_tokens = 8000\nsafety_margin_tokens = 4000",

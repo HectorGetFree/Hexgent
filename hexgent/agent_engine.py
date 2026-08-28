@@ -23,7 +23,7 @@ from .context import ContextManager
 from .loop.agent_loop import agent_loop
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
-from .session import Session
+from .session import Session, SessionSettings
 from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
 from .workspace import find_workspace_root
@@ -72,7 +72,11 @@ def main(config_path: Path | None = None) -> None:
     workdir = find_workspace_root()
     config = load_config(workdir, config_path)
     context_manager = ContextManager()
-    session = Session.persistent(workdir, config.tool_result)
+    session = Session.persistent(
+        workdir,
+        config.tool_result,
+        SessionSettings(config.permission.default_mode),
+    )
     tool_context = ToolExecutionContext(InMemoryPlanStore(), workdir)
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
@@ -111,6 +115,7 @@ def main(config_path: Path | None = None) -> None:
             session=session,
             tool_parallel_limits=config.tool_parallel,
             tool_retry_limits=config.tool_retry,
+            permission_context=session.permission_context,
         ):
             if isinstance(event, TextDeltaEvent):
                 if not text_is_open:

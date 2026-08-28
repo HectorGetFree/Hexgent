@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, TypeVar, get_type_hints
+from typing import Any, Literal, TypeVar, get_args, get_origin, get_type_hints
 
 try:
     import tomllib
@@ -14,6 +14,7 @@ from .session import ToolResultLimits
 from .loop.limits import LoopLimits
 from .tool.tool_scheduler import ToolParallelLimits
 from .tool.tool_retry import ToolRetryLimits
+from .tool.tool_permission_pipeline import PermissionConfig
 
 
 ConfigSection = TypeVar(
@@ -23,6 +24,7 @@ ConfigSection = TypeVar(
     ToolResultLimits,
     ToolParallelLimits,
     ToolRetryLimits,
+    PermissionConfig,
 )
 
 
@@ -48,6 +50,9 @@ class HexgentConfig:
 
     # 工具瞬时失败的安全自动重试配置。
     tool_retry: ToolRetryLimits = ToolRetryLimits()
+
+    # 新 Session 使用的默认权限模式配置。
+    permission: PermissionConfig = PermissionConfig()
 
 
 def load_config(
@@ -80,6 +85,7 @@ def load_config(
         "tool_result",
         "tool_parallel",
         "tool_retry",
+        "permission",
     }
     unknown_sections = set(raw_config) - known_sections
     if unknown_sections:
@@ -108,6 +114,11 @@ def load_config(
             "tool_retry",
             raw_config.get("tool_retry"),
             ToolRetryLimits,
+        ),
+        permission=_load_section(
+            "permission",
+            raw_config.get("permission"),
+            PermissionConfig,
         ),
     )
     _validate_relationships(config)
@@ -148,6 +159,12 @@ def _validate_field(
 ) -> None:
     """校验配置字段类型及正数约束。"""
     full_name = f"[{section_name}].{field_name}"
+    if get_origin(expected_type) is Literal:
+        allowed_values = get_args(expected_type)
+        if value not in allowed_values:
+            values = "、".join(str(item) for item in allowed_values)
+            raise ConfigError(f"配置字段 {full_name} 必须是以下值之一：{values}")
+        return
     if expected_type is bool:
         if not isinstance(value, bool):
             raise ConfigError(f"配置字段 {full_name} 必须是布尔值")

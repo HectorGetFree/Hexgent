@@ -32,6 +32,12 @@ ToolDeduplicationPolicy = Literal[
     "exact",  # 同一 Agent Run 内相同规范化参数可以复用此前成功结果。
     "content_aware",  # 由工具根据外部内容状态自行判断是否需要返回完整结果。
 ]
+ToolPermissionCapability = Literal[
+    "workspace_read",  # 读取工作区内的文件、目录和元数据。
+    "workspace_write",  # 创建、覆盖或编辑工作区内文件。
+    "shell",  # 执行可能组合本地、网络或外部副作用的 Shell 命令。
+    "plan_state",  # 仅维护当前 Session 内的结构化 Plan 状态。
+]
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,9 @@ class RegisteredTool:
 
     # JSON Schema 通过后执行的可选工具专属输出校验。
     output_validator: ToolOutputValidator | None = None
+
+    # Permission Mode 用来判断工具默认行为的稳定能力分类。
+    permission_capability: ToolPermissionCapability = "shell"
 
     def describe(self, raw_arguments: str) -> str:
         """根据工具自身声明生成安全、简短的调用说明。"""
@@ -228,6 +237,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
             "required": ["exit_code", "stdout_characters", "stderr_characters"],
             "additionalProperties": False,
         },
+        permission_capability="shell",
     ),
     "read_file": RegisteredTool(
         read_file,
@@ -238,6 +248,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         concurrency_safe=True,
         automatic_retry_safe=True,
         output_schema=READ_FILE_OUTPUT_SCHEMA,
+        permission_capability="workspace_read",
     ),
     "write_file": RegisteredTool(
         write_file,
@@ -245,6 +256,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         display_argument="path",
         invalidates_tool_call_cache=True,
         output_schema=TEXT_METADATA_SCHEMA,
+        permission_capability="workspace_write",
     ),
     "edit_file": RegisteredTool(
         edit_file,
@@ -260,6 +272,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
             "required": ["path", "replacements"],
             "additionalProperties": False,
         },
+        permission_capability="workspace_write",
     ),
     "glob": RegisteredTool(
         glob,
@@ -269,6 +282,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         concurrency_safe=True,
         automatic_retry_safe=True,
         output_schema=GLOB_OUTPUT_SCHEMA,
+        permission_capability="workspace_read",
     ),
     "create_plan": RegisteredTool(
         create_plan,
@@ -276,6 +290,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         validator=validate_create_plan,
         display_argument="objective",
         output_schema=PLAN_OUTPUT_SCHEMA,
+        permission_capability="plan_state",
     ),
     "update_plan": RegisteredTool(
         update_plan,
@@ -283,6 +298,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         validator=validate_update_plan,
         display_argument="status",
         output_schema=PLAN_OUTPUT_SCHEMA,
+        permission_capability="plan_state",
     ),
 }
 

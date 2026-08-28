@@ -116,6 +116,7 @@ class ToolDeduplicationTest(unittest.TestCase):
                 '{"path":"b.py","content":""}',
                 context=context,
                 call_id="write-1",
+                user_confirmation=lambda _tool, _message: "allow",
             )
             refreshed = execute_tool_call(
                 "glob",
@@ -142,12 +143,14 @@ class ToolDeduplicationTest(unittest.TestCase):
                 arguments,
                 context=context,
                 call_id="write-1",
+                user_confirmation=lambda _tool, _message: "allow",
             )
             second = execute_tool_call(
                 "write_file",
                 arguments,
                 context=context,
                 call_id="write-2",
+                user_confirmation=lambda _tool, _message: "allow",
             )
 
         self.assertEqual(first.status, "success")

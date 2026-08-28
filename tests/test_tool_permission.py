@@ -6,7 +6,8 @@ import unittest
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import execute_tool_call
-from hexgent.tool.tool_permission import check_permission
+from hexgent.tool.tool_permission_pipeline import PermissionContext, evaluate_permission
+from hexgent.tool.tool_registry import get_tool
 
 
 class ToolPermissionTest(unittest.TestCase):
@@ -17,22 +18,32 @@ class ToolPermissionTest(unittest.TestCase):
         self.workdir = Path("/tmp/hexgent-workspace").resolve()
         self.context = ToolExecutionContext(InMemoryPlanStore(), self.workdir)
 
+    def _evaluate(self, tool_name: str, arguments: dict[str, str]):
+        """使用真实注册工具执行权限评估。"""
+        tool = get_tool(tool_name)
+        assert tool is not None
+        return evaluate_permission(
+            tool_name,
+            tool,
+            arguments,
+            self.context,
+            PermissionContext(),
+        )
+
     def test_relative_path_is_resolved_from_context_workdir(self) -> None:
         """工作区内的相对路径应直接允许。"""
-        decision = check_permission(
+        decision = self._evaluate(
             "read_file",
             {"path": "tests/example.py"},
-            self.context,
         )
 
         self.assertEqual(decision.behavior, "allow")
 
     def test_parent_path_requires_confirmation_and_shows_boundaries(self) -> None:
         """越过工作区的路径应请求确认并展示解析结果。"""
-        decision = check_permission(
+        decision = self._evaluate(
             "read_file",
             {"path": "../tests/example.py"},
-            self.context,
         )
 
         self.assertEqual(decision.behavior, "ask")

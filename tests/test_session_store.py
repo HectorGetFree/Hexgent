@@ -17,7 +17,7 @@ from hexgent.session import (
     build_persisted_output_message,
 )
 from hexgent.context import ContextManager
-from hexgent.session import Session
+from hexgent.session import Session, SessionSettings
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_context import ReadFileCacheEntry, ReadFileCacheKey
@@ -69,11 +69,12 @@ class SessionStoreTest(unittest.TestCase):
             ]
 
         self.assertEqual(records[0]["type"], "session_started")
-        self.assertEqual(records[1]["type"], "user_query")
+        self.assertEqual(records[1]["type"], "permission_mode_selected")
+        self.assertEqual(records[2]["type"], "user_query")
         self.assertTrue(records[0]["created_at"].endswith("+08:00"))
         self.assertTrue(records[1]["created_at"].endswith("+08:00"))
         self.assertEqual(
-            records[1]["payload"]["content"],
+            records[2]["payload"]["content"],
             "原始 Query：不要修改空格  和标点！",
         )
         self.assertRegex(
@@ -83,6 +84,32 @@ class SessionStoreTest(unittest.TestCase):
         self.assertLessEqual(len(session.store.session_dir.name), 42)
         with self.assertRaises(FrozenInstanceError):
             context_manager.user_queries[0].content = "试图改写"
+
+    def test_permission_mode_is_recorded_once_per_session(self) -> None:
+        """Session 权限模式应固定为创建时快照且只记录一次。"""
+        with TemporaryDirectory() as directory:
+            context_manager = ContextManager()
+            session = Session.persistent(
+                Path(directory),
+                settings=SessionSettings("accept_edits"),
+            )
+            session.record_user_query(context_manager.append_user_query("第一轮"))
+            session.record_user_query(context_manager.append_user_query("第二轮"))
+            records = [
+                json.loads(line)
+                for line in session.store.transcript_path.read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        mode_records = [
+            record
+            for record in records
+            if record["type"] == "permission_mode_selected"
+        ]
+        self.assertEqual(len(mode_records), 1)
+        self.assertEqual(mode_records[0]["payload"]["mode"], "accept_edits")
+        self.assertEqual(session.permission_context.mode, "accept_edits")
 
     def test_large_tool_result_is_persisted_with_preview(self) -> None:
         """大工具结果应完整落盘，模型上下文只保留路径和预览。"""
@@ -390,6 +417,7 @@ class SessionStoreTest(unittest.TestCase):
             [record["type"] for record in records],
             [
                 "session_started",
+                "permission_mode_selected",
                 "user_query",
                 "agent_run_started",
                 "message",
