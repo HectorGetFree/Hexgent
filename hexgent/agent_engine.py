@@ -14,6 +14,8 @@ from hexgent.events import (
     TextDeltaEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
+    ToolBatchFinishedEvent,
+    ToolBatchStartedEvent,
 )
 from .config import load_config
 from .context import ContextManager
@@ -105,6 +107,7 @@ def main(config_path: Path | None = None) -> None:
             context_limits=config.context,
             user_confirmation=terminal_io.request_confirmation,
             session=session,
+            tool_parallel_limits=config.tool_parallel,
         ):
             if isinstance(event, TextDeltaEvent):
                 if not text_is_open:
@@ -120,6 +123,17 @@ def main(config_path: Path | None = None) -> None:
                 status_label = TOOL_STATUS_LABELS[event.status]
                 print(
                     f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
+                )
+            elif isinstance(event, ToolBatchStartedEvent):
+                print(
+                    f"\033[90m开始并行处理 {event.tool_count} 个工具"
+                    f"（最大并发：{event.max_workers}）\033[0m"
+                )
+            elif isinstance(event, ToolBatchFinishedEvent):
+                print(
+                    f"\033[90m并行工具批次完成：成功 {event.succeeded_count}，"
+                    f"失败 {event.failed_count}，未执行 {event.skipped_count}，"
+                    f"用时 {event.elapsed_seconds:.1f} 秒\033[0m"
                 )
             elif isinstance(event, PlanCreatedEvent):
                 _print_plan(event.plan, "执行计划")

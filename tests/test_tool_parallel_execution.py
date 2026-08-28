@@ -8,10 +8,16 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from hexgent.events import ToolFinishedEvent, ToolStartedEvent
+from hexgent.events import (
+    ToolBatchFinishedEvent,
+    ToolBatchStartedEvent,
+    ToolFinishedEvent,
+    ToolStartedEvent,
+)
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_scheduler import ToolParallelLimits
 
 
 tool_execution_module = import_module("hexgent.tool.tool_execution")
@@ -111,6 +117,70 @@ class ToolParallelExecutionTest(unittest.TestCase):
             [output["output"] for output in batch.outputs],
             ["结果-c1", "结果-c2"],
         )
+        batch_started = [
+            event for event in events if isinstance(event, ToolBatchStartedEvent)
+        ]
+        batch_finished = [
+            event for event in events if isinstance(event, ToolBatchFinishedEvent)
+        ]
+        self.assertEqual(len(batch_started), 1)
+        self.assertEqual(batch_started[0].tool_count, 2)
+        self.assertEqual(batch_started[0].max_workers, 2)
+        self.assertEqual(len(batch_finished), 1)
+        self.assertEqual(batch_finished[0].succeeded_count, 2)
+        self.assertEqual(batch_finished[0].failed_count, 0)
+        self.assertGreater(
+            events.index(batch_finished[0]),
+            max(
+                index
+                for index, event in enumerate(events)
+                if isinstance(event, ToolFinishedEvent)
+            ),
+        )
+
+    def test_parallel_batch_timeout_returns_paired_errors(self) -> None:
+        """并行批次超时后每个调用仍必须得到对应的错误结果。"""
+        from time import sleep
+
+        with TemporaryDirectory() as directory:
+            context = ToolExecutionContext(
+                InMemoryPlanStore(), Path(directory).resolve()
+            )
+            calls = [
+                make_call("c1", "read_file", '{"path":"a.py"}'),
+                make_call("c2", "read_file", '{"path":"b.py"}'),
+            ]
+
+            def execute(*_args, **_kwargs):
+                sleep(0.05)
+                return ToolExecutionResult("success", "迟到结果", False)
+
+            with patch.object(
+                tool_execution_module, "execute_tool_call", side_effect=execute
+            ):
+                events, batch = drain_generator(
+                    tool_execution_module.execute_tool_batch(
+                        calls,
+                        context=context,
+                        user_confirmation=lambda _tool, _message: "allow",
+                        remaining_tool_calls=None,
+                        deadline=None,
+                        parallel_limits=ToolParallelLimits(
+                            batch_timeout_seconds=0.01
+                        ),
+                    )
+                )
+
+        self.assertEqual(
+            [output["call_id"] for output in batch.outputs], ["c1", "c2"]
+        )
+        self.assertTrue(
+            all("超过 0.01 秒限制" in output["output"] for output in batch.outputs)
+        )
+        finished = [
+            event for event in events if isinstance(event, ToolBatchFinishedEvent)
+        ]
+        self.assertEqual(finished[0].failed_count, 2)
 
     def test_permission_confirmation_remains_on_scheduler_thread(self) -> None:
         """并行读取工作区外文件时，权限询问仍应在调用线程串行完成。"""

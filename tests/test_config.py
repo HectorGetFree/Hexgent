@@ -33,6 +33,11 @@ recent_context_tokens = 8000
 
 [tool_result]
 preview_characters = 1000
+
+[tool_parallel]
+enabled = false
+max_workers = 8
+batch_timeout_seconds = 15.0
 """.strip(),
                 encoding="utf-8",
             )
@@ -45,6 +50,9 @@ preview_characters = 1000
         self.assertEqual(config.context.reserved_output_tokens, 8_000)
         self.assertEqual(config.context.reactive_recent_context_tokens, 8_000)
         self.assertEqual(config.tool_result.preview_characters, 1_000)
+        self.assertFalse(config.tool_parallel.enabled)
+        self.assertEqual(config.tool_parallel.max_workers, 8)
+        self.assertEqual(config.tool_parallel.batch_timeout_seconds, 15.0)
 
     def test_unknown_or_invalid_fields_are_rejected(self) -> None:
         """未知字段和错误类型不能被静默忽略。"""
@@ -52,6 +60,7 @@ preview_characters = 1000
             ("[context]\nunknown = 1", "未知字段"),
             ("[loop]\nmax_model_rounds = '100'", "必须是整数"),
             ("[tool_result]\npreview_characters = 0", "必须大于 0"),
+            ("[tool_parallel]\nmax_workers = 0", "必须大于 0"),
             (
                 "[context]\ncontext_window_tokens = 10000\n"
                 "reserved_output_tokens = 8000\nsafety_margin_tokens = 4000",

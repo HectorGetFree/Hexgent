@@ -30,3 +30,9 @@ max_inline_characters = 50000
 preview_characters = 500
 max_batch_inline_tokens = 8000
 max_batch_preview_tokens = 4000
+
+[tool_parallel]
+# 仅连续且声明为并行安全的工具会进入线程池。
+enabled = true
+max_workers = 4
+batch_timeout_seconds = 60.0

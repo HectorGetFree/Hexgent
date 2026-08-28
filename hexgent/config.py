@@ -12,9 +12,12 @@ except ModuleNotFoundError:  # Python 3.10 使用兼容实现。
 from .context.context_budget import ContextLimits
 from .session import ToolResultLimits
 from .loop.limits import LoopLimits
+from .tool.tool_scheduler import ToolParallelLimits
 
 
-ConfigSection = TypeVar("ConfigSection", LoopLimits, ContextLimits, ToolResultLimits)
+ConfigSection = TypeVar(
+    "ConfigSection", LoopLimits, ContextLimits, ToolResultLimits, ToolParallelLimits
+)
 
 
 class ConfigError(ValueError):
@@ -33,6 +36,9 @@ class HexgentConfig:
 
     # 工具结果内联、预览和外置落盘配置。
     tool_result: ToolResultLimits = ToolResultLimits()
+
+    # 安全工具批次的并行开关、并发数和超时配置。
+    tool_parallel: ToolParallelLimits = ToolParallelLimits()
 
 
 def load_config(
@@ -59,7 +65,7 @@ def load_config(
         raise ConfigError(f"无法读取配置文件 {path}：{error}") from error
 
     # 3. 拒绝未知顶层配置，避免拼写错误被静默忽略。
-    known_sections = {"loop", "context", "tool_result"}
+    known_sections = {"loop", "context", "tool_result", "tool_parallel"}
     unknown_sections = set(raw_config) - known_sections
     if unknown_sections:
         names = "、".join(sorted(unknown_sections))
@@ -77,6 +83,11 @@ def load_config(
             "tool_result",
             raw_config.get("tool_result"),
             ToolResultLimits,
+        ),
+        tool_parallel=_load_section(
+            "tool_parallel",
+            raw_config.get("tool_parallel"),
+            ToolParallelLimits,
         ),
     )
     _validate_relationships(config)

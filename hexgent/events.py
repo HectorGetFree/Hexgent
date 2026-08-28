@@ -81,6 +81,43 @@ class ToolFinishedEvent:
 
 
 @dataclass(frozen=True)
+class ToolBatchStartedEvent:
+    """一个并行工具批次已经提交执行。"""
+
+    # 当前 Agent Run 内用于关联批次开始和结束事件的标识。
+    batch_id: str
+
+    # 当前批次实际提交到线程池的工具数量。
+    tool_count: int
+
+    # 当前批次允许同时运行的最大工作线程数量。
+    max_workers: int
+
+
+@dataclass(frozen=True)
+class ToolBatchFinishedEvent:
+    """一个并行工具批次已经结束等待并完成状态统计。"""
+
+    # 与 ToolBatchStartedEvent 对应的批次标识。
+    batch_id: str
+
+    # 当前连续安全工具分组包含的调用总数。
+    tool_count: int
+
+    # 成功执行或成功复用结果的调用数量。
+    succeeded_count: int
+
+    # 参数、权限、执行或超时失败的调用数量。
+    failed_count: int
+
+    # 因全局工具或时间预算不足而未执行的调用数量。
+    skipped_count: int
+
+    # 从并行提交到结束等待的批次总耗时秒数。
+    elapsed_seconds: float
+
+
+@dataclass(frozen=True)
 class PlanCreatedEvent:
     """Plan 创建成功后向界面层展示的初始计划。"""
 
@@ -157,6 +194,8 @@ AgentEvent: TypeAlias = (
     TextDeltaEvent
     | ToolStartedEvent
     | ToolFinishedEvent
+    | ToolBatchStartedEvent
+    | ToolBatchFinishedEvent
     | PlanCreatedEvent
     | PlanUpdatedEvent
     | LoopLimitReachedEvent
