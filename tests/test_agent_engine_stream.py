@@ -1,6 +1,7 @@
 """终端流式展示测试。"""
 
 from importlib import import_module
+from contextlib import nullcontext
 from io import StringIO
 import unittest
 from unittest.mock import patch
@@ -36,6 +37,10 @@ class FakeTerminalIO:
     def request_confirmation(self, _tool_name: str, _message: str) -> str:
         """测试默认允许工具权限确认。"""
         return "allow"
+
+    def capture_run_interrupt(self, _interrupt_controller: object):
+        """测试中无需安装真实进程信号处理器。"""
+        return nullcontext()
 
 
 class AgentEngineStreamTest(unittest.TestCase):
@@ -241,6 +246,47 @@ class AgentEngineStreamTest(unittest.TestCase):
         self.assertEqual(stream.call_count, 2)
         self.assertIn("Plan 尚未完成", output.getvalue())
         self.assertIn("已经继续", output.getvalue())
+
+    def test_interrupted_run_prints_hint_and_returns_to_input(self) -> None:
+        """中断终态应立即展示恢复提示，并继续接收下一条用户输入。"""
+        interrupted_events = iter(
+            [
+                RunFinishedEvent(
+                    AgentLoopResult(
+                        "",
+                        0.3,
+                        stop_reason="user_cancel",
+                        status="interrupted",
+                    )
+                )
+            ]
+        )
+        continued_events = iter(
+            [
+                TextDeltaEvent("恢复完成"),
+                RunFinishedEvent(AgentLoopResult("恢复完成", 0.2)),
+            ]
+        )
+        output = StringIO()
+
+        with (
+            patch.object(
+                agent_engine_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["执行长任务", "继续", "q"]),
+            ),
+            patch.object(
+                agent_engine_module,
+                "agent_loop",
+                side_effect=[interrupted_events, continued_events],
+            ) as stream,
+            patch("sys.stdout", output),
+        ):
+            agent_engine_module.main()
+
+        self.assertEqual(stream.call_count, 2)
+        self.assertIn("当前运行已中断", output.getvalue())
+        self.assertIn("恢复完成", output.getvalue())
 
     def test_empty_input_does_not_end_session(self) -> None:
         """空行应被忽略，不应结束整个交互会话。"""

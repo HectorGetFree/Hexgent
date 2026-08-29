@@ -21,6 +21,7 @@ from hexgent.events import (
 from .config import load_config
 from .context import ContextManager
 from .loop.agent_loop import agent_loop
+from .loop.interrupt import InterruptController
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
 from .session import Session, SessionSettings
@@ -103,10 +104,11 @@ def main(config_path: Path | None = None) -> None:
         session.record_user_query(user_query)
         print("\033[90m正在处理，请稍候……\033[0m")
 
-        # 3. 消费 Agent 事件流，实时展示模型文字和弱化的工具运行状态。
+        # 3. 为本轮运行创建独立中断控制器，并在消费事件流期间接收 Ctrl+C。
         text_is_open = False
         execution_completed_calls: dict[str, str] = {}
-        for event in agent_loop(
+        interrupt_controller = InterruptController()
+        event_stream = agent_loop(
             context_manager,
             context=tool_context,
             limits=config.loop,
@@ -116,78 +118,81 @@ def main(config_path: Path | None = None) -> None:
             tool_parallel_limits=config.tool_parallel,
             tool_retry_limits=config.tool_retry,
             permission_context=session.permission_context,
-        ):
-            if isinstance(event, TextDeltaEvent):
-                if not text_is_open:
-                    print("\033[36mHexgent：\033[0m", end="", flush=True)
-                    text_is_open = True
-                print(event.delta, end="", flush=True)
-            elif isinstance(event, ToolStartedEvent):
-                if text_is_open:
-                    print()
-                print(f"\033[90m开始处理工具：{event.description}\033[0m")
-                text_is_open = False
-            elif isinstance(event, ToolExecutionCompletedEvent):
-                execution_completed_calls[event.call_id] = event.status
-                status_label = TOOL_STATUS_LABELS[event.status]
-                print(
-                    f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
-                )
-            elif isinstance(event, ToolFinishedEvent):
-                execution_status = execution_completed_calls.get(event.call_id)
-                if execution_status == event.status:
-                    continue
-                status_label = TOOL_STATUS_LABELS[event.status]
-                prefix = "工具结果处理结束" if execution_status is not None else "工具结束"
-                print(
-                    f"\033[90m{prefix}：{event.tool_name}，状态：{status_label}\033[0m"
-                )
-            elif isinstance(event, ToolBatchStartedEvent):
-                print(
-                    f"\033[90m开始并行处理 {event.tool_count} 个工具"
-                    f"（最大并发：{event.max_workers}）\033[0m"
-                )
-            elif isinstance(event, ToolBatchFinishedEvent):
-                print(
-                    f"\033[90m并行工具批次完成：成功 {event.succeeded_count}，"
-                    f"失败 {event.failed_count}，未执行 {event.skipped_count}，"
-                    f"用时 {event.elapsed_seconds:.1f} 秒\033[0m"
-                )
-            elif isinstance(event, PlanCreatedEvent):
-                _print_plan(event.plan, "执行计划")
-            elif isinstance(event, PlanUpdatedEvent):
-                _print_plan(event.plan, "计划进度")
-            elif isinstance(event, LoopLimitReachedEvent):
-                print(f"\033[90m{stop_reason_message(event.reason)}\033[0m")
-            elif isinstance(event, ContextCompactionStartedEvent):
-                print("\033[90m正在整理较早的对话上下文……\033[0m")
-            elif isinstance(event, ContextCompactionFinishedEvent):
-                label = "上下文部分整理完成" if event.status == "partial" else "上下文整理完成"
-                print(
-                    f"\033[90m{label}："
-                    f"约 {event.before_tokens:,} → {event.after_tokens:,} Token\033[0m"
-                )
-            elif isinstance(event, ContextCompactionFailedEvent):
-                print(f"\033[90m{event.message}\033[0m")
-            elif isinstance(event, RunFinishedEvent):
-                if text_is_open:
-                    print()
-                if event.result.status == "blocked":
-                    plan = tool_context.plan_store.get_plan()
-                    reason = plan.blocked_reason if plan is not None else None
-                    detail = f"：{reason}" if reason else ""
-                    print(f"\033[90mPlan 已阻塞{detail}。可以补充信息后继续。\033[0m")
-                elif event.result.status == "incomplete":
+            interrupt_controller=interrupt_controller,
+        )
+        with terminal_io.capture_run_interrupt(interrupt_controller):
+            for event in event_stream:
+                if isinstance(event, TextDeltaEvent):
+                    if not text_is_open:
+                        print("\033[36mHexgent：\033[0m", end="", flush=True)
+                        text_is_open = True
+                    print(event.delta, end="", flush=True)
+                elif isinstance(event, ToolStartedEvent):
+                    if text_is_open:
+                        print()
+                    print(f"\033[90m开始处理工具：{event.description}\033[0m")
+                    text_is_open = False
+                elif isinstance(event, ToolExecutionCompletedEvent):
+                    execution_completed_calls[event.call_id] = event.status
+                    status_label = TOOL_STATUS_LABELS[event.status]
                     print(
-                        "\033[90mPlan 尚未完成，本次运行已停止；"
-                        "可以输入“继续”恢复执行。\033[0m"
+                        f"\033[90m工具结束：{event.tool_name}，状态：{status_label}\033[0m"
                     )
-                elif event.result.status == "interrupted":
+                elif isinstance(event, ToolFinishedEvent):
+                    execution_status = execution_completed_calls.get(event.call_id)
+                    if execution_status == event.status:
+                        continue
+                    status_label = TOOL_STATUS_LABELS[event.status]
+                    prefix = "工具结果处理结束" if execution_status is not None else "工具结束"
                     print(
-                        "\033[90m当前运行已中断；Session、Context 和 Plan 已保留，"
-                        "可以输入“继续”恢复执行。\033[0m"
+                        f"\033[90m{prefix}：{event.tool_name}，状态：{status_label}\033[0m"
                     )
-                print(
-                    f"\033[90m本次用时：{event.result.elapsed_seconds:.1f} 秒\033[0m\n"
-                )
-                text_is_open = False
+                elif isinstance(event, ToolBatchStartedEvent):
+                    print(
+                        f"\033[90m开始并行处理 {event.tool_count} 个工具"
+                        f"（最大并发：{event.max_workers}）\033[0m"
+                    )
+                elif isinstance(event, ToolBatchFinishedEvent):
+                    print(
+                        f"\033[90m并行工具批次完成：成功 {event.succeeded_count}，"
+                        f"失败 {event.failed_count}，未执行 {event.skipped_count}，"
+                        f"用时 {event.elapsed_seconds:.1f} 秒\033[0m"
+                    )
+                elif isinstance(event, PlanCreatedEvent):
+                    _print_plan(event.plan, "执行计划")
+                elif isinstance(event, PlanUpdatedEvent):
+                    _print_plan(event.plan, "计划进度")
+                elif isinstance(event, LoopLimitReachedEvent):
+                    print(f"\033[90m{stop_reason_message(event.reason)}\033[0m")
+                elif isinstance(event, ContextCompactionStartedEvent):
+                    print("\033[90m正在整理较早的对话上下文……\033[0m")
+                elif isinstance(event, ContextCompactionFinishedEvent):
+                    label = "上下文部分整理完成" if event.status == "partial" else "上下文整理完成"
+                    print(
+                        f"\033[90m{label}："
+                        f"约 {event.before_tokens:,} → {event.after_tokens:,} Token\033[0m"
+                    )
+                elif isinstance(event, ContextCompactionFailedEvent):
+                    print(f"\033[90m{event.message}\033[0m")
+                elif isinstance(event, RunFinishedEvent):
+                    if text_is_open:
+                        print()
+                    if event.result.status == "blocked":
+                        plan = tool_context.plan_store.get_plan()
+                        reason = plan.blocked_reason if plan is not None else None
+                        detail = f"：{reason}" if reason else ""
+                        print(f"\033[90mPlan 已阻塞{detail}。可以补充信息后继续。\033[0m")
+                    elif event.result.status == "incomplete":
+                        print(
+                            "\033[90mPlan 尚未完成，本次运行已停止；"
+                            "可以输入“继续”恢复执行。\033[0m"
+                        )
+                    elif event.result.status == "interrupted":
+                        print(
+                            "\033[90m当前运行已中断；Session、Context 和 Plan 已保留，"
+                            "可以输入“继续”恢复执行。\033[0m"
+                        )
+                    print(
+                        f"\033[90m本次用时：{event.result.elapsed_seconds:.1f} 秒\033[0m\n"
+                    )
+                    text_is_open = False

@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from threading import Event
 
 from hexgent.context import ContextManager
 from hexgent.events import RunFinishedEvent, TextDeltaEvent, ToolFinishedEvent
@@ -99,6 +100,24 @@ class LoopInterruptTest(unittest.TestCase):
         controller.interrupt("steering")
 
         self.assertEqual(invocations, ["closed"])
+
+    def test_signal_interrupt_does_not_wait_for_blocking_callback(self) -> None:
+        """信号入口应先形成中断状态，不能同步等待阻塞资源关闭。"""
+        controller = InterruptController()
+        callback_started = Event()
+        release_callback = Event()
+
+        def blocking_callback() -> None:
+            callback_started.set()
+            release_callback.wait(timeout=1)
+
+        controller.add_callback(blocking_callback)
+        controller.interrupt_from_signal("user_cancel")
+
+        self.assertTrue(controller.interrupted)
+        self.assertEqual(controller.reason, "user_cancel")
+        self.assertTrue(callback_started.wait(timeout=1))
+        release_callback.set()
 
     def test_interrupt_at_turn_entry_does_not_call_model(self) -> None:
         """Turn 开始前收到中断时不得发起模型请求。"""

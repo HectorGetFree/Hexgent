@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from hexgent.terminal_io import TerminalIO
+from hexgent.loop.interrupt import InterruptController
 
 
 class TerminalIOTest(unittest.TestCase):
@@ -54,6 +55,50 @@ class TerminalIOTest(unittest.TestCase):
             confirmation = terminal_io.request_confirmation("read_file", "测试")
 
         self.assertEqual(confirmation, "unavailable")
+
+    def test_ctrl_c_interrupts_current_run_and_restores_handler(self) -> None:
+        """运行期 Ctrl+C 应中断当前运行，并在结束后恢复原处理器。"""
+        terminal_io = TerminalIO()
+        controller = InterruptController()
+        previous_handler = object()
+        installed_handlers: list[object] = []
+
+        def install_handler(_signal_number: int, handler: object) -> None:
+            installed_handlers.append(handler)
+
+        with (
+            patch("hexgent.terminal_io.signal.getsignal", return_value=previous_handler),
+            patch("hexgent.terminal_io.signal.signal", side_effect=install_handler),
+            patch("sys.stdout", StringIO()) as output,
+        ):
+            with terminal_io.capture_run_interrupt(controller):
+                installed_handlers[0](2, None)
+
+        self.assertTrue(controller.interrupted)
+        self.assertEqual(controller.reason, "user_cancel")
+        self.assertIn("正在中断当前运行", output.getvalue())
+        self.assertIs(installed_handlers[-1], previous_handler)
+
+    def test_repeated_ctrl_c_only_reports_interrupt_once(self) -> None:
+        """同一轮重复 Ctrl+C 不应重复通知或覆盖首次中断原因。"""
+        terminal_io = TerminalIO()
+        controller = InterruptController()
+        installed_handlers: list[object] = []
+
+        with (
+            patch("hexgent.terminal_io.signal.getsignal", return_value=object()),
+            patch(
+                "hexgent.terminal_io.signal.signal",
+                side_effect=lambda _number, handler: installed_handlers.append(handler),
+            ),
+            patch("sys.stdout", StringIO()) as output,
+        ):
+            with terminal_io.capture_run_interrupt(controller):
+                handler = installed_handlers[0]
+                handler(2, None)
+                handler(2, None)
+
+        self.assertEqual(output.getvalue().count("正在中断当前运行"), 1)
 
 
 if __name__ == "__main__":

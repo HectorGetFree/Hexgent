@@ -1,7 +1,7 @@
 """Agent Run 当前活跃轮次的协作式中断控制。"""
 
 from collections.abc import Callable
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from typing import Literal
 
 
@@ -29,15 +29,44 @@ class InterruptController:
 
     def interrupt(self, reason: InterruptReason) -> None:
         """请求当前活跃轮次在最近安全边界结束。"""
+        callbacks = self._claim_interrupt(reason)
+        if callbacks is None:
+            return
+
+        # 阻塞资源清理发生在锁外，避免回调反向访问 Controller 时死锁。
+        self._invoke_callbacks(callbacks)
+
+    def interrupt_from_signal(self, reason: InterruptReason) -> None:
+        """从进程信号处理器登记中断，并异步唤醒阻塞资源。"""
+        callbacks = self._claim_interrupt(reason)
+        if callbacks is None or not callbacks:
+            return
+
+        # 信号处理器不能同步关闭网络流，避免主线程卡在 SDK 资源清理中。
+        Thread(
+            target=self._invoke_callbacks,
+            args=(callbacks,),
+            name="hexgent-interrupt-wakeup",
+            daemon=True,
+        ).start()
+
+    def _claim_interrupt(
+        self,
+        reason: InterruptReason,
+    ) -> list[Callable[[], None]] | None:
+        """原子登记首次中断，并取走本次需要唤醒的资源回调。"""
         with self._lock:
             if self._event.is_set():
-                return
+                return None
             self._reason = reason
             self._event.set()
             callbacks = list(self._callbacks)
             self._callbacks.clear()
+        return callbacks
 
-        # 阻塞资源清理发生在锁外，避免回调反向访问 Controller 时死锁。
+    @staticmethod
+    def _invoke_callbacks(callbacks: list[Callable[[], None]]) -> None:
+        """尽力执行用于唤醒模型流等阻塞资源的回调。"""
         for callback in callbacks:
             try:
                 callback()
