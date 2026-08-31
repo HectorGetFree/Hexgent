@@ -255,7 +255,7 @@ class AgentEngineStreamTest(unittest.TestCase):
                     AgentLoopResult(
                         "",
                         0.3,
-                        stop_reason="user_cancel",
+                        stop_reason="user_pause",
                         status="interrupted",
                     )
                 )

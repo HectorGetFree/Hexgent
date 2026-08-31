@@ -19,6 +19,7 @@ ContinueReason = Literal[
     "context_compacted",  # 活动上下文已压缩，使用新上下文重试当前轮次。
     "reactive_context_compacted",  # API 拒绝过长请求后，应急压缩并重试一次。
     "budget_finalization",  # 命中循环预算，进入禁用工具的收尾轮次。
+    "steering_applied",  # FIFO 中的新 Query 已在完整 Turn 边界注入 Context。
 ]
 
 

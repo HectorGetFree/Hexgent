@@ -19,6 +19,7 @@ from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import ToolExecutionResult
 from hexgent.tool.tool_scheduler import ToolParallelLimits
+from hexgent.tool.tool_registry import get_tool
 
 
 tool_execution_module = import_module("hexgent.tool.tool_execution")
@@ -41,6 +42,14 @@ def make_call(call_id: str, name: str, arguments: str) -> SimpleNamespace:
 
 class ToolParallelExecutionTest(unittest.TestCase):
     """验证只并行相邻的注册安全工具。"""
+
+    def test_tool_interrupt_behavior_defaults_to_block(self) -> None:
+        """只读工具可取消，写入和 Shell 工具默认等待并保留副作用。"""
+        self.assertEqual(get_tool("read_file").interrupt_behavior, "cancel")
+        self.assertEqual(get_tool("glob").interrupt_behavior, "cancel")
+        self.assertEqual(get_tool("write_file").interrupt_behavior, "block")
+        self.assertEqual(get_tool("edit_file").interrupt_behavior, "block")
+        self.assertEqual(get_tool("bash").interrupt_behavior, "block")
 
     def test_partition_preserves_serial_barriers(self) -> None:
         """读工具可以连续成组，写工具必须独占并阻断前后分组。"""

@@ -2,13 +2,6 @@
 
 from collections.abc import Callable
 from threading import Event, Lock, Thread
-from typing import Literal
-
-
-InterruptReason = Literal[
-    "user_cancel",  # 用户要求停止当前执行，但保留 Session、Context 和 Plan。
-    "steering",  # 新用户指令要求当前执行尽快收束并让出控制权。
-]
 
 
 class InterruptController:
@@ -18,27 +11,24 @@ class InterruptController:
         # 中断事件允许模型流和工具调度线程安全地观察请求。
         self._event = Event()
 
-        # 首次中断原因在写入后保持不变。
-        self._reason: InterruptReason | None = None
-
-        # 保护多个调用方同时发起中断时的首次原因语义。
+        # 保护多个调用方同时请求中断时的一次性触发语义。
         self._lock = Lock()
 
         # 中断发生时用于关闭模型流等阻塞资源的回调。
         self._callbacks: list[Callable[[], None]] = []
 
-    def interrupt(self, reason: InterruptReason) -> None:
+    def interrupt(self) -> None:
         """请求当前活跃轮次在最近安全边界结束。"""
-        callbacks = self._claim_interrupt(reason)
+        callbacks = self._claim_interrupt()
         if callbacks is None:
             return
 
         # 阻塞资源清理发生在锁外，避免回调反向访问 Controller 时死锁。
         self._invoke_callbacks(callbacks)
 
-    def interrupt_from_signal(self, reason: InterruptReason) -> None:
+    def interrupt_from_signal(self) -> None:
         """从进程信号处理器登记中断，并异步唤醒阻塞资源。"""
-        callbacks = self._claim_interrupt(reason)
+        callbacks = self._claim_interrupt()
         if callbacks is None or not callbacks:
             return
 
@@ -50,15 +40,11 @@ class InterruptController:
             daemon=True,
         ).start()
 
-    def _claim_interrupt(
-        self,
-        reason: InterruptReason,
-    ) -> list[Callable[[], None]] | None:
-        """原子登记首次中断，并取走本次需要唤醒的资源回调。"""
+    def _claim_interrupt(self) -> list[Callable[[], None]] | None:
+        """原子登记一次底层中断，并取走需要唤醒的资源回调。"""
         with self._lock:
             if self._event.is_set():
                 return None
-            self._reason = reason
             self._event.set()
             callbacks = list(self._callbacks)
             self._callbacks.clear()
@@ -98,8 +84,3 @@ class InterruptController:
     def interrupted(self) -> bool:
         """返回当前 Run 是否已经收到中断请求。"""
         return self._event.is_set()
-
-    @property
-    def reason(self) -> InterruptReason | None:
-        """返回首次触发当前中断的稳定原因。"""
-        return self._reason

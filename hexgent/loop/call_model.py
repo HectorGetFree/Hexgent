@@ -4,7 +4,7 @@ from collections.abc import Generator
 from typing import Any, Literal
 
 from hexgent.events import AgentEvent, TextDeltaEvent
-from .interrupt import InterruptController, InterruptReason
+from .interrupt import InterruptController
 
 
 ModelCallErrorReason = Literal[
@@ -29,11 +29,8 @@ class ModelCallError(RuntimeError):
 class ModelCallInterrupted(RuntimeError):
     """模型流在产生完整 Response 之前收到当前 Run 中断请求。"""
 
-    def __init__(self, reason: InterruptReason) -> None:
-        super().__init__("模型流式响应已被中断")
-
-        # 供 Agent Turn 形成明确的中断终态。
-        self.reason = reason
+    def __init__(self) -> None:
+        super().__init__("模型流式响应已在业务控制请求下中断")
 
 
 def _error_details(error: Any) -> str:
@@ -81,16 +78,14 @@ def call_model(
     remove_interrupt_callback = None
     try:
         if interrupt_controller is not None and interrupt_controller.interrupted:
-            assert interrupt_controller.reason is not None
-            raise ModelCallInterrupted(interrupt_controller.reason)
+            raise ModelCallInterrupted()
         stream = client.responses.create(**request, stream=True)
         close = getattr(stream, "close", None)
         if interrupt_controller is not None and callable(close):
             remove_interrupt_callback = interrupt_controller.add_callback(close)
         for event in stream:
             if interrupt_controller is not None and interrupt_controller.interrupted:
-                assert interrupt_controller.reason is not None
-                raise ModelCallInterrupted(interrupt_controller.reason)
+                raise ModelCallInterrupted()
             if event.type == "response.output_text.delta":
                 yield TextDeltaEvent(event.delta)
             elif event.type == "response.completed":
@@ -121,8 +116,7 @@ def call_model(
         raise
     except Exception as error:
         if interrupt_controller is not None and interrupt_controller.interrupted:
-            assert interrupt_controller.reason is not None
-            raise ModelCallInterrupted(interrupt_controller.reason) from error
+            raise ModelCallInterrupted() from error
         raise _model_call_error(f"模型流式响应错误：{error}", error) from error
     finally:
         if remove_interrupt_callback is not None:
@@ -133,8 +127,7 @@ def call_model(
 
     # 2. 只有 completed 事件中的完整 Response 可以进入后续工具循环。
     if interrupt_controller is not None and interrupt_controller.interrupted:
-        assert interrupt_controller.reason is not None
-        raise ModelCallInterrupted(interrupt_controller.reason)
+        raise ModelCallInterrupted()
     if completed_response is None:
         raise ModelCallError(
             "模型流式响应结束，但没有收到 response.completed 事件",

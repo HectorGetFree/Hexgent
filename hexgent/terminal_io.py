@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import signal
 import threading
 
-from .loop.interrupt import InterruptController
+from .loop.run_control import RunControl
 from .tool.tool_permission_pipeline import UserConfirmationResult
 
 
@@ -15,7 +15,7 @@ class TerminalIO:
     @contextmanager
     def capture_run_interrupt(
         self,
-        interrupt_controller: InterruptController,
+        run_control: RunControl,
     ) -> Iterator[None]:
         """在当前 Agent 运行期间将 Ctrl+C 转换为本轮中断信号。"""
         # 1. 非主线程不能注册进程信号处理器，此时仅保留控制器的程序化中断能力。
@@ -28,10 +28,10 @@ class TerminalIO:
 
         def handle_interrupt(_signum: int, _frame: object) -> None:
             """立即标记本轮中断，并唤醒已经注册的阻塞资源。"""
-            if interrupt_controller.interrupted:
+            if run_control.interrupt_controller.interrupted:
                 return
             print("\n\033[90m正在中断当前运行，请稍候……\033[0m", flush=True)
-            interrupt_controller.interrupt_from_signal("user_cancel")
+            run_control.pause_from_signal()
 
         signal.signal(signal.SIGINT, handle_interrupt)
         try:

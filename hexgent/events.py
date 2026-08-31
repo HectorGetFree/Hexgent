@@ -7,7 +7,7 @@ from hexgent.plan import Plan
 from hexgent.tool.tool_execution import ToolExecutionStatus
 from hexgent.loop.limits import LoopStopReason
 from hexgent.loop.loop_state import ContinueReason
-from hexgent.loop.interrupt import InterruptReason
+from hexgent.loop.run_control import UserControlStopReason
 
 
 ToolEventStatus = ToolExecutionStatus | Literal[
@@ -26,7 +26,7 @@ PlanStopReason = Literal[
     "plan_blocked",  # 当前 Plan 已进入阻塞状态。
     "plan_still_active",  # 模型停止调用工具时，当前 Plan 仍未完成。
 ]
-RunStopReason: TypeAlias = LoopStopReason | PlanStopReason | InterruptReason
+RunStopReason: TypeAlias = LoopStopReason | PlanStopReason | UserControlStopReason
 
 
 @dataclass(frozen=True)

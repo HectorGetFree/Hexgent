@@ -21,7 +21,7 @@ from hexgent.events import (
 from .config import load_config
 from .context import ContextManager
 from .loop.agent_loop import agent_loop
-from .loop.interrupt import InterruptController
+from .loop.run_control import RunControl
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
 from .session import Session, SessionSettings
@@ -107,7 +107,7 @@ def main(config_path: Path | None = None) -> None:
         # 3. 为本轮运行创建独立中断控制器，并在消费事件流期间接收 Ctrl+C。
         text_is_open = False
         execution_completed_calls: dict[str, str] = {}
-        interrupt_controller = InterruptController()
+        run_control = RunControl()
         event_stream = agent_loop(
             context_manager,
             context=tool_context,
@@ -118,9 +118,9 @@ def main(config_path: Path | None = None) -> None:
             tool_parallel_limits=config.tool_parallel,
             tool_retry_limits=config.tool_retry,
             permission_context=session.permission_context,
-            interrupt_controller=interrupt_controller,
+            run_control=run_control,
         )
-        with terminal_io.capture_run_interrupt(interrupt_controller):
+        with terminal_io.capture_run_interrupt(run_control):
             for event in event_stream:
                 if isinstance(event, TextDeltaEvent):
                     if not text_is_open:
@@ -191,6 +191,11 @@ def main(config_path: Path | None = None) -> None:
                         print(
                             "\033[90m当前运行已中断；Session、Context 和 Plan 已保留，"
                             "可以输入“继续”恢复执行。\033[0m"
+                        )
+                    elif event.result.status == "cancelled":
+                        print(
+                            "\033[90m当前任务已取消；后续操作已停止，"
+                            "取消前已经完成的文件修改和其他副作用仍然保留。\033[0m"
                         )
                     print(
                         f"\033[90m本次用时：{event.result.elapsed_seconds:.1f} 秒\033[0m\n"

@@ -38,6 +38,10 @@ ToolPermissionCapability = Literal[
     "shell",  # 执行可能组合本地、网络或外部副作用的 Shell 命令。
     "plan_state",  # 仅维护当前 Session 内的结构化 Plan 状态。
 ]
+ToolInterruptBehavior = Literal[
+    "cancel",  # 工具只读且可安全请求终止，不产生需要保留的副作用。
+    "block",  # 工具一旦开始必须等待明确结果，默认保留已经发生的副作用。
+]
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,9 @@ class RegisteredTool:
 
     # Permission Mode 用来判断工具默认行为的稳定能力分类。
     permission_capability: ToolPermissionCapability = "shell"
+
+    # 当前工具已经开始后收到 Pause 或 Cancel 时采用的保守处理策略。
+    interrupt_behavior: ToolInterruptBehavior = "block"
 
     def describe(self, raw_arguments: str) -> str:
         """根据工具自身声明生成安全、简短的调用说明。"""
@@ -249,6 +256,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         automatic_retry_safe=True,
         output_schema=READ_FILE_OUTPUT_SCHEMA,
         permission_capability="workspace_read",
+        interrupt_behavior="cancel",
     ),
     "write_file": RegisteredTool(
         write_file,
@@ -283,6 +291,7 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         automatic_retry_safe=True,
         output_schema=GLOB_OUTPUT_SCHEMA,
         permission_capability="workspace_read",
+        interrupt_behavior="cancel",
     ),
     "create_plan": RegisteredTool(
         create_plan,

@@ -176,7 +176,15 @@ def build_run_report(
         for record in records
         if record["type"] in {"plan_created", "plan_updated"}
     ]
+    cancelled_plan_records = [
+        record["payload"].get("plan")
+        for record in records
+        if record["type"] == "plan_cancelled"
+        and isinstance(record["payload"].get("plan"), dict)
+    ]
     final_plan = finished_payload.get("plan")
+    if final_plan is None and cancelled_plan_records:
+        final_plan = cancelled_plan_records[-1]
     if final_plan is None and plan_records:
         final_plan = plan_records[-1]
 

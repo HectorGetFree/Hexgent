@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from hexgent.terminal_io import TerminalIO
 from hexgent.loop.interrupt import InterruptController
+from hexgent.loop.run_control import RunControl
 
 
 class TerminalIOTest(unittest.TestCase):
@@ -59,7 +60,7 @@ class TerminalIOTest(unittest.TestCase):
     def test_ctrl_c_interrupts_current_run_and_restores_handler(self) -> None:
         """运行期 Ctrl+C 应中断当前运行，并在结束后恢复原处理器。"""
         terminal_io = TerminalIO()
-        controller = InterruptController()
+        run_control = RunControl()
         previous_handler = object()
         installed_handlers: list[object] = []
 
@@ -71,18 +72,18 @@ class TerminalIOTest(unittest.TestCase):
             patch("hexgent.terminal_io.signal.signal", side_effect=install_handler),
             patch("sys.stdout", StringIO()) as output,
         ):
-            with terminal_io.capture_run_interrupt(controller):
+            with terminal_io.capture_run_interrupt(run_control):
                 installed_handlers[0](2, None)
 
-        self.assertTrue(controller.interrupted)
-        self.assertEqual(controller.reason, "user_cancel")
+        self.assertTrue(run_control.interrupt_controller.interrupted)
+        self.assertEqual(run_control.terminal_action, "pause")
         self.assertIn("正在中断当前运行", output.getvalue())
         self.assertIs(installed_handlers[-1], previous_handler)
 
     def test_repeated_ctrl_c_only_reports_interrupt_once(self) -> None:
         """同一轮重复 Ctrl+C 不应重复通知或覆盖首次中断原因。"""
         terminal_io = TerminalIO()
-        controller = InterruptController()
+        run_control = RunControl()
         installed_handlers: list[object] = []
 
         with (
@@ -93,7 +94,7 @@ class TerminalIOTest(unittest.TestCase):
             ),
             patch("sys.stdout", StringIO()) as output,
         ):
-            with terminal_io.capture_run_interrupt(controller):
+            with terminal_io.capture_run_interrupt(run_control):
                 handler = installed_handlers[0]
                 handler(2, None)
                 handler(2, None)
