@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import signal
 import threading
 
-from .loop.run_control import RunControl
+from .run_control import RunControl
 from .tool.tool_permission_pipeline import UserConfirmationResult
 
 

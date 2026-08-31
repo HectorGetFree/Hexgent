@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from dataclasses import asdict, dataclass
-import inspect
-import json
 from time import sleep
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from hexgent.tool.tool_permission_pipeline import (
     PermissionContext,
@@ -15,68 +13,36 @@ from hexgent.tool.tool_permission_pipeline import (
     UserConfirmationResult,
     evaluate_permission,
 )
-from hexgent.prompt import TOOLS
 from hexgent.session import SessionStore
-from .tool_cache import build_deduplicated_output, build_tool_call_fingerprint
-from .tool_context import ToolCallCacheEntry, ToolExecutionContext
+from .tool_context import (
+    ToolCallCacheEntry,
+    ToolExecutionContext,
+    build_deduplicated_output,
+    build_tool_call_fingerprint,
+)
 from .tool_registry import RegisteredTool, get_tool
 from .tool_result import (
-    SideEffectState,
     ToolFailure,
-    ToolFailureCode,
-    ToolFailurePhase,
     ToolHandlerResult,
+    ToolExecutionResult,
+    ToolExecutionStatus,
+    build_tool_failure_result as _failure_result,
 )
 from .tool_retry import (
     ToolRetryLimits,
     retry_backoff_seconds,
     should_retry_tool_failure,
 )
+from .tool_validation import parse_and_validate_tool_arguments
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
-    from hexgent.loop.interrupt import InterruptController
+    from hexgent.run_control import InterruptController
 
 
-ToolExecutionStatus = Literal[
-    "success",  # 工具调用已经成功执行并生成结果。
-    "invalid",  # 工具不存在，或调用参数未通过解析与合法性校验。
-    "denied",  # 权限管线或用户确认拒绝执行工具。
-    "error",  # 工具执行期间发生异常或超时。
-    "deduplicated",  # 相同工具及参数已成功执行，本次复用此前结果引用。
-]
 UserConfirmation = Callable[[str, str], UserConfirmationResult]
 ToolExecutionNotifier = Callable[[str], None]
 PermissionEventRecorder = Callable[[str, dict[str, Any]], None]
-
-
-@dataclass(frozen=True)
-class ToolExecutionResult:
-    """一次工具调用的最终结果。"""
-
-    # 工具调用经过完整执行管线后得到的状态。
-    status: ToolExecutionStatus
-
-    # 返回给模型的工具执行文本。
-    output: str
-
-    # 标识该结果是否应被模型视为错误结果。
-    is_error: bool
-
-    # 去重命中时指向首次真实执行工具的调用标识。
-    source_call_id: str | None = None
-
-    # 精确去重使用的规范化工具调用指纹。
-    fingerprint: str | None = None
-
-    # 失败结果的稳定机器可读原因；成功结果为空。
-    failure: ToolFailure | None = None
-
-    # 包含首次执行在内，当前结果实际经过的处理器执行次数。
-    attempt_count: int = 1
-
-    # 已通过工具输出 Schema 的轻量结构化成功数据。
-    data: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -93,140 +59,12 @@ class PreparedToolCall:
     fingerprint: str | None
 
 
-TOOL_SCHEMAS = {tool["name"]: tool["parameters"] for tool in TOOLS}
-
-
 def unavailable_user_confirmation(
     _tool_name: str,
     _message: str,
 ) -> UserConfirmationResult:
     """在调用方没有提供界面确认能力时安全地停止执行。"""
     return "unavailable"
-
-
-def _failure_result(
-    status: ToolExecutionStatus,
-    code: ToolFailureCode,
-    phase: ToolFailurePhase,
-    message: str,
-    *,
-    retryable: bool = False,
-    side_effect_state: SideEffectState = "none",
-    retry_after_seconds: float | None = None,
-) -> ToolExecutionResult:
-    """构造兼容现有状态协议的结构化失败结果。"""
-    failure = ToolFailure(
-        code,
-        phase,
-        message,
-        retryable,
-        side_effect_state,
-        retry_after_seconds,
-    )
-    return ToolExecutionResult(
-        status,
-        f"错误：{message}",
-        True,
-        failure=failure,
-    )
-
-
-def _invalid(message: str) -> ToolExecutionResult:
-    """创建参数无效结果。"""
-    return _failure_result(
-        "invalid",
-        "invalid_arguments",
-        "validation",
-        message,
-        side_effect_state="not_started",
-    )
-
-
-def _parse_arguments(raw_arguments: str) -> ToolExecutionResult | dict[str, Any]:
-    """解析模型返回的 JSON 工具参数。"""
-    try:
-        arguments = json.loads(raw_arguments)
-    except json.JSONDecodeError as error:
-        return _invalid(f"工具参数不是有效的 JSON：{error}")
-    except TypeError as error:
-        return _invalid(f"工具参数无法解析：{error}")
-
-    if not isinstance(arguments, dict):
-        return _invalid("工具参数必须是 JSON 对象")
-    return arguments
-
-
-def _matches_json_type(value: Any, expected_type: str | list[str]) -> bool:
-    """判断 Python 值是否符合基础 JSON Schema 类型。"""
-    if isinstance(expected_type, list):
-        return any(_matches_json_type(value, item) for item in expected_type)
-    if expected_type == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if expected_type == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-
-    type_mapping: dict[str, type | tuple[type, ...]] = {
-        "string": str,
-        "boolean": bool,
-        "object": dict,
-        "array": list,
-        "null": type(None),
-    }
-    expected_python_type = type_mapping.get(expected_type)
-    return expected_python_type is None or isinstance(value, expected_python_type)
-
-
-def _allows_null(property_schema: dict[str, Any]) -> bool:
-    """判断字段是否使用可空类型表达模型侧的可选参数。"""
-    expected_type = property_schema.get("type")
-    return expected_type == "null" or (
-        isinstance(expected_type, list) and "null" in expected_type
-    )
-
-
-def _validate_arguments(
-    tool_name: str,
-    tool: RegisteredTool,
-    arguments: dict[str, Any],
-    context: ToolExecutionContext,
-) -> ToolExecutionResult | None:
-    """按照工具 Schema 和函数签名校验参数。"""
-    schema = TOOL_SCHEMAS.get(tool_name)
-    if schema is None:
-        return _invalid(f"工具“{tool_name}”缺少参数 Schema")
-
-    properties = schema.get("properties", {})
-    required = schema.get("required", [])
-    missing = [
-        name
-        for name in required
-        if name not in arguments and not _allows_null(properties.get(name, {}))
-    ]
-    if missing:
-        return _invalid(f"缺少必填参数：{', '.join(missing)}")
-
-    if schema.get("additionalProperties") is False:
-        extra = [name for name in arguments if name not in properties]
-        if extra:
-            return _invalid(f"包含未声明的参数：{', '.join(extra)}")
-
-    for name, value in arguments.items():
-        expected_type = properties.get(name, {}).get("type")
-        if expected_type and not _matches_json_type(value, expected_type):
-            return _invalid(f"参数“{name}”必须是 {expected_type} 类型")
-
-    try:
-        bind_arguments = dict(arguments)
-        if tool.requires_context:
-            bind_arguments["context"] = context
-        inspect.signature(tool.function).bind(**bind_arguments)
-    except TypeError as error:
-        return _invalid(f"参数与工具函数签名不匹配：{error}")
-
-    tool_validation_error = tool.validate(arguments, context)
-    if tool_validation_error is not None:
-        return _invalid(tool_validation_error)
-    return None
 
 
 def _resolve_permission(
@@ -373,16 +211,16 @@ def _prepare_tool_call(
         )
 
     # 2. 将模型生成的原始参数解析为 JSON 对象。
-    parsed = _parse_arguments(raw_arguments)
+    parsed = parse_and_validate_tool_arguments(
+        tool_name,
+        tool,
+        raw_arguments,
+        context,
+    )
     if isinstance(parsed, ToolExecutionResult):
         return parsed
 
-    # 3. 按照工具 Schema 和函数签名校验参数合法性。
-    validation_error = _validate_arguments(tool_name, tool, parsed, context)
-    if validation_error is not None:
-        return validation_error
-
-    # 4. 权限判断和用户确认始终在调度主线程串行完成。
+    # 3. 权限判断和用户确认始终在调度主线程串行完成。
     permission_result = _resolve_permission(
         tool_name,
         evaluate_permission(
@@ -399,7 +237,7 @@ def _prepare_tool_call(
     if permission_result is not None:
         return permission_result
 
-    # 5. 精确去重检查此前已经完成并进入缓存的调用。
+    # 4. 精确去重检查此前已经完成并进入缓存的调用。
     fingerprint: str | None = None
     if tool.deduplication_policy == "exact" and call_id is not None:
         fingerprint = _build_tool_call_fingerprint(tool_name, parsed)

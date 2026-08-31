@@ -306,7 +306,7 @@ class ToolFailureBoundariesTest(unittest.TestCase):
             "hexgent.tool.tool_execution.get_tool",
             return_value=registered_tool,
         ), patch.dict(
-            "hexgent.tool.tool_execution.TOOL_SCHEMAS",
+            "hexgent.tool.tool_validation.TOOL_SCHEMAS",
             {tool_name: schema},
         ):
             context = ToolExecutionContext(

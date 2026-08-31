@@ -17,7 +17,7 @@ from hexgent.events import (
 )
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
-from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_result import ToolExecutionResult
 from hexgent.tool.tool_scheduler import ToolParallelLimits
 from hexgent.tool.tool_registry import get_tool
 

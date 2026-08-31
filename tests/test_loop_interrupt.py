@@ -11,12 +11,11 @@ from threading import Event
 
 from hexgent.context import ContextManager
 from hexgent.events import RunFinishedEvent, TextDeltaEvent, ToolFinishedEvent
-from hexgent.loop.interrupt import InterruptController
-from hexgent.loop.run_control import RunControl
+from hexgent.run_control import InterruptController, RunControl
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.session import Session
 from hexgent.tool.tool_context import ToolExecutionContext
-from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_result import ToolExecutionResult
 
 
 agent_loop_module = import_module("hexgent.loop.agent_loop")

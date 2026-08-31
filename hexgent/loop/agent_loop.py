@@ -7,6 +7,7 @@ from typing import Any
 from ..client import get_client
 from ..context import ContextLimits, ContextManager
 from ..plan import InMemoryPlanStore
+from ..run_control import InterruptController, RunControl
 from ..session import Session
 from ..tool.tool_context import ToolExecutionContext
 from ..tool.tool_execution import UserConfirmation, unavailable_user_confirmation
@@ -18,8 +19,6 @@ from .limits import LoopLimits
 from .loop_state import LoopState
 from .transitions import Continue
 from .agent_turn import run_turn
-from .interrupt import InterruptController
-from .run_control import RunControl
 
 
 def agent_loop(

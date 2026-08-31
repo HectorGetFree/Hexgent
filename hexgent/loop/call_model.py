@@ -4,7 +4,7 @@ from collections.abc import Generator
 from typing import Any, Literal
 
 from hexgent.events import AgentEvent, TextDeltaEvent
-from .interrupt import InterruptController
+from hexgent.run_control import InterruptController
 
 
 ModelCallErrorReason = Literal[

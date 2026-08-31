@@ -21,7 +21,7 @@ from hexgent.events import (
 from .config import load_config
 from .context import ContextManager
 from .loop.agent_loop import agent_loop
-from .loop.run_control import RunControl
+from .run_control import RunControl
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
 from .session import Session, SessionSettings

@@ -18,16 +18,15 @@ from hexgent.utils.token_estimator import estimate_value_tokens
 from .tool_context import ToolCallCacheEntry, ToolExecutionContext
 from .tool_execution import (
     PreparedToolCall,
-    ToolExecutionResult,
     UserConfirmation,
     _deduplicated_result,
     _prepare_tool_call,
 )
 from .tool_registry import get_tool
-from .tool_result import ToolFailure
+from .tool_result import ToolExecutionResult, ToolFailure
 from .tool_retry import ToolRetryLimits
 from .tool_permission_pipeline import PermissionContext
-from hexgent.loop.interrupt import InterruptController
+from hexgent.run_control import InterruptController
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent

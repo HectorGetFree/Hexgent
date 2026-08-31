@@ -31,7 +31,7 @@ from hexgent.tool.tool_context import (
     ToolCallCacheEntry,
     ToolExecutionContext,
 )
-from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_result import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
 from hexgent.prompt import TOOLS
 

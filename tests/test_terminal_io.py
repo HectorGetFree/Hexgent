@@ -5,8 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from hexgent.terminal_io import TerminalIO
-from hexgent.loop.interrupt import InterruptController
-from hexgent.loop.run_control import RunControl
+from hexgent.run_control import InterruptController, RunControl
 
 
 class TerminalIOTest(unittest.TestCase):

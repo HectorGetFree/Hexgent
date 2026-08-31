@@ -2,7 +2,7 @@
 
 import unittest
 
-from hexgent.loop.run_control import RunControl, SteeringMailbox
+from hexgent.run_control import RunControl, SteeringMailbox
 
 
 class RunControlTest(unittest.TestCase):

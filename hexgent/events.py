@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from hexgent.plan import Plan
-from hexgent.tool.tool_execution import ToolExecutionStatus
+from hexgent.tool.tool_result import ToolExecutionStatus
 from hexgent.loop.limits import LoopStopReason
 from hexgent.loop.loop_state import ContinueReason
-from hexgent.loop.run_control import UserControlStopReason
+from hexgent.run_control import UserControlStopReason
 
 
 ToolEventStatus = ToolExecutionStatus | Literal[

@@ -21,7 +21,7 @@ from hexgent.session import Session, SessionSettings
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_context import ReadFileCacheEntry, ReadFileCacheKey
-from hexgent.tool.tool_execution import ToolExecutionResult
+from hexgent.tool.tool_result import ToolExecutionResult
 from hexgent.tool.tool_execution import execute_tool_call
 
 

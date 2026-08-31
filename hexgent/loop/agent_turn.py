@@ -8,6 +8,8 @@ from ..client import get_model
 from ..context.context_budget import ContextLimits
 from ..context.context_compaction import compact_context_if_needed
 from ..prompt import TOOLS
+from ..plan import review_plan_exit
+from ..run_control import InterruptController, RunControl
 from ..session import Session
 from ..tool.tool_execution import UserConfirmation
 from ..tool.tool_scheduler import (
@@ -24,16 +26,13 @@ from hexgent.events import (
     TextDeltaEvent,
 )
 from .call_model import ModelCallError, ModelCallInterrupted, call_model
-from .interrupt import InterruptController
 from .limits import (
     LoopLimits,
     LoopStopReason,
     check_loop_limit,
     stop_reason_message,
 )
-from .plan_exit import review_plan_exit
 from .loop_state import LoopState
-from .run_control import RunControl
 from .transitions import Continue, Stop, TurnOutcome
 
 
@@ -85,6 +84,62 @@ def _failure_stop(state: LoopState, message: str) -> Stop:
             stop_reason=state.stop_reason,
             status="failed",
         )
+    )
+
+
+def _apply_plan_exit(
+    state: LoopState,
+    limits: LoopLimits,
+    output_text: str,
+    session: Session | None,
+) -> TurnOutcome:
+    """把 Plan 领域判断转换为 Agent Loop 的 Continue 或 Stop。"""
+    # 1. Plan 模块只返回领域判断，不直接依赖 LoopState 和状态迁移类型。
+    decision = review_plan_exit(
+        state.tool_context.plan_store.get_plan(),
+        state.plan_completion_nudges,
+        limits.max_plan_completion_nudges,
+    )
+
+    # 2. 正常完成时根据领域指示清除已完成 Plan。
+    if decision.action == "complete":
+        if decision.clear_completed_plan:
+            state.tool_context.plan_store.clear_plan()
+        return Stop(AgentLoopResult(output_text, state.elapsed_seconds))
+
+    # 3. 阻塞和提醒耗尽形成明确、可恢复的终态。
+    if decision.action == "blocked":
+        return Stop(
+            AgentLoopResult(
+                output_text,
+                state.elapsed_seconds,
+                stop_reason="plan_blocked",
+                status="blocked",
+            )
+        )
+    if decision.action == "incomplete":
+        return Stop(
+            AgentLoopResult(
+                output_text,
+                state.elapsed_seconds,
+                stop_reason="plan_still_active",
+                status="incomplete",
+            )
+        )
+
+    # 4. 继续动作把领域提醒提交到 Context 和 Transcript，再构造完整下一轮 State。
+    assert decision.continuation_message is not None
+    message = {"role": "developer", "content": decision.continuation_message}
+    state.context_manager.append_message(message)
+    if session is not None:
+        session.record_message(message)
+    return Continue(
+        replace(
+            state,
+            plan_completion_nudges=state.plan_completion_nudges + 1,
+            transition="plan_continuation",
+        ),
+        "plan_continuation",
     )
 
 
@@ -389,7 +444,7 @@ def run_turn(
         )
         if steering_transition is not None:
             return steering_transition
-        return review_plan_exit(
+        return _apply_plan_exit(
             response_state,
             limits,
             response.output_text,
