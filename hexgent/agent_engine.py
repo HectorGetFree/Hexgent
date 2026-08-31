@@ -1,9 +1,13 @@
 
-"""Hexgent 命令行入口。"""
+"""入口无关的 AgentEngine 与 Hexgent 命令行适配。"""
 
+from collections.abc import Generator
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from hexgent.events import (
+    AgentEvent,
     ContextCompactionFailedEvent,
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
@@ -18,15 +22,18 @@ from hexgent.events import (
     ToolBatchFinishedEvent,
     ToolBatchStartedEvent,
 )
-from .config import load_config
+from .config import HexgentConfig, RunOptions, load_config
 from .context import ContextManager
 from .loop.agent_loop import agent_loop
+from .loop.loop_state import LoopState
 from .run_control import RunControl
 from .loop.limits import stop_reason_message
 from .plan import InMemoryPlanStore, Plan
 from .session import Session, SessionSettings
 from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
+from .tool.tool_execution import UserConfirmation, unavailable_user_confirmation
+from .tool.tool_permission_pipeline import PermissionConfig
 from .workspace import find_workspace_root
 
 
@@ -45,6 +52,91 @@ PLAN_STATUS_LABELS = {
     "completed": "已完成",
     "blocked": "已阻塞",
 }
+
+
+class AgentEngine:
+    """持有会话能力，并把 HexgentConfig 收敛为一次次 Agent Run。"""
+
+    def __init__(
+        self,
+        config: HexgentConfig,
+        workdir: Path,
+        *,
+        context_manager: ContextManager | None = None,
+        session: Session | None = None,
+        tool_context: ToolExecutionContext | None = None,
+    ) -> None:
+        # 进程级配置只在 Engine 创建时注入，后续 Run 从这里生成有效快照。
+        self.config = config
+
+        # 工作区在 Engine 生命周期内保持稳定，避免权限与工具路径边界漂移。
+        self.workdir = workdir.resolve()
+
+        # Context、Session 和工具上下文跨多个用户 Query 复用。
+        self.context_manager = context_manager or ContextManager()
+        self.session = session or Session.persistent(
+            self.workdir,
+            config.tool_result,
+            SessionSettings(config.permission.default_mode),
+        )
+        self.tool_context = tool_context or ToolExecutionContext(
+            InMemoryPlanStore(),
+            self.workdir,
+        )
+
+    def resolve_config(self, options: RunOptions | None = None) -> HexgentConfig:
+        """合并用户覆盖项，并返回本次 Run 最终使用的 HexgentConfig。"""
+        overrides = options or RunOptions()
+        return replace(
+            self.config,
+            loop=overrides.loop if overrides.loop is not None else self.config.loop,
+            context=(
+                overrides.context
+                if overrides.context is not None
+                else self.config.context
+            ),
+            tool_parallel=(
+                overrides.tool_parallel
+                if overrides.tool_parallel is not None
+                else self.config.tool_parallel
+            ),
+            tool_retry=(
+                overrides.tool_retry
+                if overrides.tool_retry is not None
+                else self.config.tool_retry
+            ),
+            permission=PermissionConfig(self.session.settings.permission_mode),
+        )
+
+    def run(
+        self,
+        query: str,
+        *,
+        options: RunOptions | None = None,
+        user_confirmation: UserConfirmation = unavailable_user_confirmation,
+        run_control: RunControl | None = None,
+        client: Any | None = None,
+    ) -> Generator[AgentEvent, None, None]:
+        """接受原始 Query，构造活动 State，并启动事件流。"""
+        # 1. 用户 Query 同时进入活动 Context 和 Session 事实日志。
+        user_query = self.context_manager.append_user_query(query)
+        self.session.record_user_query(user_query)
+
+        # 2. LoopState 只保存会演进的活动状态，不包含不可变配置和外部依赖。
+        state = LoopState(
+            context_manager=self.context_manager,
+            tool_context=self.tool_context,
+        )
+
+        # 3. 用户覆盖项仅在入口消费一次，稳定配置和依赖作为显式参数传入 Loop。
+        return agent_loop(
+            state,
+            config=self.resolve_config(options),
+            client=client,
+            session=self.session,
+            user_confirmation=user_confirmation,
+            run_control=run_control or RunControl(),
+        )
 
 
 def _print_plan(plan: Plan, title: str) -> None:
@@ -72,13 +164,7 @@ def main(config_path: Path | None = None) -> None:
     terminal_io = TerminalIO()
     workdir = find_workspace_root()
     config = load_config(workdir, config_path)
-    context_manager = ContextManager()
-    session = Session.persistent(
-        workdir,
-        config.tool_result,
-        SessionSettings(config.permission.default_mode),
-    )
-    tool_context = ToolExecutionContext(InMemoryPlanStore(), workdir)
+    engine = AgentEngine(config, workdir)
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
     print("输入内容后按两次回车或输入 /send 发送消息；exit 或 q 可以结束对话。\n")
@@ -100,24 +186,15 @@ def main(config_path: Path | None = None) -> None:
         if not normalized_query:
             continue
 
-        user_query = context_manager.append_user_query(query)
-        session.record_user_query(user_query)
         print("\033[90m正在处理，请稍候……\033[0m")
 
         # 3. 为本轮运行创建独立中断控制器，并在消费事件流期间接收 Ctrl+C。
         text_is_open = False
         execution_completed_calls: dict[str, str] = {}
         run_control = RunControl()
-        event_stream = agent_loop(
-            context_manager,
-            context=tool_context,
-            limits=config.loop,
-            context_limits=config.context,
+        event_stream = engine.run(
+            query,
             user_confirmation=terminal_io.request_confirmation,
-            session=session,
-            tool_parallel_limits=config.tool_parallel,
-            tool_retry_limits=config.tool_retry,
-            permission_context=session.permission_context,
             run_control=run_control,
         )
         with terminal_io.capture_run_interrupt(run_control):
@@ -178,7 +255,7 @@ def main(config_path: Path | None = None) -> None:
                     if text_is_open:
                         print()
                     if event.result.status == "blocked":
-                        plan = tool_context.plan_store.get_plan()
+                        plan = engine.tool_context.plan_store.get_plan()
                         reason = plan.blocked_reason if plan is not None else None
                         detail = f"：{reason}" if reason else ""
                         print(f"\033[90mPlan 已阻塞{detail}。可以补充信息后继续。\033[0m")

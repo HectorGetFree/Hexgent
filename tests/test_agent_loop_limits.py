@@ -19,6 +19,8 @@ from hexgent.events import (
     ToolStartedEvent,
 )
 from hexgent.context import ContextLimits, ContextManager
+from hexgent.config import HexgentConfig
+from hexgent.run_control import RunControl
 from hexgent.utils.token_estimator import estimate_request_tokens
 from hexgent.context.context_builder import build_context
 from hexgent.loop.limits import LoopLimits, check_loop_limit
@@ -114,9 +116,46 @@ def drain_generator(generator):
             return events, stopped.value
 
 
-def run_agent(*args, **kwargs):
-    """运行完整事件流，并返回事件和唯一 Terminal。"""
-    events = list(agent_loop_module.agent_loop(*args, **kwargs))
+def build_config(
+    limits: LoopLimits | None = None,
+    context_limits: ContextLimits | None = None,
+) -> HexgentConfig:
+    """从测试覆盖项生成一份完整的 HexgentConfig。"""
+    return HexgentConfig(
+        loop=limits or LoopLimits(),
+        context=context_limits or ContextLimits(),
+    )
+
+
+def run_agent(
+    context_manager,
+    context,
+    limits: LoopLimits | None = None,
+    user_confirmation=lambda _tool, _message: "allow",
+    context_limits: ContextLimits | None = None,
+    session=None,
+    run_control: RunControl | None = None,
+    interrupt_controller=None,
+    **_unused,
+):
+    """按稳定配置、外部依赖和活动 State 边界运行完整事件流。"""
+    active_context = (
+        context_manager
+        if isinstance(context_manager, ContextManager)
+        else ContextManager.from_messages(context_manager)
+    )
+    state = LoopState(
+        context_manager=active_context,
+        tool_context=context,
+    )
+    control = run_control or RunControl(interrupt_controller)
+    events = list(agent_loop_module.agent_loop(
+        state,
+        config=build_config(limits, context_limits),
+        session=session,
+        user_confirmation=user_confirmation,
+        run_control=control,
+    ))
     finished = [event for event in events if isinstance(event, RunFinishedEvent)]
     if len(finished) != 1:
         raise AssertionError("Agent Loop 必须产生唯一 RunFinishedEvent")
@@ -175,15 +214,17 @@ class AgentLoopLimitsTest(unittest.TestCase):
         """预算命中应构造收尾 State，而不是在当前分支直接结束。"""
         client = FakeClient([])
         state = LoopState(
-            context_manager=ContextManager(), tool_context=self.context
+            context_manager=ContextManager(),
+            tool_context=self.context,
         )
 
         events, outcome = drain_generator(
             turn_module.run_turn(
                 state,
-                client,
-                LoopLimits(max_elapsed_seconds=0),
-                lambda _tool, _message: "allow",
+                config=build_config(LoopLimits(max_elapsed_seconds=0)),
+                client=client,
+                user_confirmation=lambda _tool, _message: "allow",
+                run_control=RunControl(),
             )
         )
 
@@ -198,15 +239,17 @@ class AgentLoopLimitsTest(unittest.TestCase):
         """有效响应没有工具调用时应产生正常 Stop。"""
         client = FakeClient([make_response([], "完成")])
         state = LoopState(
-            context_manager=ContextManager(), tool_context=self.context
+            context_manager=ContextManager(),
+            tool_context=self.context,
         )
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
                 turn_module.run_turn(
                     state,
-                    client,
-                    LoopLimits(),
-                    lambda _tool, _message: "allow",
+                    config=build_config(),
+                    client=client,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
                 )
             )
 
@@ -225,16 +268,18 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         client = FakeClient([make_response([], "全部完成")])
         state = LoopState(
-            context_manager=ContextManager(), tool_context=self.context
+            context_manager=ContextManager(),
+            tool_context=self.context,
         )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
                 turn_module.run_turn(
                     state,
-                    client,
-                    LoopLimits(),
-                    lambda _tool, _message: "allow",
+                    config=build_config(),
+                    client=client,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
                 )
             )
 
@@ -253,16 +298,18 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.context.plan_store.set_plan(plan)
         client = FakeClient([make_response([], "需要你的授权")])
         state = LoopState(
-            context_manager=ContextManager(), tool_context=self.context
+            context_manager=ContextManager(),
+            tool_context=self.context,
         )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
                 turn_module.run_turn(
                     state,
-                    client,
-                    LoopLimits(),
-                    lambda _tool, _message: "allow",
+                    config=build_config(),
+                    client=client,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
                 )
             )
 
@@ -281,16 +328,20 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.context.plan_store.set_plan(plan)
         client = FakeClient([make_response([], "暂时停止")])
         state = LoopState(
-            context_manager=ContextManager(), tool_context=self.context
+            context_manager=ContextManager(),
+            tool_context=self.context,
         )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
                 turn_module.run_turn(
                     state,
-                    client,
-                    LoopLimits(max_plan_completion_nudges=0),
-                    lambda _tool, _message: "allow",
+                    config=build_config(
+                        LoopLimits(max_plan_completion_nudges=0)
+                    ),
+                    client=client,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
                 )
             )
 
@@ -310,16 +361,20 @@ class AgentLoopLimitsTest(unittest.TestCase):
         )
         client = FakeClient([make_response([], "准备结束", input_tokens=7, output_tokens=3)])
         state = LoopState(
-            context_manager=ContextManager(), tool_context=self.context
+            context_manager=ContextManager(),
+            tool_context=self.context,
         )
 
         with patch.object(turn_module, "get_model", return_value="fake"):
             _, outcome = drain_generator(
                 turn_module.run_turn(
                     state,
-                    client,
-                    LoopLimits(max_plan_completion_nudges=1),
-                    lambda _tool, _message: "allow",
+                    config=build_config(
+                        LoopLimits(max_plan_completion_nudges=1)
+                    ),
+                    client=client,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
                 )
             )
 
@@ -417,7 +472,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop([], self.context))
+            events, _ = run_agent([], self.context)
 
         deltas = [event.delta for event in events if isinstance(event, TextDeltaEvent)]
         finished = [event for event in events if isinstance(event, RunFinishedEvent)]
@@ -468,12 +523,10 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(
-                agent_loop_module.agent_loop(
-                    conversation,
-                    self.context,
-                    context_limits=context_limits,
-                )
+            events, _ = run_agent(
+                conversation,
+                self.context,
+                context_limits=context_limits,
             )
 
         transitions = [
@@ -571,10 +624,10 @@ class AgentLoopLimitsTest(unittest.TestCase):
                         context_manager=conversation,
                         tool_context=self.context,
                     ),
-                    client,
-                    LoopLimits(),
-                    lambda _tool, _message: "allow",
-                    context_limits,
+                    config=build_config(context_limits=context_limits),
+                    client=client,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
                 )
             )
 
@@ -644,7 +697,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(turn_module, "get_model", return_value="fake"),
             patch.object(tool_execution_module, "execute_tool_call", side_effect=execute),
         ):
-            events = list(agent_loop_module.agent_loop([], self.context))
+            events, _ = run_agent([], self.context)
 
         relevant_events = [
             event
@@ -679,7 +732,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop([], self.context))
+            events, _ = run_agent([], self.context)
 
         created = [event for event in events if isinstance(event, PlanCreatedEvent)]
         self.assertEqual(len(created), 1)
@@ -724,7 +777,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop([], self.context))
+            events, _ = run_agent([], self.context)
 
         updated = [event for event in events if isinstance(event, PlanUpdatedEvent)]
         self.assertEqual(len(updated), 1)
@@ -766,10 +819,10 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(
-                agent_loop_module.agent_loop(
-                    [], self.context, LoopLimits(max_elapsed_seconds=0)
-                )
+            events, _ = run_agent(
+                [],
+                self.context,
+                LoopLimits(max_elapsed_seconds=0),
             )
 
         limits = [event for event in events if isinstance(event, LoopLimitReachedEvent)]
@@ -796,7 +849,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(turn_module, "get_model", return_value="fake"),
             patch.object(tool_execution_module, "execute_tool_call") as execute,
         ):
-            events = list(agent_loop_module.agent_loop([], self.context))
+            events, _ = run_agent([], self.context)
 
         execute.assert_not_called()
         self.assertEqual(len(client.responses.calls), 1)
@@ -819,7 +872,7 @@ class AgentLoopLimitsTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(agent_loop_module.agent_loop([], self.context))
+            events, _ = run_agent([], self.context)
 
         self.assertIsInstance(events[-1], RunFinishedEvent)
         self.assertEqual(events[-1].result.status, "failed")

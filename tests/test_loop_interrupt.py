@@ -10,12 +10,15 @@ from unittest.mock import patch
 from threading import Event
 
 from hexgent.context import ContextManager
+from hexgent.config import HexgentConfig
 from hexgent.events import RunFinishedEvent, TextDeltaEvent, ToolFinishedEvent
+from hexgent.loop.loop_state import LoopState
 from hexgent.run_control import InterruptController, RunControl
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.session import Session
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_result import ToolExecutionResult
+from hexgent.tool.tool_permission_pipeline import PermissionConfig
 
 
 agent_loop_module = import_module("hexgent.loop.agent_loop")
@@ -68,6 +71,38 @@ def finished_result(events: list[object]):
     if len(finished) != 1:
         raise AssertionError("中断后的 Agent Loop 必须产生唯一终态")
     return finished[0].result
+
+
+def run_loop(
+    context_manager,
+    tool_context: ToolExecutionContext,
+    *,
+    session: Session | None = None,
+    run_control: RunControl | None = None,
+    interrupt_controller: InterruptController | None = None,
+    user_confirmation=lambda _tool, _message: "allow",
+) -> list[object]:
+    """按正式 State 和 Runtime 边界执行中断测试事件流。"""
+    active_context = (
+        context_manager
+        if isinstance(context_manager, ContextManager)
+        else ContextManager.from_messages(context_manager)
+    )
+    permission_mode = (
+        session.settings.permission_mode if session is not None else "default"
+    )
+    state = LoopState(
+        context_manager=active_context,
+        tool_context=tool_context,
+    )
+    control = run_control or RunControl(interrupt_controller)
+    return list(agent_loop_module.agent_loop(
+        state,
+        config=HexgentConfig(permission=PermissionConfig(permission_mode)),
+        session=session,
+        user_confirmation=user_confirmation,
+        run_control=control,
+    ))
 
 
 class LoopInterruptTest(unittest.TestCase):
@@ -124,12 +159,10 @@ class LoopInterruptTest(unittest.TestCase):
         client = FakeClient([])
 
         with patch.object(agent_loop_module, "get_client", return_value=client):
-            events = list(
-                agent_loop_module.agent_loop(
-                    [],
-                    self.tool_context,
-                    interrupt_controller=controller,
-                )
+            events = run_loop(
+                [],
+                self.tool_context,
+                interrupt_controller=controller,
             )
 
         result = finished_result(events)
@@ -156,12 +189,10 @@ class LoopInterruptTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(
-                agent_loop_module.agent_loop(
-                    context_manager,
-                    self.tool_context,
-                    run_control=run_control,
-                )
+            events = run_loop(
+                context_manager,
+                self.tool_context,
+                run_control=run_control,
             )
 
         result = finished_result(events)
@@ -200,13 +231,11 @@ class LoopInterruptTest(unittest.TestCase):
                 side_effect=execute,
             ) as execute_mock,
         ):
-            events = list(
-                agent_loop_module.agent_loop(
-                    context_manager,
-                    self.tool_context,
-                    user_confirmation=lambda _tool, _message: "allow",
-                    run_control=run_control,
-                )
+            events = run_loop(
+                context_manager,
+                self.tool_context,
+                user_confirmation=lambda _tool, _message: "allow",
+                run_control=run_control,
             )
 
         result = finished_result(events)
@@ -246,13 +275,11 @@ class LoopInterruptTest(unittest.TestCase):
             client = FakeClient([])
 
             with patch.object(agent_loop_module, "get_client", return_value=client):
-                list(
-                    agent_loop_module.agent_loop(
-                        context_manager,
-                        ToolExecutionContext(InMemoryPlanStore(), root),
-                        session=session,
-                        run_control=run_control,
-                    )
+                run_loop(
+                    context_manager,
+                    ToolExecutionContext(InMemoryPlanStore(), root),
+                    session=session,
+                    run_control=run_control,
                 )
             records = [
                 json.loads(line)
@@ -290,13 +317,11 @@ class LoopInterruptTest(unittest.TestCase):
                 "get_client",
                 return_value=FakeClient([]),
             ):
-                events = list(
-                    agent_loop_module.agent_loop(
-                        context_manager,
-                        ToolExecutionContext(plan_store, root),
-                        session=session,
-                        run_control=run_control,
-                    )
+                events = run_loop(
+                    context_manager,
+                    ToolExecutionContext(plan_store, root),
+                    session=session,
+                    run_control=run_control,
                 )
             records = [
                 json.loads(line)
@@ -336,12 +361,10 @@ class LoopInterruptTest(unittest.TestCase):
             patch.object(agent_loop_module, "get_client", return_value=client),
             patch.object(turn_module, "get_model", return_value="fake"),
         ):
-            events = list(
-                agent_loop_module.agent_loop(
-                    context_manager,
-                    self.tool_context,
-                    run_control=run_control,
-                )
+            events = run_loop(
+                context_manager,
+                self.tool_context,
+                run_control=run_control,
             )
 
         result = finished_result(events)

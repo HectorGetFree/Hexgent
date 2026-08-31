@@ -55,6 +55,23 @@ class HexgentConfig:
     permission: PermissionConfig = PermissionConfig()
 
 
+@dataclass(frozen=True)
+class RunOptions:
+    """用户可以针对单次 Agent Run 显式覆盖的配置入口。"""
+
+    # 本次 Run 可选覆盖的循环资源预算。
+    loop: LoopLimits | None = None
+
+    # 本次 Run 可选覆盖的上下文容量和压缩策略。
+    context: ContextLimits | None = None
+
+    # 本次 Run 可选覆盖的工具并行配置。
+    tool_parallel: ToolParallelLimits | None = None
+
+    # 本次 Run 可选覆盖的工具重试配置。
+    tool_retry: ToolRetryLimits | None = None
+
+
 def load_config(
     workdir: Path,
     config_path: Path | None = None,

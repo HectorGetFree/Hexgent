@@ -5,18 +5,14 @@ from dataclasses import asdict, replace
 from typing import Any
 
 from ..client import get_model
-from ..context.context_budget import ContextLimits
+from ..config import HexgentConfig
 from ..context.context_compaction import compact_context_if_needed
 from ..prompt import TOOLS
 from ..plan import review_plan_exit
-from ..run_control import InterruptController, RunControl
+from ..run_control import RunControl
 from ..session import Session
 from ..tool.tool_execution import UserConfirmation
-from ..tool.tool_scheduler import (
-    ToolParallelLimits,
-    execute_tool_batch,
-)
-from ..tool.tool_retry import ToolRetryLimits
+from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
 from hexgent.context import build_context
 from hexgent.events import (
@@ -221,20 +217,17 @@ def _continue_with_steering(
 
 def run_turn(
     state: LoopState,
+    *,
+    config: HexgentConfig,
     client: Any,
-    limits: LoopLimits,
-    user_confirmation: UserConfirmation,
-    context_limits: ContextLimits | None = None,
     session: Session | None = None,
-    tool_parallel_limits: ToolParallelLimits | None = None,
-    tool_retry_limits: ToolRetryLimits | None = None,
-    permission_context: PermissionContext | None = None,
-    interrupt_controller: InterruptController | None = None,
-    run_control: RunControl | None = None,
+    user_confirmation: UserConfirmation,
+    run_control: RunControl,
 ) -> Generator[AgentEvent, None, TurnOutcome]:
     """执行一个完整轮次，并只返回 Continue 或 Stop。"""
-    # 1. 每个 Run 共享同一个业务控制对象；旧调用方传入的 Controller 仍可兼容。
-    active_control = run_control or RunControl(interrupt_controller)
+    # 1. 配置和外部依赖在整个 Run 内保持不变，LoopState 只承载活动状态。
+    limits = config.loop
+    active_control = run_control
     controller = active_control.interrupt_controller
     if controller.interrupted:
         return _control_stop(state, active_control, session, "turn_entry")
@@ -258,7 +251,7 @@ def run_turn(
     # 4. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
     instructions = build_context(state.tool_context)
-    active_context_limits = context_limits or ContextLimits()
+    active_context_limits = config.context
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
     request_tools = TOOLS if state.mode == "working" else []
@@ -467,9 +460,9 @@ def run_turn(
             else None
         ),
         session_store=session.store if session is not None else None,
-        parallel_limits=tool_parallel_limits,
-        retry_limits=tool_retry_limits,
-        permission_context=permission_context,
+        parallel_limits=config.tool_parallel,
+        retry_limits=config.tool_retry,
+        permission_context=PermissionContext(config.permission.default_mode),
         interrupt_controller=controller,
     )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
