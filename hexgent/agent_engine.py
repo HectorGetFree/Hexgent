@@ -4,6 +4,7 @@
 from collections.abc import Generator
 from dataclasses import replace
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from hexgent.events import (
@@ -22,7 +23,7 @@ from hexgent.events import (
     ToolBatchFinishedEvent,
     ToolBatchStartedEvent,
 )
-from .config import HexgentConfig, RunOptions, load_config
+from .config import HexgentConfig, RunOptions, load_config, validate_config
 from .context import ContextManager
 from .loop.agent_loop import agent_loop
 from .loop.loop_state import LoopState
@@ -33,7 +34,6 @@ from .session import Session, SessionSettings
 from .terminal_io import TerminalIO
 from .tool.tool_context import ToolExecutionContext
 from .tool.tool_execution import UserConfirmation, unavailable_user_confirmation
-from .tool.tool_permission_pipeline import PermissionConfig
 from .workspace import find_workspace_root
 
 
@@ -67,7 +67,7 @@ class AgentEngine:
         tool_context: ToolExecutionContext | None = None,
     ) -> None:
         # 进程级配置只在 Engine 创建时注入，后续 Run 从这里生成有效快照。
-        self.config = config
+        self.config = validate_config(config)
 
         # 工作区在 Engine 生命周期内保持稳定，避免权限与工具路径边界漂移。
         self.workdir = workdir.resolve()
@@ -84,10 +84,14 @@ class AgentEngine:
             self.workdir,
         )
 
+        # 同一个 Engine 的 Context、Session 和工具状态只能由一个 Run 驱动。
+        self._run_lock = Lock()
+        self._run_active = False
+
     def resolve_config(self, options: RunOptions | None = None) -> HexgentConfig:
         """合并用户覆盖项，并返回本次 Run 最终使用的 HexgentConfig。"""
         overrides = options or RunOptions()
-        return replace(
+        effective_config = replace(
             self.config,
             loop=overrides.loop if overrides.loop is not None else self.config.loop,
             context=(
@@ -105,8 +109,8 @@ class AgentEngine:
                 if overrides.tool_retry is not None
                 else self.config.tool_retry
             ),
-            permission=PermissionConfig(self.session.settings.permission_mode),
         )
+        return validate_config(effective_config)
 
     def run(
         self,
@@ -118,25 +122,39 @@ class AgentEngine:
         client: Any | None = None,
     ) -> Generator[AgentEvent, None, None]:
         """接受原始 Query，构造活动 State，并启动事件流。"""
-        # 1. 用户 Query 同时进入活动 Context 和 Session 事实日志。
-        user_query = self.context_manager.append_user_query(query)
-        self.session.record_user_query(user_query)
+        # 1. 事件流首次消费时原子占用 Engine，拒绝并发 Run 污染共享状态。
+        with self._run_lock:
+            if self._run_active:
+                raise RuntimeError("当前 AgentEngine 已有正在执行的 Agent Run")
+            self._run_active = True
 
-        # 2. LoopState 只保存会演进的活动状态，不包含不可变配置和外部依赖。
-        state = LoopState(
-            context_manager=self.context_manager,
-            tool_context=self.tool_context,
-        )
+        try:
+            # 2. 在修改 Context 前生成并校验本次 Run 的完整配置快照。
+            effective_config = self.resolve_config(options)
 
-        # 3. 用户覆盖项仅在入口消费一次，稳定配置和依赖作为显式参数传入 Loop。
-        return agent_loop(
-            state,
-            config=self.resolve_config(options),
-            client=client,
-            session=self.session,
-            user_confirmation=user_confirmation,
-            run_control=run_control or RunControl(),
-        )
+            # 3. 用户 Query 同时进入活动 Context 和 Session 事实日志。
+            user_query = self.context_manager.append_user_query(query)
+            self.session.record_user_query(user_query)
+
+            # 4. LoopState 只保存会演进的活动状态，不包含配置和外部依赖。
+            state = LoopState(
+                context_manager=self.context_manager,
+                tool_context=self.tool_context,
+            )
+
+            # 5. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
+            yield from agent_loop(
+                state,
+                config=effective_config,
+                client=client,
+                session=self.session,
+                user_confirmation=user_confirmation,
+                run_control=run_control or RunControl(),
+            )
+        finally:
+            # 6. 正常结束、异常或调用方关闭事件流时都释放 Engine 占用标记。
+            with self._run_lock:
+                self._run_active = False
 
 
 def _print_plan(plan: Plan, title: str) -> None:

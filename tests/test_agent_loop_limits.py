@@ -27,6 +27,7 @@ from hexgent.loop.limits import LoopLimits, check_loop_limit
 from hexgent.loop.loop_state import LoopState
 from hexgent.loop.transitions import Continue, Stop
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
+from hexgent.session import Session, SessionSettings
 from hexgent.tool.tool_context import (
     ReadFileCacheEntry,
     ReadFileCacheKey,
@@ -35,6 +36,8 @@ from hexgent.tool.tool_context import (
 )
 from hexgent.tool.tool_result import ToolExecutionResult
 from hexgent.tool.tool_registry import get_tool
+from hexgent.tool.tool_scheduler import ToolBatchResult
+from hexgent.tool.tool_permission_pipeline import PermissionConfig
 from hexgent.prompt import TOOLS
 
 
@@ -711,6 +714,57 @@ class AgentLoopLimitsTest(unittest.TestCase):
         self.assertEqual(relevant_events[1].call_id, "c1")
         self.assertEqual(relevant_events[0].description, "read_file(a)")
         self.assertFalse(hasattr(relevant_events[1], "elapsed_seconds"))
+
+    def test_session_permission_mode_overrides_config_default_during_execution(
+        self,
+    ) -> None:
+        """已有 Session 必须是运行时权限模式的唯一事实来源。"""
+        client = FakeClient([make_response([make_tool_call("permission-1")])])
+        state = LoopState(
+            context_manager=ContextManager(),
+            tool_context=self.context,
+        )
+        session = Session(settings=SessionSettings("plan"))
+        captured = {}
+
+        def execute_batch(*_args, **kwargs):
+            captured["permission_context"] = kwargs["permission_context"]
+            if False:
+                yield None
+            return ToolBatchResult(
+                outputs=[
+                    {
+                        "type": "function_call_output",
+                        "call_id": "permission-1",
+                        "output": "ok",
+                    }
+                ],
+                budgeted_call_count=1,
+            )
+
+        with (
+            patch.object(turn_module, "get_model", return_value="fake"),
+            patch.object(
+                turn_module,
+                "execute_tool_batch",
+                side_effect=execute_batch,
+            ),
+        ):
+            _, outcome = drain_generator(
+                turn_module.run_turn(
+                    state,
+                    config=HexgentConfig(
+                        permission=PermissionConfig("accept_edits")
+                    ),
+                    client=client,
+                    session=session,
+                    user_confirmation=lambda _tool, _message: "allow",
+                    run_control=RunControl(),
+                )
+            )
+
+        self.assertIsInstance(outcome, Continue)
+        self.assertEqual(captured["permission_context"].mode, "plan")
 
     def test_create_plan_emits_initial_plan(self) -> None:
         """Plan 创建成功后应向界面层发送完整初始计划。"""

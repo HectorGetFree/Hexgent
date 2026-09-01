@@ -462,7 +462,11 @@ def run_turn(
         session_store=session.store if session is not None else None,
         parallel_limits=config.tool_parallel,
         retry_limits=config.tool_retry,
-        permission_context=PermissionContext(config.permission.default_mode),
+        permission_context=(
+            session.permission_context
+            if session is not None
+            else PermissionContext(config.permission.default_mode)
+        ),
         interrupt_controller=controller,
     )
     state.context_manager.append_messages(batch.outputs, completes_round=True)

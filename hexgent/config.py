@@ -138,6 +138,35 @@ def load_config(
             PermissionConfig,
         ),
     )
+    return validate_config(config)
+
+
+def validate_config(config: HexgentConfig) -> HexgentConfig:
+    """统一校验代码构造、TOML 加载和单次覆盖后的完整配置。"""
+    # 1. 校验每个配置段的全部字段，避免代码直接构造时绕过 TOML 校验。
+    sections = {
+        "loop": (config.loop, LoopLimits),
+        "context": (config.context, ContextLimits),
+        "tool_result": (config.tool_result, ToolResultLimits),
+        "tool_parallel": (config.tool_parallel, ToolParallelLimits),
+        "tool_retry": (config.tool_retry, ToolRetryLimits),
+        "permission": (config.permission, PermissionConfig),
+    }
+    for section_name, (section, section_type) in sections.items():
+        if not isinstance(section, section_type):
+            raise ConfigError(
+                f"配置段 [{section_name}] 必须是 {section_type.__name__}"
+            )
+        resolved_types = get_type_hints(type(section))
+        for field in fields(section):
+            _validate_field(
+                section_name,
+                field.name,
+                resolved_types[field.name],
+                getattr(section, field.name),
+            )
+
+    # 2. 校验需要结合多个字段才能判断的容量与预算关系。
     _validate_relationships(config)
     return config
 
