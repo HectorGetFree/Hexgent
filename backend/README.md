@@ -27,7 +27,7 @@ HEXGENT_CORS_ALLOWED_ORIGINS=https://app.hexgent.example
 ## 核心接口
 
 - `POST /api/sessions`：创建 Session。
-- `GET /api/sessions/{session_id}`：查询 Session、当前 Run 和 Plan。
+- `GET /api/sessions/{session_id}`：查询 Session、当前 Run、Plan 和可恢复的对话历史。
 - `POST /api/sessions/{session_id}/runs`：立即创建后台 Run。
 - `GET /api/runs/{run_id}`：查询 Run 状态。
 - `GET /api/runs/{run_id}/events`：订阅 SSE；支持 `Last-Event-ID`。
@@ -47,6 +47,10 @@ HEXGENT_CORS_ALLOWED_ORIGINS=https://app.hexgent.example
 
 第一版状态和事件缓存都在单进程内存中，因此不能用多个 Uvicorn worker，也不能在进程重启后
 恢复旧 Run。Session Transcript 仍由 Hexgent 自己持久化。
+
+浏览器刷新时会使用已保存的 Web Session ID 重新查询 Session，并从 Transcript 投影用户与
+Assistant 可见消息；工具调用协议、Reasoning 和完整工具结果不会混入对话区。当前 Web Session
+注册表仍在进程内，因此这项能力只覆盖页面刷新，不等同于后端进程重启后的 Session 恢复。
 
 当前 Hexgent 的 `UserConfirmation` 只向入口暴露 `tool_name` 和权限原因，所以审批事件暂时不能
 安全携带完整工具参数或规则 ID。若要满足更丰富的审批 UI，应先扩展该稳定接口，而不是让 Web

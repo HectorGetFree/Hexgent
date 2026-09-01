@@ -16,6 +16,7 @@ from hexgent.events import (
     ToolStartedEvent,
 )
 from hexgent.plan import InMemoryPlanStore
+from hexgent.run_control import RunControl
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_result import ToolExecutionResult
 from hexgent.tool.tool_scheduler import ToolParallelLimits
@@ -246,6 +247,61 @@ class ToolParallelExecutionTest(unittest.TestCase):
         self.assertEqual(
             [output["call_id"] for output in batch.outputs],
             ["slow", "fast"],
+        )
+
+    def test_interrupt_does_not_wait_for_running_read_tools(self) -> None:
+        """取消只读并行批次时应立即配对中断结果，不等待底层读取线程返回。"""
+        with TemporaryDirectory() as directory:
+            context = ToolExecutionContext(
+                InMemoryPlanStore(), Path(directory).resolve()
+            )
+            calls = [
+                make_call("c1", "read_file", '{"path":"a.py"}'),
+                make_call("c2", "read_file", '{"path":"b.py"}'),
+            ]
+            workers_started = Barrier(3)
+            release_workers = Event()
+            run_control = RunControl()
+
+            def execute(*_args, **_kwargs):
+                workers_started.wait(timeout=2)
+                release_workers.wait(timeout=2)
+                return ToolExecutionResult("success", "迟到读取结果", False)
+
+            def request_cancel() -> None:
+                """等待两个读取线程启动后触发当前 Run 取消。"""
+                workers_started.wait(timeout=2)
+                run_control.cancel()
+
+            from threading import Thread
+            canceller = Thread(target=request_cancel)
+            canceller.start()
+            try:
+                with patch.object(
+                    tool_execution_module,
+                    "execute_tool_call",
+                    side_effect=execute,
+                ):
+                    events, batch = drain_generator(
+                        tool_execution_module.execute_tool_batch(
+                            calls,
+                            context=context,
+                            user_confirmation=lambda _tool, _message: "allow",
+                            remaining_tool_calls=None,
+                            deadline=None,
+                            interrupt_controller=run_control.interrupt_controller,
+                        )
+                    )
+            finally:
+                release_workers.set()
+                canceller.join(timeout=2)
+
+        self.assertTrue(
+            all("已被中断" in output["output"] for output in batch.outputs)
+        )
+        self.assertEqual(
+            [event.status for event in events if isinstance(event, ToolFinishedEvent)],
+            ["error", "error"],
         )
 
     def test_permission_confirmation_remains_on_scheduler_thread(self) -> None:

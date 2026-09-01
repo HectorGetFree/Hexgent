@@ -1,0 +1,59 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import type { ConversationMessage } from '../types/api'
+import { OutputPanel } from './OutputPanel'
+
+/** 构造指定运行状态下的空 Assistant 消息。 */
+function assistantMessage(streaming: boolean): ConversationMessage {
+  return {
+    id: 'assistant_1',
+    role: 'assistant',
+    content: '',
+    runId: 'run_1',
+    createdAt: '2026-09-01T15:00:00+08:00',
+    streaming,
+    terminalStatus: streaming ? null : 'paused',
+    stopReason: streaming ? null : 'user_pause',
+  }
+}
+
+describe('OutputPanel Assistant 运行状态', () => {
+  it('运行中显示正在处理', () => {
+    const html = renderToStaticMarkup(<OutputPanel messages={[assistantMessage(true)]} />)
+    expect(html).toContain('Hexgent 正在处理')
+  })
+
+  it('暂停终态不再显示正在处理', () => {
+    const html = renderToStaticMarkup(<OutputPanel messages={[assistantMessage(false)]} />)
+    expect(html).toContain('本次运行已暂停')
+    expect(html).not.toContain('Hexgent 正在处理')
+  })
+
+  it('取消请求提交后立即显示正在取消', () => {
+    const html = renderToStaticMarkup(
+      <OutputPanel messages={[assistantMessage(true)]} controlPending="cancel" />,
+    )
+    expect(html).toContain('正在取消，等待当前操作安全收束')
+    expect(html).not.toContain('Hexgent 正在处理')
+  })
+
+  it('在黑色回答前展示灰色运行过程', () => {
+    const message = { ...assistantMessage(false), content: '最终结论' }
+    const html = renderToStaticMarkup(
+      <OutputPanel
+        messages={[message]}
+        events={[{
+          sequence: 1,
+          type: 'tool_started',
+          created_at: '2026-09-01T16:00:00+08:00',
+          run_id: 'run_1',
+          payload: { tool_name: 'read_file', description: '读取配置文件' },
+        }]}
+      />,
+    )
+    expect(html).toContain('运行过程')
+    expect(html).toContain('开始处理工具：读取配置文件')
+    expect(html).toContain('最终结论')
+  })
+})

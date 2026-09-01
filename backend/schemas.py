@@ -23,6 +23,15 @@ class CreateSessionRequest(StrictModel):
     permission_mode: PermissionMode = "default"
 
 
+class SessionMessageResponse(StrictModel):
+    """从持久化 Transcript 恢复的一条用户可见会话消息。"""
+
+    sequence: int
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
 class SessionResponse(StrictModel):
     """Session 查询与创建接口的统一响应。"""
     session_id: str
@@ -31,6 +40,7 @@ class SessionResponse(StrictModel):
     active_run_id: str | None
     recent_run_ids: list[str] = Field(default_factory=list)
     plan: dict[str, Any] | None = None
+    messages: list[SessionMessageResponse] = Field(default_factory=list)
 
 
 class CreateRunRequest(StrictModel):

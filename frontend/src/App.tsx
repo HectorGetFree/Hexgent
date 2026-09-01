@@ -30,7 +30,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Header runStatus={store.run?.status} connectionStatus={store.connectionStatus} />
+      <Header runStatus={store.run?.status} connectionStatus={store.connectionStatus} controlPending={store.controlPending} />
       {store.error && (
         <div className="error-banner" role="alert">
           <AlertTriangle size={16} /><span>{store.error}</span>
@@ -40,10 +40,10 @@ export default function App() {
       {store.notice && <div className="notice-banner">{store.notice}</div>}
       {store.session ? (
         <div className="workspace-grid">
-          <SessionRail session={store.session} />
+          <SessionRail session={store.session} entries={store.sessionEntries} onCreate={store.createNewSession} onSwitch={store.switchSession} />
           <main className="conversation-pane">
             <div className="conversation-scroll">
-              <OutputPanel outputText={store.outputText} isRunning={store.run?.status === 'running'} />
+              <OutputPanel messages={store.messages} events={store.events} controlPending={store.controlPending} />
             </div>
             <Composer
               runStatus={store.run?.status}
@@ -54,7 +54,7 @@ export default function App() {
               onCancel={store.requestCancel}
             />
           </main>
-          <Inspector plan={store.plan} tools={store.tools} events={store.events} />
+          <Inspector plan={store.plan} tools={store.tools} events={store.events} controlPending={store.controlPending} />
         </div>
       ) : (
         <main className="fatal-state">无法创建 Session，请确认后端已经启动。</main>

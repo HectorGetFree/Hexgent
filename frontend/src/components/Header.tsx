@@ -5,6 +5,7 @@ import type { ConnectionStatus, RunStatus } from '../types/api'
 interface HeaderProps {
   runStatus?: RunStatus
   connectionStatus: ConnectionStatus
+  controlPending: 'pause' | 'cancel' | null
 }
 
 const statusLabels: Record<RunStatus, string> = {
@@ -17,7 +18,7 @@ const statusLabels: Record<RunStatus, string> = {
 }
 
 /** 展示产品身份、Run 终态和 SSE 连接状态。 */
-export function Header({ runStatus, connectionStatus }: HeaderProps) {
+export function Header({ runStatus, connectionStatus, controlPending }: HeaderProps) {
   const connected = connectionStatus === 'connected'
   return (
     <header className="topbar">
@@ -31,7 +32,11 @@ export function Header({ runStatus, connectionStatus }: HeaderProps) {
         {runStatus && (
           <span className={`status-chip status-${runStatus}`}>
             <CircleDot size={12} />
-            {statusLabels[runStatus]}
+            {controlPending === 'pause'
+              ? '正在暂停'
+              : controlPending === 'cancel'
+                ? '正在取消'
+                : statusLabels[runStatus]}
           </span>
         )}
         <span className={`connection-state ${connected ? 'is-connected' : ''}`}>

@@ -3,6 +3,7 @@
 import asyncio
 import unittest
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 from hexgent.events import AgentLoopResult, RunFinishedEvent, TextDeltaEvent
@@ -11,7 +12,7 @@ from hexgent.run_control import RunControl
 
 from backend.event_serializer import event_payload
 from backend.errors import WebError
-from backend.run_manager import RunManager
+from backend.run_manager import RunManager, transcript_messages
 from backend.app import create_app
 from backend.settings import WebSettings
 
@@ -70,6 +71,23 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event.sequence for event in run.events], [1, 2])
         self.assertEqual([event.type for event in run.events], ["text_delta", "run_finished"])
 
+    def test_transcript_projects_only_user_visible_conversation(self) -> None:
+        """刷新历史应恢复用户与 Assistant 文本，并排除工具协议消息。"""
+        records = [
+            {"sequence": 1, "type": "user_query", "created_at": "2026-09-01T10:00:00+08:00", "payload": {"content": "你好"}},
+            {"sequence": 2, "type": "message", "created_at": "2026-09-01T10:00:01+08:00", "payload": {"role": "assistant", "content": [{"type": "output_text", "text": "你好，有什么可以帮你？"}]}},
+            {"sequence": 3, "type": "message", "created_at": "2026-09-01T10:00:02+08:00", "payload": {"type": "function_call_output", "output": "内部工具结果"}},
+            {"sequence": 4, "type": "steering_query_applied", "created_at": "2026-09-01T10:00:03+08:00", "payload": {"content": "继续检查"}},
+        ]
+        self.assertEqual(
+            [(message["role"], message["content"]) for message in transcript_messages(records)],
+            [
+                ("user", "你好"),
+                ("assistant", "你好，有什么可以帮你？"),
+                ("user", "继续检查"),
+            ],
+        )
+
     async def test_same_session_rejects_second_active_run(self) -> None:
         """同一 Session 已有活跃 Run 时必须返回冲突。"""
         gate = asyncio.Event()
@@ -85,6 +103,20 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
         await first.task
         self.assertEqual(first.status, "paused")
 
+    async def test_registered_run_immediately_accepts_steering(self) -> None:
+        """创建接口返回的 Run 应已可 Steering，不能停在前端无法推进的 pending。"""
+        gate = asyncio.Event()
+        self.manager._engine_factory = lambda workdir, mode: FakeEngine(workdir, mode, gate=gate)
+        session = await self.manager.create_session(None, "default")
+        run = await self.manager.start_run(session.session_id, "初始任务")
+
+        self.assertEqual(run.status, "running")
+        steering = await self.manager.steer_run(run.run_id, "补充要求")
+        self.assertEqual(steering.content, "补充要求")
+
+        await self.manager.cancel_run(run.run_id)
+        await run.task
+
     async def test_cancel_overrides_pause_before_safe_finish(self) -> None:
         """安全收束前到达的 Cancel 应覆盖先前 Pause。"""
         gate = asyncio.Event()
@@ -97,6 +129,35 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
         await run.task
         self.assertEqual(run.status, "cancelled")
 
+    async def test_pause_callback_does_not_block_fastapi_event_loop(self) -> None:
+        """底层流关闭发生阻塞时，事件循环仍须能够继续推送 SSE 和处理请求。"""
+        gate = asyncio.Event()
+        self.manager._engine_factory = lambda workdir, mode: FakeEngine(workdir, mode, gate=gate)
+        session = await self.manager.create_session(None, "default")
+        run = await self.manager.start_run(session.session_id, "长任务")
+        await asyncio.sleep(0)
+
+        callback_started = Event()
+        release_callback = Event()
+
+        def blocking_close() -> None:
+            """模拟可能阻塞的模型 SDK stream.close()。"""
+            callback_started.set()
+            release_callback.wait(timeout=1)
+
+        run.run_control.interrupt_controller.add_callback(blocking_close)
+        pause_task = asyncio.create_task(self.manager.pause_run(run.run_id))
+
+        # 若 Pause 仍在事件循环内同步 close，下面的 sleep 无法获得执行机会。
+        await asyncio.sleep(0.02)
+        self.assertTrue(callback_started.is_set())
+        self.assertTrue(run.task.done())
+
+        release_callback.set()
+        await pause_task
+        await run.task
+        self.assertEqual(run.status, "paused")
+
     async def test_sse_replays_only_events_after_last_id(self) -> None:
         """SSE 重连只回放 Last-Event-ID 之后的缓存事件。"""
         session = await self.manager.create_session(None, "default")
@@ -106,6 +167,23 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(chunks), 1)
         self.assertIn("id: 2", chunks[0])
         self.assertIn("event: run_finished", chunks[0])
+
+    async def test_sse_yields_text_delta_before_run_finishes(self) -> None:
+        """文本 Delta 必须在最终事件之前到达订阅者，不能等 Run 完成后一次回放。"""
+        gate = asyncio.Event()
+        self.manager._engine_factory = lambda workdir, mode: FakeEngine(workdir, mode, gate=gate)
+        session = await self.manager.create_session(None, "default")
+        run = await self.manager.start_run(session.session_id, "流式内容")
+
+        stream = self.manager.stream_events(run.run_id, 0)
+        first_chunk = await anext(stream)
+        self.assertIn("event: text_delta", first_chunk)
+        self.assertFalse(run.task.done())
+
+        gate.set()
+        remaining = [chunk async for chunk in stream]
+        await run.task
+        self.assertTrue(any("event: run_finished" in chunk for chunk in remaining))
 
     async def test_workdir_is_restricted_to_configured_workspace(self) -> None:
         """浏览器不能创建指向白名单以外目录的 Session。"""

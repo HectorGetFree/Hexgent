@@ -35,6 +35,20 @@ export interface SessionResponse {
   active_run_id: string | null
   recent_run_ids: string[]
   plan: Plan | null
+  messages: SessionHistoryMessage[]
+}
+
+export interface SessionHistoryMessage {
+  sequence: number
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
+export interface SessionEntry {
+  sessionId: string
+  title: string
+  updatedAt: string
 }
 
 export interface RunResponse {
@@ -67,6 +81,19 @@ export interface PermissionRequestView {
   toolName: string
   reason: string
   permissionMode: PermissionMode
+}
+
+export interface ConversationMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  runId: string | null
+  createdAt: string
+  streaming: boolean
+  /** Assistant 消息对应 Run 的最终状态；运行中保持为空。 */
+  terminalStatus?: RunStatus | null
+  /** Agent 主动停止时提供的机器可读原因，例如 user_pause。 */
+  stopReason?: string | null
 }
 
 export interface RunFinishedPayload {

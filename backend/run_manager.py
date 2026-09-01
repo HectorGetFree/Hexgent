@@ -32,6 +32,49 @@ def beijing_now() -> datetime:
     return datetime.now(BEIJING)
 
 
+def _assistant_text(payload: Any) -> str:
+    """从 Responses API 的 Assistant message 记录中提取用户可见文本。"""
+    if not isinstance(payload, dict) or payload.get("role") != "assistant":
+        return ""
+    content = payload.get("content")
+    if not isinstance(content, list):
+        return ""
+    return "".join(
+        item.get("text", "")
+        for item in content
+        if isinstance(item, dict)
+        and item.get("type") in {"output_text", "text"}
+        and isinstance(item.get("text"), str)
+    )
+
+
+def transcript_messages(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把完整 Transcript 投影为刷新页面所需的用户与 Assistant 消息。"""
+    messages: list[dict[str, Any]] = []
+    for record in records:
+        record_type = record.get("type")
+        payload = record.get("payload")
+        role: str | None = None
+        content = ""
+        if record_type == "user_query" and isinstance(payload, dict):
+            role, content = "user", payload.get("content", "")
+        elif record_type == "steering_query_applied" and isinstance(payload, dict):
+            role, content = "user", payload.get("content", "")
+        elif record_type == "message":
+            role, content = "assistant", _assistant_text(payload)
+        if role is None or not isinstance(content, str) or not content:
+            continue
+        messages.append(
+            {
+                "sequence": record["sequence"],
+                "role": role,
+                "content": content,
+                "created_at": record["created_at"],
+            }
+        )
+    return messages
+
+
 @dataclass
 class SessionHandle:
     """Web Session 的运行时句柄，一个 Session 独占一个 AgentEngine。"""
@@ -148,6 +191,9 @@ class RunManager:
                 raise WebError(409, "run_already_active", "当前 Session 已有正在运行的任务", {"active_run_id": session.active_run_id})
             # 3. 每个 Run 使用全新的 RunControl，已触发中断的控制器绝不复用。
             handle = RunHandle(self._new_id("run"), session_id, query, RunControl())
+            # Run 已完成登记并即将由后台任务消费，此时即可接受 SSE、Steering 和控制请求。
+            # 若仍返回 pending，前端无法知道工作线程何时切换为 running。
+            handle.status = "running"
             async with self._lock:
                 self._runs[handle.run_id] = handle
             session.active_run_id = handle.run_id
@@ -160,7 +206,6 @@ class RunManager:
         """在线程中消费同步 Agent 流，并在异步侧完成 Run 收束。"""
         # 1. 保存主事件循环引用，供 Agent 工作线程线程安全地投递事件。
         self._loop = asyncio.get_running_loop()
-        handle.status = "running"
         try:
             # 2. 同步 AgentEngine.run() 不能阻塞 FastAPI 事件循环，放入工作线程。
             await asyncio.to_thread(self._consume_agent_events, handle)
@@ -257,7 +302,9 @@ class RunManager:
     async def pause_run(self, run_id: str) -> RunHandle:
         """请求运行中的 Run 安全暂停，并解除可能存在的权限等待。"""
         handle = await self._require_running(run_id)
-        handle.run_control.pause()
+        # 模型流的 close() 可能是阻塞式 SDK 调用，不能在 FastAPI 事件循环中执行；
+        # 否则 Pause HTTP、SSE 终态通知和工作线程收束可能同时被卡住。
+        await asyncio.to_thread(handle.run_control.pause)
         self._resolve_pending_permissions(run_id, "unavailable")
         return handle
 
@@ -266,7 +313,8 @@ class RunManager:
         handle = await self.get_run(run_id)
         if handle.status not in {"pending", "running"}:
             raise WebError(409, "invalid_run_status", "当前 Run 状态不允许取消", {"status": handle.status})
-        handle.run_control.cancel()
+        # Cancel 与 Pause 共享底层中断回调，同样隔离到工作线程。
+        await asyncio.to_thread(handle.run_control.cancel)
         self._resolve_pending_permissions(run_id, "unavailable")
         return handle
 
@@ -344,7 +392,17 @@ class RunManager:
     def session_dict(handle: SessionHandle) -> dict[str, Any]:
         """把 SessionHandle 投影为稳定的 API 响应字典。"""
         plan = handle.engine.tool_context.plan_store.get_plan()
-        return {"session_id": handle.session_id, "workdir": str(handle.engine.workdir), "permission_mode": handle.engine.session.settings.permission_mode, "active_run_id": handle.active_run_id, "recent_run_ids": list(reversed(handle.run_ids[-20:])), "plan": serialize_plan(plan) if plan else None}
+        store = getattr(handle.engine.session, "store", None)
+        records = store.read_transcript() if store is not None else []
+        return {
+            "session_id": handle.session_id,
+            "workdir": str(handle.engine.workdir),
+            "permission_mode": handle.engine.session.settings.permission_mode,
+            "active_run_id": handle.active_run_id,
+            "recent_run_ids": list(reversed(handle.run_ids[-20:])),
+            "plan": serialize_plan(plan) if plan else None,
+            "messages": transcript_messages(records),
+        }
 
     @staticmethod
     def run_dict(handle: RunHandle) -> dict[str, Any]:

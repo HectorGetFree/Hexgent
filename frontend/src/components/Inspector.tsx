@@ -6,6 +6,7 @@ interface InspectorProps {
   plan: Plan | null
   tools: ToolView[]
   events: AgentEvent[]
+  controlPending: 'pause' | 'cancel' | null
 }
 
 const eventLabels: Record<string, string> = {
@@ -25,12 +26,15 @@ const eventLabels: Record<string, string> = {
 }
 
 /** 以紧凑侧栏展示 Plan、工具执行和关键事件时间线。 */
-export function Inspector({ plan, tools, events }: InspectorProps) {
+export function Inspector({ plan, tools, events, controlPending }: InspectorProps) {
   const visibleEvents = events.filter((event) => event.type !== 'text_delta').slice(-8).reverse()
   return (
     <aside className="inspector">
       <section className="inspector-section">
-        <div className="inspector-title"><ListChecks size={15} /><span>执行计划</span>{plan && <em>R{plan.revision}</em>}</div>
+        <div className="inspector-title">
+          <ListChecks size={15} /><span>执行计划</span>
+          {controlPending ? <em>{controlPending === 'pause' ? '暂停中' : '取消中'}</em> : plan && <em>R{plan.revision}</em>}
+        </div>
         {!plan ? <p className="empty-copy">复杂任务创建 Plan 后会显示在这里</p> : (
           <div className="plan-card">
             <h3>{plan.objective}</h3>
@@ -38,7 +42,7 @@ export function Inspector({ plan, tools, events }: InspectorProps) {
               {plan.steps.map((step) => (
                 <li key={step.step_id} className={`plan-step ${step.status}`}>
                   <span className="step-icon">
-                    {step.status === 'completed' ? <Check size={12} /> : step.status === 'in_progress' ? <LoaderCircle size={13} /> : <Circle size={10} />}
+                    {step.status === 'completed' ? <Check size={12} /> : step.status === 'in_progress' && !controlPending ? <LoaderCircle size={13} /> : <Circle size={10} />}
                   </span>
                   <span>{step.content}</span>
                 </li>
