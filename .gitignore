@@ -25,8 +25,11 @@ htmlcov/
 # Build and package artifacts
 build/
 dist/
+node_modules/
+coverage/
 *.egg-info/
 .eggs/
+*.tsbuildinfo
 
 # IDE and editor settings
 .idea/

@@ -17,6 +17,13 @@ uv run python -m backend
 
 默认只允许 Session 使用服务启动目录作为 `workdir`，浏览器不能借此选择任意服务端路径。
 
+前端跨域来源默认只允许本地 Vite 开发服务器。生产环境通过仓库根目录 `.env`
+配置实际来源，多个来源使用英文逗号分隔：
+
+```bash
+HEXGENT_CORS_ALLOWED_ORIGINS=https://app.hexgent.example
+```
+
 ## 核心接口
 
 - `POST /api/sessions`：创建 Session。
