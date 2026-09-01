@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from hexgent.agent_engine import main
+from hexgent.adapters.cli.main import main
 from hexgent.config import ConfigError
 
 

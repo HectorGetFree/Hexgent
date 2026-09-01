@@ -22,6 +22,7 @@ from hexgent.plan import Plan, PlanStep
 
 
 agent_engine_module = import_module("hexgent.agent_engine")
+cli_module = import_module("hexgent.adapters.cli.main")
 
 
 class FakeTerminalIO:
@@ -43,7 +44,7 @@ class FakeTerminalIO:
         return nullcontext()
 
 
-class AgentEngineStreamTest(unittest.TestCase):
+class CliAdapterStreamTest(unittest.TestCase):
     """验证终端不会重复打印已经流式输出的最终回答。"""
 
     def setUp(self) -> None:
@@ -68,14 +69,14 @@ class AgentEngineStreamTest(unittest.TestCase):
         output = StringIO()
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["你好", "q"]),
             ),
             patch.object(agent_engine_module, "agent_loop", return_value=events),
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         rendered = output.getvalue()
         self.assertEqual(rendered.count("你好，世界"), 1)
@@ -131,14 +132,14 @@ class AgentEngineStreamTest(unittest.TestCase):
         output = StringIO()
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["检查", "q"]),
             ),
             patch.object(agent_engine_module, "agent_loop", return_value=events),
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         rendered = output.getvalue()
         self.assertIn("开始处理工具：create_plan(检查项目)", rendered)
@@ -167,14 +168,14 @@ class AgentEngineStreamTest(unittest.TestCase):
         output = StringIO()
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["读取文件", "q"]),
             ),
             patch.object(agent_engine_module, "agent_loop", return_value=events),
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         self.assertEqual(
             output.getvalue().count("工具结束：read_file，状态：成功"),
@@ -192,7 +193,7 @@ class AgentEngineStreamTest(unittest.TestCase):
         output = StringIO()
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["开始任务", "继续", "q"]),
             ),
@@ -203,7 +204,7 @@ class AgentEngineStreamTest(unittest.TestCase):
             ) as stream,
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         self.assertEqual(stream.call_count, 2)
         self.assertIn("第一轮收尾", output.getvalue())
@@ -230,7 +231,7 @@ class AgentEngineStreamTest(unittest.TestCase):
 
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["检查项目", "继续", "q"]),
             ),
@@ -241,7 +242,7 @@ class AgentEngineStreamTest(unittest.TestCase):
             ) as stream,
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         self.assertEqual(stream.call_count, 2)
         self.assertIn("Plan 尚未完成", output.getvalue())
@@ -271,7 +272,7 @@ class AgentEngineStreamTest(unittest.TestCase):
 
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["执行长任务", "继续", "q"]),
             ),
@@ -282,7 +283,7 @@ class AgentEngineStreamTest(unittest.TestCase):
             ) as stream,
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         self.assertEqual(stream.call_count, 2)
         self.assertIn("当前运行已中断", output.getvalue())
@@ -299,7 +300,7 @@ class AgentEngineStreamTest(unittest.TestCase):
         output = StringIO()
         with (
             patch.object(
-                agent_engine_module,
+                cli_module,
                 "TerminalIO",
                 return_value=FakeTerminalIO(["", "有效输入", "q"]),
             ),
@@ -310,7 +311,7 @@ class AgentEngineStreamTest(unittest.TestCase):
             ) as stream,
             patch("sys.stdout", output),
         ):
-            agent_engine_module.main()
+            cli_module.main()
 
         self.assertEqual(stream.call_count, 1)
         self.assertIn("继续运行", output.getvalue())

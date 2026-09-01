@@ -1,16 +1,16 @@
-"""Hexgent 命令行的统一输入输出边界。"""
+"""Hexgent 命令行的输入与控制信号边界。"""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 import signal
 import threading
 
-from .run_control import RunControl
-from .tool.tool_permission_pipeline import UserConfirmationResult
+from ...run_control import RunControl
+from ...tool.tool_permission_pipeline import UserConfirmationResult
 
 
 class TerminalIO:
-    """统一读取用户消息和工具权限确认。"""
+    """把终端输入、权限确认和 Ctrl+C 转换为 Core 接口。"""
 
     @contextmanager
     def capture_run_interrupt(
@@ -18,7 +18,7 @@ class TerminalIO:
         run_control: RunControl,
     ) -> Iterator[None]:
         """在当前 Agent 运行期间将 Ctrl+C 转换为本轮中断信号。"""
-        # 1. 非主线程不能注册进程信号处理器，此时仅保留控制器的程序化中断能力。
+        # 1. 非主线程不能注册进程信号处理器，只保留程序化中断能力。
         if threading.current_thread() is not threading.main_thread():
             yield
             return
@@ -35,21 +35,21 @@ class TerminalIO:
 
         signal.signal(signal.SIGINT, handle_interrupt)
         try:
-            # 3. 上游在此期间消费事件流，模型和工具层会观察同一个中断控制器。
+            # 3. 上游消费事件流时，Core 观察同一个 RunControl。
             yield
         finally:
-            # 4. 无论运行正常、异常还是中断，都恢复输入阶段原有的 Ctrl+C 行为。
+            # 4. 无论运行如何结束，都恢复输入阶段原有的 Ctrl+C 行为。
             signal.signal(signal.SIGINT, previous_handler)
 
     def read_message(self) -> str:
         """持续读取多行内容，直到输入空行或 /send 后提交。"""
-        # 1. 只在第一行展示用户提示，避免粘贴多行时重复绘制续行符号。
+        # 1. 只在第一行展示提示，避免粘贴多行时重复绘制续行符号。
         lines: list[str] = []
         while True:
             prompt = "\033[32m你：\033[0m" if not lines else ""
             line = input(prompt)
 
-            # 2. /send 或空行结束消息，实现输入内容后按两次回车提交。
+            # 2. /send 或空行结束消息，退出命令可以直接提交。
             if not lines and line.strip().lower() in {"q", "exit"}:
                 return line
             if line.strip().lower() == "/send":
