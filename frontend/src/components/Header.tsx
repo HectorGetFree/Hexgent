@@ -14,6 +14,9 @@ const statusLabels: Record<RunStatus, string> = {
   paused: '已暂停',
   cancelled: '已取消',
   completed: '已完成',
+  blocked: '已阻塞',
+  incomplete: '未完成',
+  limit_reached: '达到限制',
   failed: '失败',
 }
 

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ...config import load_config
@@ -14,6 +15,7 @@ from ...workspace import find_workspace_root
 from .errors import WebAdapterError
 from .routes import router
 from .run_manager import RunManager
+from .settings import WebSettings
 
 
 def create_app(
@@ -21,6 +23,7 @@ def create_app(
     config_path: Path | None = None,
     workdir: Path | None = None,
     run_manager: RunManager | None = None,
+    settings: WebSettings | None = None,
 ) -> FastAPI:
     """创建只负责网络协议转换的 FastAPI 应用。"""
     # 1. 生产入口从工作区加载配置；测试可以显式注入隔离 RunManager。
@@ -37,10 +40,18 @@ def create_app(
         yield
         await run_manager.shutdown()
 
+    active_settings = settings or WebSettings.from_environment()
     app = FastAPI(
         title="Hexgent Web Adapter",
         version="0.1.0",
         lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(active_settings.cors_allowed_origins),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Accept", "Content-Type", "Last-Event-ID"],
     )
     app.state.run_manager = run_manager
     app.include_router(router)

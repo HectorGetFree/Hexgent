@@ -1,6 +1,6 @@
 """Web Adapter 对外暴露的请求与响应协议。"""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,8 +31,21 @@ class SessionResponse(BaseModel):
     """可提供给网络调用方的 Session 状态。"""
 
     session_id: str
+    workdir: str
     permission_mode: PermissionMode
     active_run_id: str | None
+    recent_run_ids: list[str] = Field(default_factory=list)
+    plan: dict[str, Any] | None = None
+    messages: list["SessionMessageResponse"] = Field(default_factory=list)
+
+
+class SessionMessageResponse(BaseModel):
+    """从 Transcript 投影得到的一条用户可见历史消息。"""
+
+    sequence: int
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str
 
 
 class StartRunRequest(BaseModel):

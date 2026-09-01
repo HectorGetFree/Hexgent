@@ -1,4 +1,4 @@
-"""Hexgent Web 层的环境配置。"""
+"""Web Adapter 自身的网络协议配置。"""
 
 from dataclasses import dataclass
 from os import environ
@@ -14,20 +14,21 @@ DEFAULT_CORS_ORIGINS = (
 
 @dataclass(frozen=True)
 class WebSettings:
-    """与 Agent 领域配置隔离的 Web 协议层设置。"""
+    """独立于 HexgentConfig 的 HTTP 部署设置。"""
 
+    # 允许访问 API 的浏览器 Origin 白名单。
     cors_allowed_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
 
     @classmethod
     def from_environment(cls) -> "WebSettings":
-        """从逗号分隔的环境变量读取允许跨域访问的前端来源。"""
-        # 1. 与 Hexgent 客户端保持一致，开发环境可以在仓库根目录使用 .env。
+        """从环境变量加载逗号分隔的 CORS Origin。"""
+        # 1. 开发环境允许从仓库 .env 加载，但不会覆盖进程显式变量。
         load_dotenv(override=False)
-        # 2. 未配置时只开放本地 Vite 来源，生产环境必须显式提供部署域名。
+
+        # 2. 未配置时只允许本地 Vite；生产环境应显式配置部署域名。
         raw_origins = environ.get("HEXGENT_CORS_ALLOWED_ORIGINS")
         if raw_origins is None:
             return cls()
-        # 3. 清理空项和末尾斜杠，避免浏览器 Origin 精确匹配失败。
         origins = tuple(
             origin.strip().rstrip("/")
             for origin in raw_origins.split(",")

@@ -21,8 +21,14 @@ from ...tool.tool_permission_pipeline import (
     UserConfirmationResult,
 )
 from .errors import WebAdapterError
-from .event_serializer import BEIJING_TIMEZONE, build_web_event, serialize_agent_event
+from .event_serializer import (
+    BEIJING_TIMEZONE,
+    build_web_event,
+    serialize_agent_event,
+    serialize_plan,
+)
 from .schemas import RunResponse, RunStatus, SessionResponse
+from .session_projection import transcript_messages
 
 
 TERMINAL_RUN_STATUSES = {
@@ -68,6 +74,7 @@ class SessionHandle:
     engine: AgentEngine
     permission_mode: PermissionMode
     active_run_id: str | None = None
+    run_ids: list[str] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -133,7 +140,8 @@ class RunManager:
 
     async def get_session(self, session_id: str) -> SessionResponse:
         """返回一个 Session 的当前网络状态。"""
-        return self._session_response(self._require_session(session_id))
+        handle = self._require_session(session_id)
+        return await asyncio.to_thread(self._session_response, handle)
 
     async def start_run(self, session_id: str, query: str) -> RunResponse:
         """立即注册 Run，并在后台线程中消费同步 Agent 事件流。"""
@@ -155,6 +163,7 @@ class RunManager:
             handle = RunHandle(run_id, session_id, query, RunControl())
             self._runs[run_id] = handle
             session.active_run_id = run_id
+            session.run_ids.append(run_id)
 
         # 2. 后台 asyncio Task 再把同步 Generator 放入工作线程执行。
         handle.task = asyncio.create_task(
@@ -170,14 +179,15 @@ class RunManager:
     async def pause(self, run_id: str) -> RunResponse:
         """请求 Core 在最近安全边界暂停当前 Run。"""
         handle = self._require_active_run(run_id)
-        handle.run_control.pause()
+        # 模型 SDK 的关闭回调可能阻塞，不能占用 FastAPI 事件循环。
+        await asyncio.to_thread(handle.run_control.pause)
         self._resolve_pending_permissions(handle, "unavailable")
         return self._run_response(handle)
 
     async def cancel(self, run_id: str) -> RunResponse:
         """请求 Core 安全取消当前 Run。"""
         handle = self._require_active_run(run_id)
-        handle.run_control.cancel()
+        await asyncio.to_thread(handle.run_control.cancel)
         self._resolve_pending_permissions(handle, "unavailable")
         return self._run_response(handle)
 
@@ -313,7 +323,8 @@ class RunManager:
             {
                 "request_id": request_id,
                 "tool_name": tool_name,
-                "message": message,
+                "reason": message,
+                "permission_mode": self._session_permission_mode(handle),
             },
         )
         return pending
@@ -361,7 +372,7 @@ class RunManager:
         handle.status = "failed"
         handle.error = message
         handle.finished_at = datetime.now(BEIJING_TIMEZONE)
-        await self._publish_web_event(handle, "run_failed", {"message": message})
+        await self._publish_web_event(handle, "worker_failed", {"message": message})
 
     def _require_session(self, session_id: str) -> SessionHandle:
         """取得 Session，或形成稳定 404 错误。"""
@@ -408,11 +419,22 @@ class RunManager:
     @staticmethod
     def _session_response(handle: SessionHandle) -> SessionResponse:
         """构造 Session 网络响应。"""
+        plan = handle.engine.tool_context.plan_store.get_plan()
+        store = handle.engine.session.store
+        records = store.read_transcript() if store is not None else []
         return SessionResponse(
             session_id=handle.session_id,
+            workdir=str(handle.engine.workdir),
             permission_mode=handle.permission_mode,
             active_run_id=handle.active_run_id,
+            recent_run_ids=list(reversed(handle.run_ids[-20:])),
+            plan=serialize_plan(plan) if plan is not None else None,
+            messages=transcript_messages(records),
         )
+
+    def _session_permission_mode(self, handle: RunHandle) -> PermissionMode:
+        """取得权限请求所属 Session 的模式快照。"""
+        return self._require_session(handle.session_id).permission_mode
 
     @staticmethod
     def _run_response(handle: RunHandle) -> RunResponse:

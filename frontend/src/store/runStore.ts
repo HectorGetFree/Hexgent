@@ -141,9 +141,17 @@ export function appendTextDelta(
 /** 将 RunFinished 的 Agent 终态转换为 Web Run 的展示终态。 */
 export function terminalStatus(payload: RunFinishedPayload): RunResponse['status'] {
   if (payload.result.status === 'interrupted') return 'paused'
-  if (payload.result.status === 'cancelled') return 'cancelled'
-  if (payload.result.status === 'failed') return 'failed'
-  return 'completed'
+  const knownStatuses: RunResponse['status'][] = [
+    'cancelled',
+    'completed',
+    'blocked',
+    'incomplete',
+    'limit_reached',
+    'failed',
+  ]
+  return knownStatuses.includes(payload.result.status as RunResponse['status'])
+    ? payload.result.status as RunResponse['status']
+    : 'failed'
 }
 
 /**

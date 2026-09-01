@@ -7,22 +7,31 @@ import unittest
 from collections.abc import Generator
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
 
 from hexgent.adapters.web.app import create_app
+from hexgent.adapters.web.event_serializer import agent_event_payload
 from hexgent.adapters.web.run_manager import RunManager
+from hexgent.adapters.web.session_projection import transcript_messages
+from hexgent.adapters.web.settings import WebSettings
 from hexgent.config import HexgentConfig
 from hexgent.events import AgentEvent, AgentLoopResult, RunFinishedEvent, TextDeltaEvent
+from hexgent.plan import InMemoryPlanStore
 from hexgent.run_control import RunControl
+from hexgent.session import Session, SessionSettings
 from hexgent.tool.tool_permission_pipeline import UserConfirmationResult
 
 
 class FakeAgentEngine:
     """可控地模拟同步 AgentEngine 事件流。"""
 
-    def __init__(self, _config: HexgentConfig, _workdir: Path) -> None:
+    def __init__(self, config: HexgentConfig, workdir: Path) -> None:
+        self.workdir = workdir
+        self.session = Session(settings=SessionSettings(config.permission.default_mode))
+        self.tool_context = SimpleNamespace(plan_store=InMemoryPlanStore())
         self.started = Event()
         self.release = Event()
         self.wait_for_release = False
@@ -43,10 +52,22 @@ class FakeAgentEngine:
         self.started.set()
         if self.request_permission:
             self.permission_result = user_confirmation("write_file", "是否写入文件？")
-        if self.wait_for_release:
-            self.release.wait(timeout=2)
+        while (
+            self.wait_for_release
+            and not self.release.wait(timeout=0.01)
+            and not run_control.interrupt_controller.interrupted
+        ):
+            continue
         yield TextDeltaEvent(f"收到：{query}")
-        yield RunFinishedEvent(AgentLoopResult(f"收到：{query}", 0.01))
+        action = run_control.terminal_action
+        status = (
+            "cancelled"
+            if action == "cancel"
+            else "interrupted"
+            if action == "pause"
+            else "completed"
+        )
+        yield RunFinishedEvent(AgentLoopResult(f"收到：{query}", 0.01, status=status))
 
 
 class FakeEngineFactory:
@@ -157,6 +178,13 @@ class WebAdapterTest(unittest.TestCase):
                     break
             time.sleep(0.01)
         self.assertIsNotNone(request_id)
+        permission_event = next(
+            event
+            for event in self.client.app.state.run_manager._runs[run_id].events
+            if event["type"] == "permission_requested"
+        )
+        self.assertEqual(permission_event["payload"]["reason"], "是否写入文件？")
+        self.assertEqual(permission_event["payload"]["permission_mode"], "default")
 
         response = self.client.post(
             f"/api/runs/{run_id}/permissions/{request_id}",
@@ -190,6 +218,122 @@ class WebAdapterTest(unittest.TestCase):
         self.assertEqual([item.content for item in queries], ["先检查测试"])
         engine.release.set()
         self._wait_for_terminal(run_id)
+
+    def test_session_response_contains_refresh_projection(self) -> None:
+        """Session 响应应包含前端刷新所需的稳定字段。"""
+        session_id = self._create_session()
+
+        response = self.client.get(f"/api/sessions/{session_id}")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["workdir"], str(Path.cwd().resolve()))
+        self.assertEqual(body["recent_run_ids"], [])
+        self.assertIsNone(body["plan"])
+        self.assertEqual(body["messages"], [])
+
+    def test_pause_callback_does_not_block_http_event_loop(self) -> None:
+        """阻塞式流关闭回调不应卡住 FastAPI 的事件循环。"""
+        session_id = self._create_session()
+        engine = self.factory.engines[0]
+        engine.wait_for_release = True
+        started = self.client.post(
+            f"/api/sessions/{session_id}/runs",
+            json={"query": "长任务"},
+        )
+        self.assertTrue(engine.started.wait(timeout=1))
+        run_id = started.json()["run_id"]
+
+        callback_started = Event()
+        release_callback = Event()
+
+        def blocking_close() -> None:
+            callback_started.set()
+            release_callback.wait(timeout=1)
+
+        assert engine.last_control is not None
+        engine.last_control.interrupt_controller.add_callback(blocking_close)
+        import threading
+
+        response_holder: list[Any] = []
+        request_thread = threading.Thread(
+            target=lambda: response_holder.append(
+                self.client.post(f"/api/runs/{run_id}/pause")
+            )
+        )
+        request_thread.start()
+        self.assertTrue(callback_started.wait(timeout=1))
+
+        # Pause 尚在等待 close，GET 仍应可以获得事件循环响应。
+        status_response = self.client.get(f"/api/runs/{run_id}")
+        self.assertEqual(status_response.status_code, 200)
+        release_callback.set()
+        request_thread.join(timeout=1)
+        self.assertEqual(response_holder[0].status_code, 202)
+        self.assertEqual(self._wait_for_terminal(run_id)["status"], "paused")
+
+    def test_cors_only_allows_configured_origin(self) -> None:
+        """浏览器跨域预检只能命中显式 Origin 白名单。"""
+        app = create_app(
+            run_manager=self.manager,
+            settings=WebSettings(("https://app.hexgent.example",)),
+        )
+        with TestClient(app) as client:
+            allowed = client.options(
+                "/api/sessions",
+                headers={
+                    "Origin": "https://app.hexgent.example",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+            denied = client.options(
+                "/api/sessions",
+                headers={
+                    "Origin": "https://unknown.example",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(
+            allowed.headers["access-control-allow-origin"],
+            "https://app.hexgent.example",
+        )
+        self.assertNotIn("access-control-allow-origin", denied.headers)
+
+    def test_transcript_projects_only_visible_conversation(self) -> None:
+        """Session 刷新投影应排除工具协议等内部记录。"""
+        records = [
+            {
+                "sequence": 1,
+                "type": "user_query",
+                "created_at": "2026-09-01T10:00:00+08:00",
+                "payload": {"content": "你好"},
+            },
+            {
+                "sequence": 2,
+                "type": "message",
+                "created_at": "2026-09-01T10:00:01+08:00",
+                "payload": {
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "你好！"}],
+                },
+            },
+            {
+                "sequence": 3,
+                "type": "message",
+                "created_at": "2026-09-01T10:00:02+08:00",
+                "payload": {"type": "function_call_output", "output": "内部结果"},
+            },
+        ]
+        self.assertEqual(
+            [(item["role"], item["content"]) for item in transcript_messages(records)],
+            [("user", "你好"), ("assistant", "你好！")],
+        )
+
+    def test_unknown_agent_event_is_rejected(self) -> None:
+        """未知领域事件不得通过通用序列化泄漏内部字段。"""
+        with self.assertRaises(TypeError):
+            agent_event_payload(object())  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 """把 Agent Core 事件转换为稳定的网络事件协议。"""
 
-from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -22,27 +21,10 @@ from ...events import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
+from ...plan import Plan
 
 
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
-
-EVENT_TYPES: dict[type[Any], str] = {
-    TextDeltaEvent: "text_delta",
-    ToolStartedEvent: "tool_started",
-    ToolExecutionCompletedEvent: "tool_execution_completed",
-    ToolFinishedEvent: "tool_finished",
-    ToolBatchStartedEvent: "tool_batch_started",
-    ToolBatchFinishedEvent: "tool_batch_finished",
-    PlanCreatedEvent: "plan_created",
-    PlanUpdatedEvent: "plan_updated",
-    LoopLimitReachedEvent: "loop_limit_reached",
-    LoopTransitionEvent: "loop_transition",
-    ContextCompactionStartedEvent: "context_compaction_started",
-    ContextCompactionFinishedEvent: "context_compaction_finished",
-    ContextCompactionFailedEvent: "context_compaction_failed",
-    RunFinishedEvent: "run_finished",
-}
-
 
 def serialize_agent_event(
     event: AgentEvent,
@@ -50,16 +32,103 @@ def serialize_agent_event(
     run_id: str,
     sequence: int,
 ) -> dict[str, Any]:
-    """将一个 Core 事件转换为带顺序和时间的网络事件。"""
-    event_type = EVENT_TYPES.get(type(event))
-    if event_type is None:
-        raise ValueError(f"尚未注册 AgentEvent 的网络类型：{type(event).__name__}")
+    """显式选择公开字段，再转换为带顺序和时间的网络事件。"""
+    event_type, payload = agent_event_payload(event)
     return build_web_event(
         event_type,
-        asdict(event),
+        payload,
         run_id=run_id,
         sequence=sequence,
     )
+
+
+def agent_event_payload(event: AgentEvent) -> tuple[str, dict[str, Any]]:
+    """显式映射 Core 事件，避免领域对象新增字段时意外扩散到网络。"""
+    if isinstance(event, TextDeltaEvent):
+        return "text_delta", {"delta": event.delta}
+    if isinstance(event, ToolStartedEvent):
+        return "tool_started", {
+            "tool_name": event.tool_name,
+            "call_id": event.call_id,
+            "description": event.description,
+        }
+    if isinstance(event, ToolExecutionCompletedEvent):
+        return "tool_execution_completed", {
+            "tool_name": event.tool_name,
+            "call_id": event.call_id,
+            "status": event.status,
+        }
+    if isinstance(event, ToolFinishedEvent):
+        return "tool_finished", {
+            "tool_name": event.tool_name,
+            "call_id": event.call_id,
+            "status": event.status,
+        }
+    if isinstance(event, ToolBatchStartedEvent):
+        return "tool_batch_started", {
+            "batch_id": event.batch_id,
+            "tool_count": event.tool_count,
+            "max_workers": event.max_workers,
+        }
+    if isinstance(event, ToolBatchFinishedEvent):
+        return "tool_batch_finished", {
+            "batch_id": event.batch_id,
+            "tool_count": event.tool_count,
+            "succeeded_count": event.succeeded_count,
+            "failed_count": event.failed_count,
+            "skipped_count": event.skipped_count,
+            "elapsed_seconds": event.elapsed_seconds,
+        }
+    if isinstance(event, PlanCreatedEvent):
+        return "plan_created", {"plan": serialize_plan(event.plan)}
+    if isinstance(event, PlanUpdatedEvent):
+        return "plan_updated", {"plan": serialize_plan(event.plan)}
+    if isinstance(event, LoopLimitReachedEvent):
+        return "loop_limit_reached", {"reason": event.reason}
+    if isinstance(event, LoopTransitionEvent):
+        return "loop_transition", {"reason": event.reason}
+    if isinstance(event, ContextCompactionStartedEvent):
+        return "context_compaction_started", {
+            "before_tokens": event.before_tokens,
+        }
+    if isinstance(event, ContextCompactionFinishedEvent):
+        return "context_compaction_finished", {
+            "before_tokens": event.before_tokens,
+            "after_tokens": event.after_tokens,
+            "status": event.status,
+        }
+    if isinstance(event, ContextCompactionFailedEvent):
+        return "context_compaction_failed", {"message": event.message}
+    if isinstance(event, RunFinishedEvent):
+        return "run_finished", {
+            "result": {
+                "output_text": event.result.output_text,
+                "elapsed_seconds": event.result.elapsed_seconds,
+                "stop_reason": event.result.stop_reason,
+                "status": event.result.status,
+            }
+        }
+    raise TypeError(f"不支持的 AgentEvent：{type(event).__name__}")
+
+
+def serialize_plan(plan: Plan) -> dict[str, Any]:
+    """显式构造 Plan 网络快照。"""
+    return {
+        "objective": plan.objective,
+        "status": plan.status,
+        "steps": [
+            {
+                "content": step.content,
+                "process_message": step.process_message,
+                "status": step.status,
+                "step_id": step.step_id,
+            }
+            for step in plan.steps
+        ],
+        "revision": plan.revision,
+        "last_replan_reason": plan.last_replan_reason,
+        "blocked_reason": plan.blocked_reason,
+    }
 
 
 def build_web_event(

@@ -5,10 +5,10 @@ SSE 访问 FastAPI，不代理 `/api`。
 
 ## 开发启动
 
-先在仓库根目录启动后端：
+先在仓库根目录启动 Web Adapter：
 
 ```bash
-uv run uvicorn backend.app:create_app --factory --reload
+uv run uvicorn hexgent.adapters.web.app:create_app --factory --reload --port 8000
 ```
 
 再启动前端：

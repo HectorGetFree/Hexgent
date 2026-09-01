@@ -34,6 +34,9 @@ function activityLabel(event: AgentEvent): string | null {
 function emptyAssistantLabel(message: ConversationMessage): string {
   if (message.terminalStatus === 'paused') return '本次运行已暂停，Context 与 Plan 已保留。'
   if (message.terminalStatus === 'cancelled') return '本次运行已取消。'
+  if (message.terminalStatus === 'blocked') return '本次运行已阻塞，需要补充信息后继续。'
+  if (message.terminalStatus === 'incomplete') return '本次运行尚未完成，可以继续提交要求。'
+  if (message.terminalStatus === 'limit_reached') return '本次运行达到资源限制后已安全收束。'
   if (message.terminalStatus === 'failed') return '本次运行失败，未产生文本输出。'
   return '本次运行已结束，未产生文本输出。'
 }

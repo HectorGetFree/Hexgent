@@ -39,6 +39,7 @@ code { font-family: 'SFMono-Regular', Consolas, monospace; }
 .status-chip svg { fill: currentColor; }
 .status-running { color: #315f94; background: #f5f9fd; border-color: #cfdfef; }
 .status-failed, .status-cancelled { color: var(--danger); }
+.status-blocked, .status-incomplete, .status-limit_reached { color: #8a5a16; }
 .status-completed { color: var(--success); }
 
 .workspace-grid { height: calc(100vh - 64px); display: grid; grid-template-columns: 248px minmax(460px, 1fr) 350px; }

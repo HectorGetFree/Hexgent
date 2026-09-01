@@ -48,7 +48,9 @@ describe('Run Store 事件投影', () => {
     ['cancelled', 'cancelled'],
     ['failed', 'failed'],
     ['completed', 'completed'],
-    ['blocked', 'completed'],
+    ['blocked', 'blocked'],
+    ['incomplete', 'incomplete'],
+    ['limit_reached', 'limit_reached'],
   ])('把 Agent 终态 %s 映射为 Web 状态 %s', (agentStatus, webStatus) => {
     const payload: RunFinishedPayload = {
       result: {

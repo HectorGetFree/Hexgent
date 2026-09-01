@@ -7,6 +7,9 @@ export type RunStatus =
   | 'paused'
   | 'cancelled'
   | 'completed'
+  | 'blocked'
+  | 'incomplete'
+  | 'limit_reached'
   | 'failed'
 
 export type PlanStepStatus = 'pending' | 'in_progress' | 'completed'
