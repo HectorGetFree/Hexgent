@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
 from time import monotonic
 from typing import TYPE_CHECKING, Any
@@ -224,6 +224,7 @@ def _execute_scheduled_group(
     limits: ToolParallelLimits,
     retry_limits: ToolRetryLimits,
     permission_context: PermissionContext | None,
+    interrupt_controller: InterruptController | None,
 ) -> Generator[AgentEvent, None, tuple[bool, float]]:
     """执行连续分组，并立即发送并行工具的真实完成事件。"""
     from hexgent.events import ToolExecutionCompletedEvent
@@ -268,34 +269,73 @@ def _execute_scheduled_group(
         for item in executable
     }
 
-    # 2. 按真实完成顺序取得 Future，立即向 UI 报告执行阶段结果。
+    # 2. 按真实完成顺序取得 Future；短轮询让 Pause/Cancel 能及时终止只读工具。
     timed_out = False
+    interrupted_without_wait = False
+    pending = set(future_to_item)
     try:
-        for future in as_completed(
-            future_to_item,
-            timeout=limits.batch_timeout_seconds,
-        ):
-            item = future_to_item[future]
-            try:
-                item.result = future.result()
-            except Exception as error:
-                item.result = ToolExecutionResult(
-                    "error",
-                    f"错误：并行工具执行失败：{error}",
-                    True,
-                    failure=ToolFailure(
-                        "tool_internal_error",
-                        "scheduling",
-                        f"并行工具执行失败：{error}",
-                    ),
-                )
-            yield ToolExecutionCompletedEvent(
-                item.tool_call.name,
-                item.tool_call.call_id,
-                item.result.status,
+        while pending:
+            if (
+                interrupt_controller is not None
+                and interrupt_controller.interrupted
+            ):
+                # 只读工具允许放弃尚未完成的结果；运行中的 Python 线程不能强杀，
+                # 但其结果不再提交，Run 可在配对 interrupted 结果后立即收束。
+                cancellable = {
+                    future
+                    for future in pending
+                    if get_tool(future_to_item[future].tool_call.name) is not None
+                    and get_tool(
+                        future_to_item[future].tool_call.name
+                    ).interrupt_behavior == "cancel"
+                }
+                for future in cancellable:
+                    item = future_to_item[future]
+                    future.cancel()
+                    item.result = _interrupted_tool_result()
+                    yield ToolExecutionCompletedEvent(
+                        item.tool_call.name,
+                        item.tool_call.call_id,
+                        item.result.status,
+                    )
+                pending.difference_update(cancellable)
+                interrupted_without_wait = interrupted_without_wait or bool(cancellable)
+                if not pending:
+                    break
+
+            remaining = limits.batch_timeout_seconds - (monotonic() - started_at)
+            if remaining <= 0:
+                timed_out = True
+                break
+            completed, pending = wait(
+                pending,
+                timeout=min(0.05, remaining),
+                return_when=FIRST_COMPLETED,
             )
-    except TimeoutError:
-        timed_out = True
+            for future in completed:
+                item = future_to_item[future]
+                try:
+                    item.result = future.result()
+                except Exception as error:
+                    item.result = ToolExecutionResult(
+                        "error",
+                        f"错误：并行工具执行失败：{error}",
+                        True,
+                        failure=ToolFailure(
+                            "tool_internal_error",
+                            "scheduling",
+                            f"并行工具执行失败：{error}",
+                        ),
+                    )
+                yield ToolExecutionCompletedEvent(
+                    item.tool_call.name,
+                    item.tool_call.call_id,
+                    item.result.status,
+                )
+    except BaseException:
+        # 生成器被调用方提前关闭或发生异常时，也不能遗留尚未启动的 Future。
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
 
     # 3. 超时调用按原顺序获得配对错误；已运行线程不再阻塞等待。
     if timed_out:
@@ -318,7 +358,10 @@ def _execute_scheduled_group(
                 item.tool_call.call_id,
                 item.result.status,
             )
-    executor.shutdown(wait=not timed_out, cancel_futures=timed_out)
+    executor.shutdown(
+        wait=not timed_out and not interrupted_without_wait,
+        cancel_futures=timed_out or interrupted_without_wait,
+    )
     return True, monotonic() - started_at
 
 
@@ -469,6 +512,7 @@ def execute_tool_batch(
             limits=limits,
             retry_limits=active_retry_limits,
             permission_context=permission_context,
+            interrupt_controller=interrupt_controller,
         )
 
         # 4. 首次调用成功后生成组内重复结果；失败时重新真实执行。
