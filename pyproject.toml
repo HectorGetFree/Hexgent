@@ -3,7 +3,14 @@ name = "hexgent"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "fastapi>=0.116.0",
     "openai>=3.3.1",
     "python-dotenv>=1.2.3",
     "tomli>=2.0.0; python_version < '3.11'",
+    "uvicorn>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
 ]
