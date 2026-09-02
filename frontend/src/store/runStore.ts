@@ -44,11 +44,11 @@ interface RunWorkspaceState {
   submitting: boolean
   controlPending: 'pause' | 'cancel' | null
   error: string | null
-  notice: string | null
   initialize: (mode?: PermissionMode) => Promise<void>
   createNewSession: () => Promise<void>
   switchSession: (sessionId: string) => Promise<void>
   submitQuery: (query: string) => Promise<void>
+  resumeRun: () => Promise<void>
   requestPause: () => Promise<void>
   requestCancel: () => Promise<void>
   answerPermission: (requestId: string, decision: 'allow' | 'deny') => Promise<void>
@@ -227,7 +227,6 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
   submitting: false,
   controlPending: null,
   error: null,
-  notice: null,
 
   /** 恢复浏览器记住的 Session；不存在或失效时创建新 Session。 */
   initialize: async (mode = 'default') => {
@@ -277,7 +276,7 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
   /** 创建独立 Web Session，并把它加入左侧会话导航。 */
   createNewSession: async () => {
     const mode = get().session?.permission_mode ?? 'default'
-    set({ initializing: true, error: null, notice: null })
+    set({ initializing: true, error: null })
     try {
       disconnectActiveStream?.()
       disconnectActiveStream = null
@@ -304,7 +303,7 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
   /** 切换到浏览器记录的 Web Session；失效条目从导航中移除。 */
   switchSession: async (sessionId) => {
     if (sessionId === get().session?.session_id) return
-    set({ initializing: true, error: null, notice: null })
+    set({ initializing: true, error: null })
     try {
       const session = await getSession(sessionId)
       let run: RunResponse | null = null
@@ -337,19 +336,23 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
   submitQuery: async (query) => {
     const { session, run } = get()
     if (!session || !query.trim()) return
-    set({ submitting: true, error: null, notice: null })
+    set({ submitting: true, error: null })
     try {
       if (run && ['pending', 'running'].includes(run.status)) {
         await steerRun(run.run_id, query)
         set((state) => ({
           messages: [
-            ...state.messages,
+            ...finishAssistantMessages(state.messages, run.run_id, 'incomplete', 'steered'),
             conversationMessage('user', query, run.run_id, false),
             conversationMessage('assistant', '', run.run_id, true),
           ],
-          notice: 'Steering 已提交，将在完整 Turn 边界生效。',
         }))
       } else {
+        // 暂停后输入新目标表示放弃旧 Plan，再以原始 Query 开始新 Run。
+        if (run?.status === 'paused') {
+          await cancelRun(run.run_id)
+          set({ plan: null })
+        }
         // 新 Run 清理 Run 级工具和事件，但保留同一 Session 的完整对话时间线。
         const nextRun = await createRun(session.session_id, query)
         set((state) => ({
@@ -383,20 +386,43 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
     }
   },
 
-  /** 请求 Pause，但不提前把本地状态伪装成 paused。 */
+  /** 暂停后不改变目标，以同一 Session、Context 和 Plan 创建恢复 Run。 */
+  resumeRun: async () => {
+    const session = get().session
+    const run = get().run
+    if (!session || run?.status !== 'paused') return
+    set({ submitting: true, error: null })
+    try {
+      const nextRun = await createRun(session.session_id, '继续', false)
+      set(() => ({
+        run: nextRun,
+        tools: [],
+        events: [],
+        permissions: [],
+        connectionStatus: 'connecting',
+      }))
+      openRunStream(nextRun.run_id)
+    } catch (error) {
+      set({ error: messageOf(error) })
+    } finally {
+      set({ submitting: false })
+    }
+  },
+
+  /** 点击后立即进入页面暂停态，Core 继续在后台收束到安全边界。 */
   requestPause: async () => {
     const run = get().run
-    if (!run || run.status !== 'running') return
+    if (!run || !['pending', 'running'].includes(run.status)) return
     set({
+      run: { ...run, status: 'paused' },
       controlPending: 'pause',
       error: null,
-      notice: '正在请求暂停，等待当前操作到达安全边界。',
+      messages: finishAssistantMessages(get().messages, run.run_id, 'paused', 'user_pause'),
     })
     try {
       await pauseRun(run.run_id)
-      set({ notice: '暂停请求已接受，正在等待 Agent 安全收束。' })
     } catch (error) {
-      set({ controlPending: null, error: messageOf(error) })
+      set({ run, controlPending: null, error: messageOf(error) })
     }
   },
 
@@ -407,11 +433,9 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
     set({
       controlPending: 'cancel',
       error: null,
-      notice: '正在取消当前 Run，已完成的副作用不会回滚。',
     })
     try {
       await cancelRun(run.run_id)
-      set({ notice: '取消请求已接受，已完成的副作用不会回滚。' })
     } catch (error) {
       set({ controlPending: null, error: messageOf(error) })
     }
@@ -444,7 +468,9 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
     }
     if (event.type === 'text_delta') {
       const payload = event.payload as { delta: string }
-      patch.messages = appendTextDelta(state.messages, event.run_id, payload.delta)
+      if (!(state.controlPending === 'pause' && state.run?.status === 'paused')) {
+        patch.messages = appendTextDelta(state.messages, event.run_id, payload.delta)
+      }
     } else if (event.type === 'tool_started' || event.type === 'tool_execution_completed' || event.type === 'tool_finished') {
       patch.tools = updateTools(state.tools, event)
     } else if (event.type === 'plan_created' || event.type === 'plan_updated') {

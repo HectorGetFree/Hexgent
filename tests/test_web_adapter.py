@@ -19,7 +19,7 @@ from hexgent.adapters.web.session_projection import transcript_messages
 from hexgent.adapters.web.settings import WebSettings
 from hexgent.config import HexgentConfig
 from hexgent.events import AgentEvent, AgentLoopResult, RunFinishedEvent, TextDeltaEvent
-from hexgent.plan import InMemoryPlanStore
+from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.run_control import RunControl
 from hexgent.session import Session, SessionSettings
 from hexgent.tool.tool_permission_pipeline import UserConfirmationResult
@@ -68,6 +68,10 @@ class FakeAgentEngine:
             else "completed"
         )
         yield RunFinishedEvent(AgentLoopResult(f"收到：{query}", 0.01, status=status))
+
+    def cancel_pending_task(self, _reason: str = "用户取消暂停任务") -> None:
+        """模拟 Core 终结暂停后保留的 Plan。"""
+        self.tool_context.plan_store.clear_plan()
 
 
 class FakeEngineFactory:
@@ -272,6 +276,59 @@ class WebAdapterTest(unittest.TestCase):
         self.assertEqual(response_holder[0].status_code, 202)
         self.assertEqual(self._wait_for_terminal(run_id)["status"], "paused")
 
+    def test_new_run_is_immediately_controllable_and_pause_reaches_core(self) -> None:
+        """创建接口返回后应立即可暂停，不能因 pending/running 不同步而静默失效。"""
+        session_id = self._create_session()
+        engine = self.factory.engines[0]
+        engine.wait_for_release = True
+        started = self.client.post(
+            f"/api/sessions/{session_id}/runs",
+            json={"query": "长任务"},
+        )
+        self.assertTrue(engine.started.wait(timeout=1))
+        run_id = started.json()["run_id"]
+
+        paused = self.client.post(f"/api/runs/{run_id}/pause")
+
+        self.assertEqual(started.json()["status"], "running")
+        self.assertEqual(paused.status_code, 202)
+        assert engine.last_control is not None
+        self.assertEqual(engine.last_control.terminal_action, "pause")
+        self.assertEqual(self._wait_for_terminal(run_id)["status"], "paused")
+
+    def test_paused_run_can_cancel_retained_plan_before_new_query(self) -> None:
+        """暂停后提交新目标前，应能终结旧 Plan 且不伪装为活跃 Run Cancel。"""
+        session_id = self._create_session()
+        engine = self.factory.engines[0]
+        engine.tool_context.plan_store.set_plan(
+            Plan(
+                "旧任务",
+                "in_progress",
+                [PlanStep("继续旧任务", "正在继续旧任务", "in_progress", "step-1")],
+            )
+        )
+        engine.wait_for_release = True
+        started = self.client.post(
+            f"/api/sessions/{session_id}/runs",
+            json={"query": "旧任务"},
+        )
+        self.assertTrue(engine.started.wait(timeout=1))
+        run_id = started.json()["run_id"]
+        self.assertEqual(self.client.post(f"/api/runs/{run_id}/pause").status_code, 202)
+        self.assertEqual(self._wait_for_terminal(run_id)["status"], "paused")
+
+        cancelled = self.client.post(f"/api/runs/{run_id}/cancel")
+        restarted = self.client.post(
+            f"/api/sessions/{session_id}/runs",
+            json={"query": "新任务"},
+        )
+
+        self.assertEqual(cancelled.status_code, 202)
+        self.assertIsNone(engine.tool_context.plan_store.get_plan())
+        self.assertEqual(restarted.status_code, 202)
+        engine.release.set()
+        self._wait_for_terminal(restarted.json()["run_id"])
+
     def test_cors_only_allows_configured_origin(self) -> None:
         """浏览器跨域预检只能命中显式 Origin 白名单。"""
         app = create_app(
@@ -328,6 +385,54 @@ class WebAdapterTest(unittest.TestCase):
         self.assertEqual(
             [(item["role"], item["content"]) for item in transcript_messages(records)],
             [("user", "你好"), ("assistant", "你好！")],
+        )
+
+    def test_transcript_hides_resume_query_and_persists_steering(self) -> None:
+        """内部续跑指令不可见，Steering 应作为用户消息在刷新后恢复。"""
+        records = [
+            {
+                "sequence": 1,
+                "type": "web_hidden_query",
+                "created_at": "2026-09-01T10:00:00+08:00",
+                "payload": {"content": "继续"},
+            },
+            {
+                "sequence": 2,
+                "type": "user_query",
+                "created_at": "2026-09-01T10:00:01+08:00",
+                "payload": {"content": "继续"},
+            },
+            {
+                "sequence": 3,
+                "type": "web_steering_submitted",
+                "created_at": "2026-09-01T10:00:02+08:00",
+                "payload": {"content": "改为只读检查"},
+            },
+        ]
+        self.assertEqual(
+            [(item["role"], item["content"]) for item in transcript_messages(records)],
+            [("user", "改为只读检查")],
+        )
+
+    def test_transcript_uses_finished_output_as_refresh_fallback(self) -> None:
+        """缺少 Assistant message 时仍可由 Run 终态恢复最终回答。"""
+        records = [
+            {
+                "sequence": 1,
+                "type": "user_query",
+                "created_at": "2026-09-01T10:00:00+08:00",
+                "payload": {"content": "检查项目"},
+            },
+            {
+                "sequence": 2,
+                "type": "agent_run_finished",
+                "created_at": "2026-09-01T10:00:01+08:00",
+                "payload": {"output_text": "检查完成"},
+            },
+        ]
+        self.assertEqual(
+            [(item["role"], item["content"]) for item in transcript_messages(records)],
+            [("user", "检查项目"), ("assistant", "检查完成")],
         )
 
     def test_unknown_agent_event_is_rejected(self) -> None:

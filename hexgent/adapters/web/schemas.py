@@ -54,6 +54,9 @@ class StartRunRequest(BaseModel):
     # 必须保持原文传入 Agent Core 的用户 Query。
     query: str = Field(min_length=1)
 
+    # false 表示 Adapter 内部恢复指令，不应作为一条用户消息投影到页面。
+    visible_query: bool = True
+
 
 class SteeringRequest(BaseModel):
     """向当前活跃 Run 的 FIFO 提交一条改向要求。"""

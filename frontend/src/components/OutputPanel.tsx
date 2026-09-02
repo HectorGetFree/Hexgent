@@ -1,5 +1,5 @@
-import { Bot, Sparkles } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { Bot, Check, Copy, Pencil, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -8,7 +8,7 @@ import type { AgentEvent, ConversationMessage } from '../types/api'
 interface OutputPanelProps {
   messages: ConversationMessage[]
   events?: AgentEvent[]
-  controlPending?: 'pause' | 'cancel' | null
+  onEditQuery?: (query: string) => void
 }
 
 /** 把公开运行事件转换成终端灰色信息在 Web 中的等价表达。 */
@@ -42,14 +42,22 @@ function emptyAssistantLabel(message: ConversationMessage): string {
 }
 
 /** 按同一 Session 的时间顺序连续展示用户 Query 和 Agent 回答。 */
-export function OutputPanel({ messages, events = [], controlPending = null }: OutputPanelProps) {
+export function OutputPanel({ messages, events = [], onEditQuery }: OutputPanelProps) {
   const endRef = useRef<HTMLDivElement>(null)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const activities = events.map(activityLabel).filter((label): label is string => Boolean(label)).slice(-16)
   const latestAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages])
+
+  /** 复制原始 Query 或 Agent Markdown 文本，并短暂展示成功状态。 */
+  async function copyMessage(message: ConversationMessage): Promise<void> {
+    await navigator.clipboard.writeText(message.content)
+    setCopiedMessageId(message.id)
+    window.setTimeout(() => setCopiedMessageId(null), 1200)
+  }
 
   if (messages.length === 0) {
     return (
@@ -69,6 +77,27 @@ export function OutputPanel({ messages, events = [], controlPending = null }: Ou
             <span className="message-avatar" aria-hidden="true"><Bot size={18} /></span>
           )}
           <div className="message-content">
+            <div className="message-actions">
+              {message.role === 'user' && onEditQuery && (
+                <button
+                  type="button"
+                  title="编辑这条 Query"
+                  aria-label="编辑这条 Query"
+                  onClick={() => onEditQuery(message.content)}
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+              <button
+                type="button"
+                title="复制内容"
+                aria-label="复制内容"
+                disabled={!message.content}
+                onClick={() => void copyMessage(message)}
+              >
+                {copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>
             {message.id === latestAssistantId && activities.length > 0 && (
               <div className="activity-stream" aria-label="运行过程">
                 {activities.map((activity, index) => <p key={`${index}_${activity}`}>{activity}</p>)}
@@ -84,11 +113,7 @@ export function OutputPanel({ messages, events = [], controlPending = null }: Ou
               <div className="thinking-state">
                 <span className="spinner" />
                 <span>
-                  {controlPending === 'pause'
-                    ? '正在暂停，等待当前操作安全收束'
-                    : controlPending === 'cancel'
-                      ? '正在取消，等待当前操作安全收束'
-                      : 'Hexgent 正在处理'}
+                  {'Hexgent 正在处理'}
                 </span>
               </div>
             ) : (

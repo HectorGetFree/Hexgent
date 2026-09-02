@@ -85,6 +85,7 @@ class RunHandle:
     run_id: str
     session_id: str
     query: str
+    visible_query: bool
     run_control: RunControl
     status: RunStatus = "pending"
     created_at: datetime = field(
@@ -143,14 +144,27 @@ class RunManager:
         handle = self._require_session(session_id)
         return await asyncio.to_thread(self._session_response, handle)
 
-    async def start_run(self, session_id: str, query: str) -> RunResponse:
+    async def start_run(
+        self,
+        session_id: str,
+        query: str,
+        *,
+        visible_query: bool = True,
+    ) -> RunResponse:
         """立即注册 Run，并在后台线程中消费同步 Agent 事件流。"""
         session = self._require_session(session_id)
         normalized_query = query.strip()
         if not normalized_query:
             raise WebAdapterError(422, "empty_query", "用户 Query 不能为空")
 
-        # 1. 同一 Session 只允许一个活跃 Run；冲突交给调用方决定如何处理。
+        # 1. run_finished 已经发布但 Worker 尚在 finally 时，先等待旧 Run 释放槽位。
+        previous_run_id = session.active_run_id
+        if previous_run_id is not None:
+            previous = self._require_run(previous_run_id)
+            if self._is_terminal(previous) and previous.task is not None:
+                await asyncio.shield(previous.task)
+
+        # 2. 同一 Session 只允许一个活跃 Run；冲突交给调用方决定如何处理。
         async with session.lock:
             if session.active_run_id is not None:
                 raise WebAdapterError(
@@ -160,12 +174,14 @@ class RunManager:
                     {"active_run_id": session.active_run_id},
                 )
             run_id = f"run_{uuid4().hex[:12]}"
-            handle = RunHandle(run_id, session_id, query, RunControl())
+            handle = RunHandle(run_id, session_id, query, visible_query, RunControl())
+            # Run 已完成登记并可以接收 Pause、Cancel 和 Steer，立即对外视为 running。
+            handle.status = "running"
             self._runs[run_id] = handle
             session.active_run_id = run_id
             session.run_ids.append(run_id)
 
-        # 2. 后台 asyncio Task 再把同步 Generator 放入工作线程执行。
+        # 3. 后台 asyncio Task 再把同步 Generator 放入工作线程执行。
         handle.task = asyncio.create_task(
             self._run_worker(session, handle),
             name=f"hexgent-{run_id}",
@@ -186,7 +202,16 @@ class RunManager:
 
     async def cancel(self, run_id: str) -> RunResponse:
         """请求 Core 安全取消当前 Run。"""
-        handle = self._require_active_run(run_id)
+        handle = self._require_run(run_id)
+        if handle.status == "paused":
+            # 暂停 Run 已经结束；等待 Worker 完全释放 Engine 后终结旧 Plan。
+            if handle.task is not None:
+                await asyncio.shield(handle.task)
+            session = self._require_session(handle.session_id)
+            await asyncio.to_thread(session.engine.cancel_pending_task)
+            return self._run_response(handle)
+        if self._is_terminal(handle):
+            raise WebAdapterError(409, "run_not_active", "Agent Run 已经结束")
         await asyncio.to_thread(handle.run_control.cancel)
         self._resolve_pending_permissions(handle, "unavailable")
         return self._run_response(handle)
@@ -194,6 +219,11 @@ class RunManager:
     async def steer(self, run_id: str, query: str) -> RunResponse:
         """把原始 Query 按 FIFO 提交到当前 Run 的 SteeringMailbox。"""
         handle = self._require_active_run(run_id)
+        session = self._require_session(handle.session_id)
+        session.engine.session.record_runtime_event(
+            "web_steering_submitted",
+            {"content": query},
+        )
         handle.run_control.steer(query)
         return self._run_response(handle)
 
@@ -274,6 +304,11 @@ class RunManager:
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         """在线程中消费 Core 事件，并同步提交到主事件循环。"""
+        if not handle.visible_query:
+            session.engine.session.record_runtime_event(
+                "web_hidden_query",
+                {"content": handle.query},
+            )
         confirmation = self._build_confirmation(handle, loop)
         for event in session.engine.run(
             handle.query,

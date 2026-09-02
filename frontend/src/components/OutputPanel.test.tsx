@@ -30,12 +30,12 @@ describe('OutputPanel Assistant 运行状态', () => {
     expect(html).not.toContain('Hexgent 正在处理')
   })
 
-  it('取消请求提交后立即显示正在取消', () => {
+  it('不向用户展示取消协议的内部收束提示', () => {
     const html = renderToStaticMarkup(
-      <OutputPanel messages={[assistantMessage(true)]} controlPending="cancel" />,
+      <OutputPanel messages={[assistantMessage(true)]} />,
     )
-    expect(html).toContain('正在取消，等待当前操作安全收束')
-    expect(html).not.toContain('Hexgent 正在处理')
+    expect(html).not.toContain('正在取消，等待当前操作安全收束')
+    expect(html).toContain('Hexgent 正在处理')
   })
 
   it('在黑色回答前展示灰色运行过程', () => {
@@ -55,5 +55,24 @@ describe('OutputPanel Assistant 运行状态', () => {
     expect(html).toContain('运行过程')
     expect(html).toContain('开始处理工具：读取配置文件')
     expect(html).toContain('最终结论')
+  })
+
+  it('用户 Query 支持复制和重新编辑，Agent 回答支持复制', () => {
+    const userMessage: ConversationMessage = {
+      id: 'user_1',
+      role: 'user',
+      content: '检查项目',
+      runId: 'run_1',
+      createdAt: '2026-09-01T15:00:00+08:00',
+      streaming: false,
+    }
+    const html = renderToStaticMarkup(
+      <OutputPanel
+        messages={[userMessage, { ...assistantMessage(false), content: '检查完成' }]}
+        onEditQuery={() => undefined}
+      />,
+    )
+    expect(html.match(/aria-label="复制内容"/g)).toHaveLength(2)
+    expect(html).toContain('aria-label="编辑这条 Query"')
   })
 })

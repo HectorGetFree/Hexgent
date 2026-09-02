@@ -1,10 +1,9 @@
-import { Check, Circle, ListChecks, LoaderCircle, TerminalSquare } from 'lucide-react'
+import { Check, Circle, ListChecks, LoaderCircle } from 'lucide-react'
 
-import type { AgentEvent, Plan, ToolView } from '../types/api'
+import type { AgentEvent, Plan } from '../types/api'
 
 interface InspectorProps {
   plan: Plan | null
-  tools: ToolView[]
   events: AgentEvent[]
   controlPending: 'pause' | 'cancel' | null
 }
@@ -26,7 +25,7 @@ const eventLabels: Record<string, string> = {
 }
 
 /** 以紧凑侧栏展示 Plan、工具执行和关键事件时间线。 */
-export function Inspector({ plan, tools, events, controlPending }: InspectorProps) {
+export function Inspector({ plan, events, controlPending }: InspectorProps) {
   const visibleEvents = events.filter((event) => event.type !== 'text_delta').slice(-8).reverse()
   return (
     <aside className="inspector">
@@ -50,21 +49,6 @@ export function Inspector({ plan, tools, events, controlPending }: InspectorProp
             </ol>
             {plan.blocked_reason && <p className="blocked-reason">{plan.blocked_reason}</p>}
           </div>
-        )}
-      </section>
-
-      <section className="inspector-section">
-        <div className="inspector-title"><TerminalSquare size={15} /><span>工具活动</span><em>{tools.length}</em></div>
-        {tools.length === 0 ? <p className="empty-copy">尚未执行工具</p> : (
-          <ul className="tool-list">
-            {tools.slice().reverse().map((tool) => (
-              <li key={tool.callId}>
-                <span className={`tool-status ${tool.status}`} />
-                <div><strong>{tool.toolName}</strong><small title={tool.description}>{tool.description}</small></div>
-                <code>{tool.status}</code>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
 

@@ -2,6 +2,7 @@
 """与外部入口无关的 Hexgent Agent Core 门面。"""
 
 from collections.abc import Generator
+from dataclasses import asdict
 from dataclasses import replace
 from pathlib import Path
 from threading import Lock
@@ -120,3 +121,20 @@ class AgentEngine:
             # 6. 正常结束、异常或调用方关闭事件流时都释放 Engine 占用标记。
             with self._run_lock:
                 self._run_active = False
+
+    def cancel_pending_task(self, reason: str = "用户取消暂停任务") -> None:
+        """在没有活跃 Run 时终结保留的 Plan，不回滚已经发生的副作用。"""
+        # 1. 暂停 Run 完全收束前不允许并发修改共享 PlanStore。
+        with self._run_lock:
+            if self._run_active:
+                raise RuntimeError("当前 AgentEngine 仍有正在执行的 Agent Run")
+
+            # 2. 取消前先把 Plan 快照写入 Session 事实，再清除继续执行义务。
+            plan = self.tool_context.plan_store.get_plan()
+            if plan is None:
+                return
+            self.session.record_runtime_event(
+                "plan_cancelled",
+                {"reason": reason, "plan": asdict(plan)},
+            )
+            self.tool_context.plan_store.clear_plan()

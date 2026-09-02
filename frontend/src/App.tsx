@@ -1,5 +1,5 @@
 import { AlertTriangle, X } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Composer } from './components/Composer'
 import { Header } from './components/Header'
@@ -12,6 +12,7 @@ import { useRunStore } from './store/runStore'
 /** 组合 Session、Run 输出、控制区和运行时检查器的工作台页面。 */
 export default function App() {
   const store = useRunStore()
+  const [composerQuery, setComposerQuery] = useState('')
 
   useEffect(() => {
     void store.initialize()
@@ -30,31 +31,36 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Header runStatus={store.run?.status} connectionStatus={store.connectionStatus} controlPending={store.controlPending} />
+      <Header runStatus={store.run?.status} connectionStatus={store.connectionStatus} />
       {store.error && (
         <div className="error-banner" role="alert">
           <AlertTriangle size={16} /><span>{store.error}</span>
           <button aria-label="关闭错误" onClick={store.clearError}><X size={15} /></button>
         </div>
       )}
-      {store.notice && <div className="notice-banner">{store.notice}</div>}
       {store.session ? (
         <div className="workspace-grid">
           <SessionRail session={store.session} entries={store.sessionEntries} onCreate={store.createNewSession} onSwitch={store.switchSession} />
           <main className="conversation-pane">
             <div className="conversation-scroll">
-              <OutputPanel messages={store.messages} events={store.events} controlPending={store.controlPending} />
+              <OutputPanel
+                messages={store.messages}
+                events={store.events}
+                onEditQuery={setComposerQuery}
+              />
             </div>
             <Composer
               runStatus={store.run?.status}
               submitting={store.submitting}
               controlPending={store.controlPending}
+              query={composerQuery}
+              onQueryChange={setComposerQuery}
               onSubmit={store.submitQuery}
               onPause={store.requestPause}
-              onCancel={store.requestCancel}
+              onResume={store.resumeRun}
             />
           </main>
-          <Inspector plan={store.plan} tools={store.tools} events={store.events} controlPending={store.controlPending} />
+          <Inspector plan={store.plan} events={store.events} controlPending={store.controlPending} />
         </div>
       ) : (
         <main className="fatal-state">无法创建 Session，请确认后端已经启动。</main>

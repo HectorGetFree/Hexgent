@@ -10,6 +10,7 @@ from hexgent.config import ConfigError, HexgentConfig, RunOptions
 from hexgent.context import ContextLimits
 from hexgent.events import TextDeltaEvent
 from hexgent.loop.limits import LoopLimits
+from hexgent.plan import Plan, PlanStep
 from hexgent.session import Session, SessionSettings
 from hexgent.tool.tool_scheduler import ToolParallelLimits
 
@@ -121,6 +122,29 @@ class AgentEngineConfigTest(unittest.TestCase):
 
             with self.assertRaises(ConfigError):
                 engine.resolve_config(RunOptions(loop="错误配置"))  # type: ignore[arg-type]
+
+    def test_cancel_pending_task_clears_retained_plan(self) -> None:
+        """暂停后的业务取消应清除 Plan，但不需要伪造一个新的 Agent Run。"""
+        with TemporaryDirectory() as directory:
+            engine = AgentEngine(HexgentConfig(), Path(directory), session=Session())
+            engine.tool_context.plan_store.set_plan(
+                Plan(
+                    "旧任务",
+                    "in_progress",
+                    [
+                        PlanStep(
+                            "继续执行",
+                            "正在继续执行",
+                            "in_progress",
+                            "step-1",
+                        )
+                    ],
+                )
+            )
+
+            engine.cancel_pending_task()
+
+            self.assertIsNone(engine.tool_context.plan_store.get_plan())
 
 
 if __name__ == "__main__":

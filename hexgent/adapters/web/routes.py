@@ -50,7 +50,11 @@ async def start_run(
     request: Request,
 ) -> RunResponse:
     """启动一个后台 Agent Run。"""
-    return await _manager(request).start_run(session_id, body.query)
+    return await _manager(request).start_run(
+        session_id,
+        body.query,
+        visible_query=body.visible_query,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)

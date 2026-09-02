@@ -54,10 +54,14 @@ export function getSession(sessionId: string): Promise<SessionResponse> {
 }
 
 /** 创建后台 Agent Run，接口仅等待 Run 登记完成。 */
-export function createRun(sessionId: string, query: string): Promise<RunResponse> {
+export function createRun(
+  sessionId: string,
+  query: string,
+  visibleQuery = true,
+): Promise<RunResponse> {
   return request(`/api/sessions/${sessionId}/runs`, {
     method: 'POST',
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, visible_query: visibleQuery }),
   })
 }
 
