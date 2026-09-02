@@ -9,6 +9,7 @@ from ..plan import Plan
 from ..tool.tool_permission_pipeline import PermissionContext, PermissionMode
 from .run_report import build_run_report
 from .session_store import SessionStore, ToolResultLimits
+from .checkpoint import CheckpointStore
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,7 @@ class Session:
         elapsed_seconds: float,
         output_text: str,
         plan: Plan | None,
+        context_manager: Any | None = None,
     ) -> Path | None:
         """结束当前 Agent Run，并由 Transcript 事实生成 JSON Report。"""
         if self.store is None:
@@ -145,7 +147,24 @@ class Session:
             },
         )
 
-        # 2. 仅投影当前 Run 的记录，并原子保存 Report 和 Session 索引。
+        # 2. Run 终态已经写入 Transcript 后，保存对应的安全边界快照。
+        if context_manager is not None and self.store.session_id is not None:
+            try:
+                CheckpointStore(self.store.session_dir).write(
+                    session_id=self.store.session_id,
+                    transcript_sequence=self.store.next_sequence - 1,
+                    context_manager=context_manager,
+                    plan=plan,
+                    reason="run_finished",
+                )
+            except Exception as error:
+                # Checkpoint 是加速快照，失败不能阻断已经完成的 Agent Run。
+                self.record_runtime_event(
+                    "checkpoint_failed",
+                    {"message": f"写入 Checkpoint 失败：{error}"},
+                )
+
+        # 3. 仅投影当前 Run 的记录，并原子保存 Report 和 Session 索引。
         try:
             records = self.store.read_transcript(start_sequence)
             report = build_run_report(

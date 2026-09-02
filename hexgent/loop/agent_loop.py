@@ -57,6 +57,7 @@ def agent_loop(
                 elapsed_seconds=turn_output.terminal.elapsed_seconds,
                 output_text=turn_output.terminal.output_text,
                 plan=state.tool_context.plan_store.get_plan(),
+                context_manager=state.context_manager,
             )
         yield RunFinishedEvent(turn_output.terminal)
         return

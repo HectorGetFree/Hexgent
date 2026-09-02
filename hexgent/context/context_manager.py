@@ -50,6 +50,35 @@ class ContextManager:
         )
         return context_manager
 
+    @classmethod
+    def from_checkpoint(cls, snapshot: dict[str, Any]) -> "ContextManager":
+        """从 Checkpoint 快照恢复活动上下文。"""
+        # 1. 恢复带标记的 UserQuery，避免快照把不可变 Query 降级为普通消息。
+        raw_messages = snapshot.get("active_messages")
+        if not isinstance(raw_messages, list):
+            raise ValueError("Checkpoint 缺少活动消息")
+        messages = []
+        for message in raw_messages:
+            if isinstance(message, dict) and message.get("type") == "user_query":
+                messages.append(
+                    UserQuery(message["sequence"], message["content"])
+                )
+            else:
+                messages.append(message)
+
+        # 2. 恢复上下文计数和轮次边界，下一条 Query 序号必须单调延续。
+        manager = cls(
+            active_messages=messages,
+            round_boundaries=list(snapshot.get("round_boundaries", [])),
+            compaction_count=int(snapshot.get("compaction_count", 0)),
+            consecutive_compaction_failures=int(
+                snapshot.get("consecutive_compaction_failures", 0)
+            ),
+            partial_compaction_count=int(snapshot.get("partial_compaction_count", 0)),
+        )
+        manager._next_query_sequence = int(snapshot.get("next_query_sequence", 1))
+        return manager
+
 
     @property
     def user_queries(self) -> tuple[UserQuery, ...]:

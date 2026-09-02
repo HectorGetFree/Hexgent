@@ -1,6 +1,7 @@
 """从可重放 Transcript 恢复 Hexgent 会话核心状态。"""
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from ..tool.tool_context import ToolExecutionContext
 from ..tool.tool_permission_pipeline import PermissionMode
 from .session import Session, SessionSettings
 from .session_store import SessionStore, ToolResultLimits
+from .checkpoint import CheckpointStore
 
 
 VALID_PERMISSION_MODES: set[str] = {
@@ -48,7 +50,11 @@ class SessionRestorer:
         self.workdir = workdir.resolve()
         self.tool_result_limits = tool_result_limits
 
-    def restore(self, session_id: str) -> RestoredSession:
+    def restore(
+        self,
+        session_id: str,
+        checkpoint_id: str | None = None,
+    ) -> RestoredSession:
         """恢复一个已存在 Session，并修复中断造成的未闭合工具协议。"""
         # 1. 严格打开当前版本 Transcript，任何损坏都不能静默跳过。
         store = SessionStore.open_existing(
@@ -59,10 +65,36 @@ class SessionRestorer:
         records = store.read_transcript()
 
         # 2. 依照领域事件顺序重建 Context、Session 设置和 Plan 当前值。
-        context_manager = ContextManager()
+        # 2. 优先采用最近有效 Checkpoint；不存在或损坏时回退全量重放。
+        checkpoint = None
+        checkpoint_store = CheckpointStore(store.session_dir)
+        candidate_ids = [checkpoint_id] if checkpoint_id else checkpoint_store.list_ids()
+        for candidate_id in candidate_ids:
+            if candidate_id is None:
+                continue
+            try:
+                candidate = checkpoint_store.read(candidate_id)
+                if candidate.session_id != session_id:
+                    raise ValueError("Checkpoint 所属 Session 不一致")
+                checkpoint = candidate
+                break
+            except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+                continue
+
+        context_manager = (
+            ContextManager.from_checkpoint(checkpoint.context)
+            if checkpoint is not None
+            else ContextManager()
+        )
         permission_mode: PermissionMode = "default"
-        current_plan: Plan | None = None
+        current_plan: Plan | None = (
+            _plan_from_payload(checkpoint.plan) if checkpoint is not None else None
+        )
         for record in records:
+            if checkpoint is not None and record["sequence"] <= checkpoint.transcript_sequence:
+                if record["type"] == "session_settings":
+                    permission_mode = _permission_mode(record["payload"])
+                continue
             record_type = record["type"]
             payload = record["payload"]
             if record_type == "session_settings":

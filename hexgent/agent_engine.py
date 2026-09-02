@@ -77,6 +77,30 @@ class AgentEngine:
             tool_context=restored.tool_context,
         )
 
+    @classmethod
+    def restore_from_checkpoint(
+        cls,
+        config: HexgentConfig,
+        workdir: Path,
+        session_id: str,
+        checkpoint_id: str | None = None,
+    ) -> "AgentEngine":
+        """优先从 Checkpoint 恢复，并由 Transcript 重放其后的增量事件。"""
+        # 1. 恢复器负责选择最新有效快照，损坏时自动退回 Transcript 全量回放。
+        restored = SessionRestorer(
+            workdir,
+            config.tool_result,
+        ).restore(session_id, checkpoint_id)
+
+        # 2. 重新组装新的 Engine，不恢复旧线程、模型流和工具缓存。
+        return cls(
+            config,
+            workdir,
+            context_manager=restored.context_manager,
+            session=restored.session,
+            tool_context=restored.tool_context,
+        )
+
     def resolve_config(self, options: RunOptions | None = None) -> HexgentConfig:
         """合并用户覆盖项，并返回本次 Run 最终使用的 HexgentConfig。"""
         overrides = options or RunOptions()
