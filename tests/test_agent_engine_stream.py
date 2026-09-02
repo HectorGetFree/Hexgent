@@ -83,6 +83,31 @@ class CliAdapterStreamTest(unittest.TestCase):
         self.assertIn("正在处理，请稍候", rendered)
         self.assertIn("本次用时：1.2 秒", rendered)
 
+    def test_direct_restore_command_replaces_engine_without_model_run(self) -> None:
+        """带 Session ID 的恢复命令不应作为普通 Query 调用模型。"""
+        restored_engine = object()
+        output = StringIO()
+        with (
+            patch.object(
+                cli_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["/restore session-v2", "q"]),
+            ),
+            patch.object(
+                cli_module.AgentEngine,
+                "restore",
+                return_value=restored_engine,
+            ) as restore,
+            patch.object(agent_engine_module, "agent_loop") as stream,
+            patch("sys.stdout", output),
+        ):
+            cli_module.main()
+
+        restore.assert_called_once()
+        self.assertEqual(restore.call_args.args[2], "session-v2")
+        stream.assert_not_called()
+        self.assertIn("已恢复会话：session-v2", output.getvalue())
+
     def test_tool_details_and_plan_are_rendered_without_tool_time(self) -> None:
         """终端应展示工具摘要和计划，但不展示单工具用时。"""
         plan = Plan(

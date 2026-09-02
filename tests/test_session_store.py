@@ -41,6 +41,39 @@ def drain_generator(generator):
 class SessionStoreTest(unittest.TestCase):
     """验证会话事实和大结果可以从磁盘恢复。"""
 
+    def test_lists_only_current_protocol_sessions_for_restore(self) -> None:
+        """恢复列表应过滤旧协议、损坏文件和普通目录。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = SessionStore(root, session_id="session-first")
+            first.start_session("第一个会话")
+            second = SessionStore(root, session_id="session-second")
+            second.start_session("第二个会话")
+            old_dir = root / ".hexgent" / "sessions" / "session-old"
+            old_dir.mkdir(parents=True)
+            (old_dir / "transcript.jsonl").write_text(
+                '{"sequence":1,"type":"session_started","payload":{}}\n',
+                encoding="utf-8",
+            )
+
+            session_ids = SessionStore.list_restorable_session_ids(root)
+
+        self.assertEqual(set(session_ids), {"session-first", "session-second"})
+        self.assertNotIn("session-old", session_ids)
+
+    def test_session_id_uses_only_ascii_and_display_name_keeps_query(self) -> None:
+        """Session ID 应适合机器使用，展示名称保留首轮 Query 摘要。"""
+        with TemporaryDirectory() as directory:
+            store = SessionStore(Path(directory))
+            store.start_session("请检查当前项目的代码结构")
+            session_id = store.session_id
+            details = SessionStore.list_restorable_session_details(Path(directory))
+
+        self.assertIsNotNone(session_id)
+        self.assertRegex(session_id or "", r"^[0-9]{8}-[0-9]{6}-[0-9a-f]+$")
+        self.assertEqual(details[0][0], session_id)
+        self.assertEqual(details[0][1], "请检查当前项目的代码结构")
+
     def test_session_does_not_own_context_manager(self) -> None:
         """Session 与 ContextManager 必须保持平级，不能形成领域包含关系。"""
         session = Session()
@@ -69,8 +102,9 @@ class SessionStoreTest(unittest.TestCase):
             ]
 
         self.assertEqual(records[0]["type"], "session_started")
-        self.assertEqual(records[1]["type"], "permission_mode_selected")
-        self.assertEqual(records[2]["type"], "user_query")
+        self.assertTrue(all(record["schema_version"] == 2 for record in records))
+        self.assertEqual(records[1]["type"], "session_settings")
+        self.assertEqual(records[2]["type"], "context_user_query_appended")
         self.assertTrue(records[0]["created_at"].endswith("+08:00"))
         self.assertTrue(records[1]["created_at"].endswith("+08:00"))
         self.assertEqual(
@@ -79,9 +113,13 @@ class SessionStoreTest(unittest.TestCase):
         )
         self.assertRegex(
             session.store.session_dir.name,
-            r"^\d{8}-\d{6}_原始 Query：不要修改空格 和标_[0-9a-f]{6}$",
+            r"^\d{8}-\d{6}-[0-9a-f]{8}$",
         )
-        self.assertLessEqual(len(session.store.session_dir.name), 42)
+        self.assertLessEqual(len(session.store.session_dir.name), 24)
+        self.assertEqual(
+            records[0]["payload"]["display_name"],
+            "原始 Query：不要修改空格 和标点！",
+        )
         with self.assertRaises(FrozenInstanceError):
             context_manager.user_queries[0].content = "试图改写"
 
@@ -105,10 +143,13 @@ class SessionStoreTest(unittest.TestCase):
         mode_records = [
             record
             for record in records
-            if record["type"] == "permission_mode_selected"
+            if record["type"] == "session_settings"
         ]
         self.assertEqual(len(mode_records), 1)
-        self.assertEqual(mode_records[0]["payload"]["mode"], "accept_edits")
+        self.assertEqual(
+            mode_records[0]["payload"]["permission_mode"],
+            "accept_edits",
+        )
         self.assertEqual(session.permission_context.mode, "accept_edits")
 
     def test_large_tool_result_is_persisted_with_preview(self) -> None:
@@ -401,7 +442,11 @@ class SessionStoreTest(unittest.TestCase):
             )
             message = {"role": "assistant", "content": "正在检查。"}
             context_manager.append_message(message)
-            session.record_message(message)
+            session.record_context_messages(
+                [message],
+                completes_round=True,
+                source="model_response",
+            )
             session.record_runtime_event(
                 "agent_run_finished",
                 {"status": "completed"},
@@ -417,10 +462,10 @@ class SessionStoreTest(unittest.TestCase):
             [record["type"] for record in records],
             [
                 "session_started",
-                "permission_mode_selected",
-                "user_query",
+                "session_settings",
+                "context_user_query_appended",
                 "agent_run_started",
-                "message",
+                "context_messages_appended",
                 "agent_run_finished",
             ],
         )
@@ -477,7 +522,7 @@ class SessionStoreTest(unittest.TestCase):
                 force=True,
                 description="read_file(example.py)",
             )
-            session.record_compaction_boundary(
+            session.record_compaction(
                 {
                     "summary": "不应复制进报告的压缩摘要",
                     "before_tokens": 20_000,
@@ -491,7 +536,7 @@ class SessionStoreTest(unittest.TestCase):
                 [PlanStep("读取事实", "正在读取事实", "completed", "step-1")],
                 revision=2,
             )
-            session.record_runtime_event("plan_updated", completed_plan)
+            session.record_plan_state(completed_plan, action="updated")
 
             report_path = session.finish_run(
                 status="completed",

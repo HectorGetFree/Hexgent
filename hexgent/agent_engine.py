@@ -15,7 +15,7 @@ from .loop.agent_loop import agent_loop
 from .loop.loop_state import LoopState
 from .run_control import RunControl
 from .plan import InMemoryPlanStore
-from .session import Session, SessionSettings
+from .session import Session, SessionRestorer, SessionSettings
 from .tool.tool_context import ToolExecutionContext
 from .tool.tool_execution import UserConfirmation, unavailable_user_confirmation
 
@@ -53,6 +53,29 @@ class AgentEngine:
         # 同一个 Engine 的 Context、Session 和工具状态只能由一个 Run 驱动。
         self._run_lock = Lock()
         self._run_active = False
+
+    @classmethod
+    def restore(
+        cls,
+        config: HexgentConfig,
+        workdir: Path,
+        session_id: str,
+    ) -> "AgentEngine":
+        """从持久化 Transcript 恢复一个可继续运行的 Agent Core。"""
+        # 1. 恢复器只负责把会话事实重建为三个独立核心对象。
+        restored = SessionRestorer(
+            workdir,
+            config.tool_result,
+        ).restore(session_id)
+
+        # 2. 新 Engine 使用当前进程配置，但继承原 Session 的权限和活动状态。
+        return cls(
+            config,
+            workdir,
+            context_manager=restored.context_manager,
+            session=restored.session,
+            tool_context=restored.tool_context,
+        )
 
     def resolve_config(self, options: RunOptions | None = None) -> HexgentConfig:
         """合并用户覆盖项，并返回本次 Run 最终使用的 HexgentConfig。"""
@@ -138,3 +161,8 @@ class AgentEngine:
                 {"reason": reason, "plan": asdict(plan)},
             )
             self.tool_context.plan_store.clear_plan()
+            self.session.record_plan_state(
+                None,
+                action="cleared",
+                reason="cancelled",
+            )

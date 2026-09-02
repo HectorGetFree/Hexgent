@@ -79,6 +79,21 @@ class ContextManager:
         self.partial_compaction_count = 0
         return query
 
+    def restore_user_query(self, sequence: int, content: str) -> UserQuery:
+        """按 Transcript 中的稳定序号恢复一条用户 Query。"""
+        # 1. 恢复协议只接受严格递增的 Query，避免损坏日志产生重复身份。
+        if sequence != self._next_query_sequence:
+            raise ValueError(
+                f"用户 Query 序号不连续：期望 {self._next_query_sequence}，收到 {sequence}"
+            )
+
+        # 2. 恢复与正常追加使用相同的活动消息结构，但不重新分配序号。
+        query = UserQuery(sequence, content)
+        self._next_query_sequence = sequence + 1
+        self.active_messages.append(query)
+        self.partial_compaction_count = 0
+        return query
+
     def append_message(self, message: Any) -> None:
         """追加普通消息；user 消息自动进入不可变 Query 管线。"""
         if _is_user_message(message):
@@ -165,7 +180,6 @@ class ContextManager:
         self.active_messages[:] = compacted_messages
         self.round_boundaries[:] = compacted_boundaries
         boundary_record = {
-            "type": "context_compaction_boundary",
             "summary": summary,
             "compacted_messages": cut_index,
             "preserved_query_sequences": [query.sequence for query in preserved_queries],
@@ -181,7 +195,51 @@ class ContextManager:
             self.partial_compaction_count += 1
         else:
             self.partial_compaction_count = 0
+        # 恢复端直接采用已经提交的结果，不重新推导历史轮次边界。
+        boundary_record["resulting_round_boundaries"] = list(self.round_boundaries)
+        boundary_record["resulting_message_count"] = len(self.active_messages)
+        boundary_record["compaction_count"] = self.compaction_count
+        boundary_record["partial_compaction_count"] = self.partial_compaction_count
         return boundary_record
+
+    def restore_compaction(self, record: dict[str, Any]) -> None:
+        """重放一次已经成功提交的上下文压缩。"""
+        # 1. 先按当时的切点和摘要重建候选消息，校验日志没有越界。
+        cut_index = record.get("compacted_messages")
+        summary = record.get("summary")
+        if not isinstance(cut_index, int) or not 0 < cut_index <= len(
+            self.active_messages
+        ):
+            raise ValueError("上下文压缩记录包含无效切点")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("上下文压缩记录缺少有效摘要")
+        compacted_messages, _, _ = self.build_compacted_messages(
+            cut_index,
+            summary,
+        )
+
+        # 2. 轮次边界属于压缩提交结果，恢复时必须直接采用持久化值。
+        boundaries = record.get("resulting_round_boundaries")
+        if not isinstance(boundaries, list) or not all(
+            isinstance(boundary, int) for boundary in boundaries
+        ):
+            raise ValueError("上下文压缩记录缺少提交后的轮次边界")
+        if boundaries != sorted(set(boundaries)) or any(
+            boundary <= 0 or boundary > len(compacted_messages)
+            for boundary in boundaries
+        ):
+            raise ValueError("上下文压缩记录的轮次边界无效")
+        if record.get("resulting_message_count") != len(compacted_messages):
+            raise ValueError("上下文压缩记录的消息数量与重放结果不一致")
+
+        # 3. 原子替换活动上下文并恢复压缩熔断相关计数。
+        self.active_messages[:] = compacted_messages
+        self.round_boundaries[:] = boundaries
+        self.compaction_count = int(record.get("compaction_count", 0))
+        self.partial_compaction_count = int(
+            record.get("partial_compaction_count", 0)
+        )
+        self.consecutive_compaction_failures = 0
 
     def record_compaction_failure(self) -> None:
         """累计一次压缩失败，供后续熔断判断使用。"""

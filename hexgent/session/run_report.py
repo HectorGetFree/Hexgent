@@ -125,7 +125,7 @@ def build_run_report(
             "status": record["payload"].get("status"),
         }
         for record in records
-        if record["type"] == "context_compaction_boundary"
+        if record["type"] == "context_compaction_applied"
     ]
     persisted_records = [
         record["payload"]
@@ -172,9 +172,10 @@ def build_run_report(
 
     # 6. Plan 可能在正常退出前从 PlanStore 清除，此时使用最后一次持久化快照。
     plan_records = [
-        record["payload"]
+        record["payload"].get("plan")
         for record in records
-        if record["type"] in {"plan_created", "plan_updated"}
+        if record["type"] == "plan_state_changed"
+        and isinstance(record["payload"].get("plan"), dict)
     ]
     cancelled_plan_records = [
         record["payload"].get("plan")

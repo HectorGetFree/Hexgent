@@ -58,25 +58,40 @@ class Session:
             settings or SessionSettings(),
         )
 
+    @classmethod
+    def restored(
+        cls,
+        store: SessionStore,
+        settings: SessionSettings,
+    ) -> "Session":
+        """使用已经打开的 Store 构造可继续追加事实的 Session。"""
+        session = cls(store, settings)
+        session._permission_mode_recorded = True
+        return session
+
     @property
     def permission_context(self) -> PermissionContext:
         """取得当前 Session 权限模式的不可变执行快照。"""
         return PermissionContext(self.settings.permission_mode)
 
-    def record_user_query(self, query: UserQuery) -> None:
-        """先初始化 Session，再原样记录已被 Context 接受的 Query。"""
+    def record_user_query(self, query: UserQuery, *, source: str = "user") -> None:
+        """先初始化 Session，再记录一条进入活动 Context 的原始 Query。"""
         self._latest_user_query = query.content
         if self.store is not None:
             self.store.start_session(query.content)
             if not self._permission_mode_recorded:
                 self.store.append_transcript(
-                    "permission_mode_selected",
-                    {"mode": self.settings.permission_mode},
+                    "session_settings",
+                    {"permission_mode": self.settings.permission_mode},
                 )
                 self._permission_mode_recorded = True
             self.store.append_transcript(
-                "user_query",
-                {"sequence": query.sequence, "content": query.content},
+                "context_user_query_appended",
+                {
+                    "query_sequence": query.sequence,
+                    "content": query.content,
+                    "source": source,
+                },
             )
 
     def start_run(self, *, limits_enabled: bool, plan: Plan | None) -> None:
@@ -150,20 +165,45 @@ class Session:
             self._active_run_id = None
             self._active_run_start_sequence = None
 
-    def record_message(self, message: Any) -> None:
-        """记录一条已经进入活动 Context 的普通消息。"""
-        self.record_runtime_event("message", message)
-
-    def record_messages(self, messages: list[Any]) -> None:
-        """按顺序记录多条已经进入活动 Context 的消息。"""
-        for message in messages:
-            self.record_message(message)
+    def record_context_messages(
+        self,
+        messages: list[Any],
+        *,
+        completes_round: bool,
+        source: str,
+    ) -> None:
+        """原子记录一次 Context 消息追加及其完整轮次语义。"""
+        self.record_runtime_event(
+            "context_messages_appended",
+            {
+                "messages": messages,
+                "completes_round": completes_round,
+                "source": source,
+            },
+        )
 
     def record_runtime_event(self, event_type: str, payload: Any) -> None:
         """记录不进入模型 Context 的完整 Session 事实。"""
         if self.store is not None:
             self.store.append_transcript(event_type, payload)
 
-    def record_compaction_boundary(self, boundary: dict[str, Any]) -> None:
-        """把 Context 已经提交的压缩边界追加到 Transcript。"""
-        self.record_runtime_event("context_compaction_boundary", boundary)
+    def record_compaction(self, boundary: dict[str, Any]) -> None:
+        """记录一次已经提交、可确定性重放的 Context 压缩。"""
+        self.record_runtime_event("context_compaction_applied", boundary)
+
+    def record_plan_state(
+        self,
+        plan: Plan | None,
+        *,
+        action: str,
+        reason: str | None = None,
+    ) -> None:
+        """记录 PlanStore 已经提交的完整当前状态。"""
+        self.record_runtime_event(
+            "plan_state_changed",
+            {
+                "action": action,
+                "reason": reason,
+                "plan": asdict(plan) if plan is not None else None,
+            },
+        )

@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 import signal
+import sys
 import threading
 
 from ...run_control import RunControl
@@ -11,6 +12,17 @@ from ...tool.tool_permission_pipeline import UserConfirmationResult
 
 class TerminalIO:
     """把终端输入、权限确认和 Ctrl+C 转换为 Core 接口。"""
+
+    def __init__(self) -> None:
+        """初始化终端输入，并容忍粘贴内容中的非法字节。"""
+        # 1. input() 在解码阶段就可能抛出异常，必须在读取前设置替换策略。
+        #    合法 UTF-8 不会改变；非法字节只替换为 �，避免会话进程退出。
+        try:
+            if hasattr(sys.stdin, "reconfigure"):
+                sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            # 2. 某些测试输入或嵌入式宿主不允许重配置时，继续使用原输入流。
+            pass
 
     @contextmanager
     def capture_run_interrupt(
@@ -57,6 +69,29 @@ class TerminalIO:
             if not line:
                 return "\n".join(lines)
             lines.append(line)
+
+    def select_restore_session(
+        self,
+        sessions: list[tuple[str, str]],
+    ) -> str | None:
+        """展示可恢复 Session，并读取用户选择。"""
+        # 1. Session ID 是恢复的稳定标识，序号仅用于减少终端输入成本。
+        print("可恢复的最近会话：")
+        for index, (session_id, display_name) in enumerate(sessions, start=1):
+            print(f"  {index}. {display_name}（ID：{session_id}）")
+
+        # 2. 空输入表示取消；合法序号和完整 Session ID 均可选择。
+        selection = input("输入序号或 Session ID（直接回车取消）：").strip()
+        if not selection:
+            return None
+        if selection.isdigit():
+            index = int(selection)
+            if 1 <= index <= len(sessions):
+                return sessions[index - 1][0]
+            raise ValueError("会话序号超出可选范围")
+        if selection in {session_id for session_id, _ in sessions}:
+            return selection
+        raise ValueError("输入的 Session ID 不在可恢复列表中")
 
     def request_confirmation(
         self,

@@ -11,11 +11,11 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 
-SESSION_QUERY_SLUG_MAX_LENGTH = 18
-SESSION_QUERY_HASH_LENGTH = 6
+SESSION_QUERY_HASH_LENGTH = 8
 TOOL_RESULT_SLUG_MAX_LENGTH = 40
 TOOL_RESULT_HASH_LENGTH = 12
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
+TRANSCRIPT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,9 @@ class SessionStore:
         # 调用方显式指定的会话标识；未指定时由首轮 Query 延迟生成。
         self.session_id = session_id
 
+        # 首轮 Query 的展示名称，与机器使用的 Session ID 分离。
+        self.display_name: str | None = None
+
         # 当前会话 Transcript 和工具结果所在目录。
         self.session_dir = self._build_session_dir(session_id or "待初始化会话")
 
@@ -97,21 +100,114 @@ class SessionStore:
         # Session 生命周期内按完整内容 Hash 复用的工具结果工件。
         self._artifact_index: dict[str, PersistedToolResult] = {}
 
+    @classmethod
+    def open_existing(
+        cls,
+        workdir: Path,
+        session_id: str,
+        tool_result_limits: ToolResultLimits | None = None,
+    ) -> "SessionStore":
+        """打开一个已经存在且采用当前恢复协议的 Session。"""
+        # 1. 先按稳定 Session ID 定位 Transcript，不允许静默创建空会话。
+        store = cls(workdir, session_id, tool_result_limits)
+        if not store.transcript_path.is_file():
+            raise FileNotFoundError(f"Session Transcript 不存在：{session_id}")
+
+        # 2. 完整校验记录序号和协议版本，再恢复追加写入位置。
+        records = store.read_transcript()
+        if not records or records[0]["type"] != "session_started":
+            raise ValueError("Session Transcript 缺少 session_started 记录")
+        recorded_session_id = records[0]["payload"].get("session_id")
+        if recorded_session_id != session_id:
+            raise ValueError(
+                f"Session 标识不一致：目录为 {session_id}，记录为 {recorded_session_id}"
+            )
+        first_query = records[0]["payload"].get("first_query")
+        if isinstance(first_query, str):
+            store.display_name = _build_display_name(first_query)
+        store._next_sequence = records[-1]["sequence"] + 1
+        store._session_started = True
+        return store
+
+    @classmethod
+    def list_restorable_session_ids(
+        cls,
+        workdir: Path,
+        *,
+        limit: int = 10,
+    ) -> list[str]:
+        """列出最近创建且采用当前 Transcript 协议的 Session。"""
+        # 1. Session 目录不存在时返回空列表，终端入口无需区分首次运行。
+        sessions_dir = workdir.resolve() / ".hexgent" / "sessions"
+        if not sessions_dir.is_dir():
+            return []
+
+        # 2. 只读取首条记录筛选协议兼容会话，完整合法性留给恢复阶段校验。
+        candidates: list[tuple[float, str]] = []
+        for session_dir in sessions_dir.iterdir():
+            transcript_path = session_dir / "transcript.jsonl"
+            if not session_dir.is_dir() or not transcript_path.is_file():
+                continue
+            try:
+                with transcript_path.open("r", encoding="utf-8") as transcript:
+                    first_line = transcript.readline()
+                record = json.loads(first_line)
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            payload = record.get("payload")
+            if (
+                record.get("schema_version") != TRANSCRIPT_SCHEMA_VERSION
+                or record.get("type") != "session_started"
+                or not isinstance(payload, dict)
+                or payload.get("session_id") != session_dir.name
+            ):
+                continue
+            candidates.append((transcript_path.stat().st_mtime, session_dir.name))
+
+        # 3. 最近写入的会话优先展示，并在适配层控制最大展示数量。
+        candidates.sort(reverse=True)
+        return [session_id for _, session_id in candidates[:limit]]
+
+    @classmethod
+    def list_restorable_session_details(
+        cls,
+        workdir: Path,
+        *,
+        limit: int = 10,
+    ) -> list[tuple[str, str]]:
+        """列出恢复所需的机器 ID 和人类可读名称。"""
+        # 1. ID 列表已经过滤协议和目录合法性，展示名称从首条事实读取。
+        details: list[tuple[str, str]] = []
+        for session_id in cls.list_restorable_session_ids(workdir, limit=limit):
+            transcript_path = (
+                workdir.resolve() / ".hexgent" / "sessions" / session_id / "transcript.jsonl"
+            )
+            try:
+                with transcript_path.open("r", encoding="utf-8") as transcript:
+                    record = json.loads(transcript.readline())
+                payload = record.get("payload", {})
+                display_name = payload.get("display_name") or payload.get("first_query")
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                display_name = None
+            details.append((session_id, display_name if isinstance(display_name, str) else session_id))
+        return details
+
     def _build_session_dir(self, session_id: str) -> Path:
         """根据稳定会话标识构造持久化目录。"""
         return self.workdir / ".hexgent" / "sessions" / session_id
 
     def _initialize_from_first_query(self, query: str) -> None:
-        """使用时间和首轮 Query 摘要初始化可读的会话目录。"""
+        """使用时间和内容 Hash 初始化纯 ASCII 的会话目录。"""
         if self.session_id is not None:
             return
         timestamp = _beijing_now().strftime("%Y%m%d-%H%M%S")
         query_hash = sha256(query.encode("utf-8")).hexdigest()[:SESSION_QUERY_HASH_LENGTH]
-        candidate = f"{timestamp}_{_build_query_slug(query)}_{query_hash}"
+        candidate = f"{timestamp}-{query_hash}"
         session_dir = self._build_session_dir(candidate)
         if session_dir.exists():
-            candidate = f"{candidate}_{uuid4().hex[:8]}"
+            candidate = f"{candidate}-{uuid4().hex[:8]}"
         self.session_id = candidate
+        self.display_name = _build_display_name(query)
         self.session_dir = self._build_session_dir(candidate)
         self.transcript_path = self.session_dir / "transcript.jsonl"
         self.tool_results_dir = self.session_dir / "tool-results"
@@ -125,7 +221,11 @@ class SessionStore:
         self._session_started = True
         self.append_transcript(
             "session_started",
-            {"session_id": self.session_id, "first_query": first_query},
+            {
+                "session_id": self.session_id,
+                "display_name": self.display_name,
+                "first_query": first_query,
+            },
         )
         pending_records = self._pending_records
         self._pending_records = []
@@ -143,6 +243,7 @@ class SessionStore:
             return
         self._ensure_session_dir()
         record = {
+            "schema_version": TRANSCRIPT_SCHEMA_VERSION,
             "sequence": self._next_sequence,
             "type": record_type,
             "created_at": _beijing_now().isoformat(),
@@ -177,14 +278,38 @@ class SessionStore:
         return f"run-{next_number:03d}"
 
     def read_transcript(self, start_sequence: int = 1) -> list[dict[str, Any]]:
-        """读取指定序号起的 Transcript 记录，供 Session 构造派生视图。"""
+        """严格读取并校验当前协议的 Transcript 记录。"""
         if not self.transcript_path.is_file():
             return []
-        records = []
-        for line in self.transcript_path.read_text(encoding="utf-8").splitlines():
+        records: list[dict[str, Any]] = []
+        expected_sequence = 1
+        for line_number, line in enumerate(
+            self.transcript_path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
             if not line.strip():
                 continue
-            record = json.loads(line)
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"Transcript 第 {line_number} 行不是有效 JSON：{error.msg}"
+                ) from error
+            if record.get("schema_version") != TRANSCRIPT_SCHEMA_VERSION:
+                raise ValueError(
+                    f"Transcript 第 {line_number} 行协议版本无效，"
+                    f"当前仅支持 {TRANSCRIPT_SCHEMA_VERSION}"
+                )
+            if record.get("sequence") != expected_sequence:
+                raise ValueError(
+                    f"Transcript 序号不连续：期望 {expected_sequence}，"
+                    f"收到 {record.get('sequence')}"
+                )
+            if not isinstance(record.get("type"), str) or not isinstance(
+                record.get("payload"), dict
+            ):
+                raise ValueError(f"Transcript 第 {line_number} 行结构无效")
+            expected_sequence += 1
             if record.get("sequence", 0) >= start_sequence:
                 records.append(record)
         return records
@@ -310,12 +435,10 @@ class SessionStore:
         return None
 
 
-def _build_query_slug(query: str) -> str:
-    """把首轮 Query 转换为长度受限且适合目录名的摘要。"""
+def _build_display_name(query: str) -> str:
+    """生成用于终端和历史列表展示的首轮 Query 摘要。"""
     normalized = re.sub(r"\s+", " ", query).strip()
-    safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", normalized)
-    safe = safe.strip(" ._")[:SESSION_QUERY_SLUG_MAX_LENGTH].strip(" ._")
-    return safe or "空白请求"
+    return normalized[:40] or "空白请求"
 
 
 def _build_tool_result_filename(

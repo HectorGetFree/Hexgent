@@ -31,6 +31,11 @@ class TerminalIOTest(unittest.TestCase):
             all(call.args[0] == "" for call in read_input.call_args_list[1:])
         )
 
+    def test_terminal_init_tolerates_non_reconfigurable_stdin(self) -> None:
+        """嵌入式输入流不支持重配置时仍应正常初始化。"""
+        terminal_io = TerminalIO()
+        self.assertIsInstance(terminal_io, TerminalIO)
+
     def test_confirmation_uses_a_separate_prompt(self) -> None:
         """完整消息提交后，确认输入应由下一次提示单独读取。"""
         terminal_io = TerminalIO()
@@ -43,6 +48,31 @@ class TerminalIOTest(unittest.TestCase):
 
         self.assertEqual(message, "第一行\n第二行")
         self.assertEqual(confirmation, "allow")
+
+    def test_restore_session_can_be_selected_by_number(self) -> None:
+        """恢复选择器应支持使用展示序号选择 Session。"""
+        terminal_io = TerminalIO()
+        with (
+            patch("builtins.input", return_value="2"),
+            patch("sys.stdout", StringIO()) as output,
+        ):
+            selected = terminal_io.select_restore_session(
+                [("session-a", "第一个会话"), ("session-b", "第二个会话")]
+            )
+
+        self.assertEqual(selected, "session-b")
+        self.assertIn("1. 第一个会话（ID：session-a）", output.getvalue())
+
+    def test_empty_restore_selection_cancels(self) -> None:
+        """恢复选择器的空输入应取消操作。"""
+        terminal_io = TerminalIO()
+        with (
+            patch("builtins.input", return_value=""),
+            patch("sys.stdout", StringIO()),
+        ):
+            selected = terminal_io.select_restore_session([("session-a", "第一个会话")])
+
+        self.assertIsNone(selected)
 
     def test_eof_returns_unavailable_instead_of_deny(self) -> None:
         """输入流关闭时不能伪装成用户主动拒绝。"""

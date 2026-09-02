@@ -53,7 +53,11 @@ def _continue_with_finalization(
     message = _finalization_message(reason)
     state.context_manager.append_message(message)
     if session is not None:
-        session.record_message(message)
+        session.record_context_messages(
+            [message],
+            completes_round=False,
+            source="budget_finalization",
+        )
     next_state = LoopState(
         context_manager=state.context_manager,
         tool_context=state.tool_context,
@@ -101,6 +105,12 @@ def _apply_plan_exit(
     if decision.action == "complete":
         if decision.clear_completed_plan:
             state.tool_context.plan_store.clear_plan()
+            if session is not None:
+                session.record_plan_state(
+                    None,
+                    action="cleared",
+                    reason="completed",
+                )
         return Stop(AgentLoopResult(output_text, state.elapsed_seconds))
 
     # 3. 阻塞和提醒耗尽形成明确、可恢复的终态。
@@ -128,7 +138,11 @@ def _apply_plan_exit(
     message = {"role": "developer", "content": decision.continuation_message}
     state.context_manager.append_message(message)
     if session is not None:
-        session.record_message(message)
+        session.record_context_messages(
+            [message],
+            completes_round=False,
+            source="plan_continuation",
+        )
     return Continue(
         replace(
             state,
@@ -164,6 +178,12 @@ def _control_stop(
                     },
                 )
             state.tool_context.plan_store.clear_plan()
+            if session is not None:
+                session.record_plan_state(
+                    None,
+                    action="cleared",
+                    reason="cancelled",
+                )
 
     # 3. Session 记录业务动作和安全收束阶段，底层 Interrupt 不承载业务语义。
     if session is not None:
@@ -196,12 +216,12 @@ def _continue_with_steering(
     for query in queries:
         user_query = state.context_manager.append_user_query(query.content)
         if session is not None:
+            session.record_user_query(user_query, source="steering")
             session.record_runtime_event(
-                "steering_query_applied",
+                "steering_applied",
                 {
                     "steering_sequence": query.sequence,
                     "query_sequence": user_query.sequence,
-                    "content": query.content,
                     "before_model_round": state.model_rounds + 1,
                 },
             )
@@ -265,7 +285,7 @@ def run_turn(
     )
     if compaction.status in {"compacted", "partial"}:
         if compaction.boundary is not None and session is not None:
-            session.record_compaction_boundary(compaction.boundary)
+            session.record_compaction(compaction.boundary)
         state.tool_context.clear_tool_caches()
         next_state = replace(
             state,
@@ -354,7 +374,7 @@ def run_turn(
                     reactive_compaction.boundary is not None
                     and session is not None
                 ):
-                    session.record_compaction_boundary(
+                    session.record_compaction(
                         reactive_compaction.boundary
                     )
                 state.tool_context.clear_tool_caches()
@@ -399,7 +419,11 @@ def run_turn(
         response.output, completes_round=not tool_calls
     )
     if session is not None:
-        session.record_messages(response.output)
+        session.record_context_messages(
+            response.output,
+            completes_round=not tool_calls,
+            source="model_response",
+        )
     model_rounds = state.model_rounds + 1
     input_tokens = state.input_tokens + response_input_tokens
     output_tokens = state.output_tokens + response_output_tokens
@@ -419,6 +443,12 @@ def run_turn(
         plan = state.tool_context.plan_store.get_plan()
         if plan is not None and plan.status == "completed":
             state.tool_context.plan_store.clear_plan()
+            if session is not None:
+                session.record_plan_state(
+                    None,
+                    action="cleared",
+                    reason="completed",
+                )
         return Stop(
             AgentLoopResult(
                 response.output_text,
@@ -471,7 +501,11 @@ def run_turn(
     )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
     if session is not None:
-        session.record_messages(batch.outputs)
+        session.record_context_messages(
+            batch.outputs,
+            completes_round=True,
+            source="tool_results",
+        )
     if controller.interrupted:
         return _control_stop(response_state, active_control, session, "tool_batch")
 

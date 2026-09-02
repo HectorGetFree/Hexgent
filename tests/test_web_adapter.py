@@ -362,24 +362,26 @@ class WebAdapterTest(unittest.TestCase):
         records = [
             {
                 "sequence": 1,
-                "type": "user_query",
+                "type": "context_user_query_appended",
                 "created_at": "2026-09-01T10:00:00+08:00",
                 "payload": {"content": "你好"},
             },
             {
                 "sequence": 2,
-                "type": "message",
+                "type": "context_messages_appended",
                 "created_at": "2026-09-01T10:00:01+08:00",
-                "payload": {
+                "payload": {"messages": [{
                     "role": "assistant",
                     "content": [{"type": "output_text", "text": "你好！"}],
-                },
+                }], "completes_round": True, "source": "model_response"},
             },
             {
                 "sequence": 3,
-                "type": "message",
+                "type": "context_messages_appended",
                 "created_at": "2026-09-01T10:00:02+08:00",
-                "payload": {"type": "function_call_output", "output": "内部结果"},
+                "payload": {"messages": [
+                    {"type": "function_call_output", "output": "内部结果"}
+                ], "completes_round": True, "source": "tool_results"},
             },
         ]
         self.assertEqual(
@@ -398,7 +400,7 @@ class WebAdapterTest(unittest.TestCase):
             },
             {
                 "sequence": 2,
-                "type": "user_query",
+                "type": "context_user_query_appended",
                 "created_at": "2026-09-01T10:00:01+08:00",
                 "payload": {"content": "继续"},
             },
@@ -407,6 +409,16 @@ class WebAdapterTest(unittest.TestCase):
                 "type": "web_steering_submitted",
                 "created_at": "2026-09-01T10:00:02+08:00",
                 "payload": {"content": "改为只读检查"},
+            },
+            {
+                "sequence": 4,
+                "type": "context_user_query_appended",
+                "created_at": "2026-09-01T10:00:03+08:00",
+                "payload": {
+                    "query_sequence": 2,
+                    "content": "改为只读检查",
+                    "source": "steering",
+                },
             },
         ]
         self.assertEqual(
@@ -419,7 +431,7 @@ class WebAdapterTest(unittest.TestCase):
         records = [
             {
                 "sequence": 1,
-                "type": "user_query",
+                "type": "context_user_query_appended",
                 "created_at": "2026-09-01T10:00:00+08:00",
                 "payload": {"content": "检查项目"},
             },

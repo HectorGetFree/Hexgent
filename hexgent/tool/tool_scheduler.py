@@ -652,13 +652,27 @@ def execute_tool_batch(
                 plan = context.plan_store.get_plan()
                 if plan is not None:
                     if session_store is not None:
-                        session_store.append_transcript("plan_created", asdict(plan))
+                        session_store.append_transcript(
+                            "plan_state_changed",
+                            {
+                                "action": "created",
+                                "reason": None,
+                                "plan": asdict(plan),
+                            },
+                        )
                     yield PlanCreatedEvent(plan)
             elif tool_call.name == "update_plan" and result.status == "success":
                 plan = context.plan_store.get_plan()
                 if plan is not None:
                     if session_store is not None:
-                        session_store.append_transcript("plan_updated", asdict(plan))
+                        session_store.append_transcript(
+                            "plan_state_changed",
+                            {
+                                "action": "updated",
+                                "reason": plan.last_replan_reason,
+                                "plan": asdict(plan),
+                            },
+                        )
                     yield PlanUpdatedEvent(plan)
 
         # 7. 所有单工具结束事件提交后，再发送并行批次汇总事件。

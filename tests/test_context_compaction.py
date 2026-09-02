@@ -96,7 +96,14 @@ class ContextCompactionTest(unittest.TestCase):
             conversation.active_messages[-1].content,
             latest_message["content"],
         )
-        self.assertEqual(outcome.boundary["type"], "context_compaction_boundary")
+        self.assertEqual(
+            outcome.boundary["resulting_message_count"],
+            len(conversation.active_messages),
+        )
+        self.assertEqual(
+            outcome.boundary["resulting_round_boundaries"],
+            conversation.round_boundaries,
+        )
         self.assertEqual(outcome.input_tokens, 20)
         self.assertEqual(outcome.output_tokens, 8)
 
