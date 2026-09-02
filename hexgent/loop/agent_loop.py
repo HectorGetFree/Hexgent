@@ -6,12 +6,27 @@ from typing import Any
 from ..client import get_client
 from ..config import HexgentConfig
 from ..run_control import RunControl
-from ..session import Session
+from ..session import CheckpointReason, Session
 from ..tool.tool_execution import UserConfirmation, unavailable_user_confirmation
-from hexgent.events import AgentEvent, LoopTransitionEvent, RunFinishedEvent
+from hexgent.events import (
+    AgentEvent,
+    CheckpointCommittedEvent,
+    LoopTransitionEvent,
+    RunFinishedEvent,
+)
 from .loop_state import LoopState
 from .transitions import Continue
 from .agent_turn import run_turn
+
+
+CHECKPOINT_REASON_BY_TRANSITION: dict[str, CheckpointReason] = {
+    "tool_results_ready": "tool_batch_completed",
+    "plan_continuation": "plan_continuation_ready",
+    "context_compacted": "context_compaction_completed",
+    "reactive_context_compacted": "reactive_compaction_completed",
+    "budget_finalization": "finalization_ready",
+    "steering_applied": "steering_applied",
+}
 
 
 def agent_loop(
@@ -47,6 +62,24 @@ def agent_loop(
         if isinstance(turn_output, Continue):
             yield LoopTransitionEvent(turn_output.reason)
             state = turn_output.next_state
+            if session is not None:
+                try:
+                    checkpoint = session.create_checkpoint(
+                        context_manager=state.context_manager,
+                        plan=state.tool_context.plan_store.get_plan(),
+                        reason=CHECKPOINT_REASON_BY_TRANSITION[turn_output.reason],
+                    )
+                    if checkpoint is not None:
+                        yield CheckpointCommittedEvent(
+                            checkpoint.checkpoint_id,
+                            checkpoint.transcript_sequence,
+                            checkpoint.reason,
+                        )
+                except Exception as error:
+                    session.record_runtime_event(
+                        "checkpoint_failed",
+                        {"message": f"写入 Checkpoint 失败：{error}"},
+                    )
             continue
 
         # 3. Stop 是 Agent Loop 的唯一正常出口。

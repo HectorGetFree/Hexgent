@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from hexgent.events import (
     AgentLoopResult,
+    CheckpointCommittedEvent,
     RunFinishedEvent,
     PlanCreatedEvent,
     PlanUpdatedEvent,
@@ -82,6 +83,35 @@ class CliAdapterStreamTest(unittest.TestCase):
         self.assertEqual(rendered.count("你好，世界"), 1)
         self.assertIn("正在处理，请稍候", rendered)
         self.assertIn("本次用时：1.2 秒", rendered)
+
+    def test_checkpoint_commit_is_rendered_with_explicit_reason(self) -> None:
+        """终端应展示 Checkpoint 的安全边界语义。"""
+        events = iter(
+            [
+                CheckpointCommittedEvent(
+                    "cp-000003",
+                    42,
+                    "tool_batch_completed",
+                ),
+                RunFinishedEvent(AgentLoopResult("", 0.1)),
+            ]
+        )
+        output = StringIO()
+        with (
+            patch.object(
+                cli_module,
+                "TerminalIO",
+                return_value=FakeTerminalIO(["检查", "q"]),
+            ),
+            patch.object(agent_engine_module, "agent_loop", return_value=events),
+            patch("sys.stdout", output),
+        ):
+            cli_module.main()
+
+        self.assertIn(
+            "Checkpoint 已提交：cp-000003，原因：工具批次结果已回填",
+            output.getvalue(),
+        )
 
     def test_direct_restore_command_replaces_engine_without_model_run(self) -> None:
         """带 Session ID 的恢复命令不应作为普通 Query 调用模型。"""

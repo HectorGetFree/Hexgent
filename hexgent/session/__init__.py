@@ -9,7 +9,7 @@ from .session_store import (
     ToolResultLimits,
     build_persisted_output_message,
 )
-from .checkpoint import Checkpoint, CheckpointStore
+from .checkpoint import Checkpoint, CheckpointReason, CheckpointStore
 
 __all__ = [
     "PersistedToolResult",
@@ -23,5 +23,6 @@ __all__ = [
     "build_persisted_output_message",
     "build_run_report",
     "Checkpoint",
+    "CheckpointReason",
     "CheckpointStore",
 ]

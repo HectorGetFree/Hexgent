@@ -290,8 +290,8 @@ class LoopInterruptTest(unittest.TestCase):
 
         record_types = [record["type"] for record in records]
         self.assertIn("agent_run_controlled", record_types)
-        self.assertEqual(record_types[-1], "agent_run_finished")
-        self.assertEqual(records[-1]["payload"]["status"], "interrupted")
+        self.assertEqual(record_types[-2:], ["agent_run_finished", "checkpoint_committed"])
+        self.assertEqual(records[-2]["payload"]["status"], "interrupted")
 
     def test_cancel_clears_active_plan_but_records_snapshot(self) -> None:
         """Cancel 不回滚副作用，但必须终结旧 Plan 并保存取消前快照。"""

@@ -9,6 +9,7 @@ from ...events import (
     ContextCompactionFailedEvent,
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
+    CheckpointCommittedEvent,
     LoopLimitReachedEvent,
     LoopTransitionEvent,
     PlanCreatedEvent,
@@ -87,6 +88,12 @@ def agent_event_payload(event: AgentEvent) -> tuple[str, dict[str, Any]]:
         return "loop_limit_reached", {"reason": event.reason}
     if isinstance(event, LoopTransitionEvent):
         return "loop_transition", {"reason": event.reason}
+    if isinstance(event, CheckpointCommittedEvent):
+        return "checkpoint_committed", {
+            "checkpoint_id": event.checkpoint_id,
+            "transcript_sequence": event.transcript_sequence,
+            "reason": event.reason,
+        }
     if isinstance(event, ContextCompactionStartedEvent):
         return "context_compaction_started", {
             "before_tokens": event.before_tokens,

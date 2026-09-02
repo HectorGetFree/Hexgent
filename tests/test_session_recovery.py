@@ -60,6 +60,41 @@ class SessionRecoveryTest(unittest.TestCase):
         self.assertEqual(records[-1]["sequence"], next_sequence + 1)
         self.assertEqual(records[-1]["payload"]["content"], "继续执行")
 
+    def test_uses_earlier_committed_checkpoint_when_latest_is_corrupted(self) -> None:
+        """最新快照损坏时应回退更早提交快照并重放增量事实。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = ContextManager()
+            session = Session.persistent(root)
+            first = context.append_user_query("第一条请求")
+            session.record_user_query(first)
+            first_checkpoint = session.create_checkpoint(
+                context_manager=context,
+                plan=None,
+                reason="tool_batch_completed",
+            )
+            second = context.append_user_query("第二条请求")
+            session.record_user_query(second)
+            latest_checkpoint = session.create_checkpoint(
+                context_manager=context,
+                plan=None,
+                reason="tool_batch_completed",
+            )
+            checkpoint_path = (
+                session.store.session_dir
+                / "checkpoints"
+                / f"{latest_checkpoint.checkpoint_id}.json"
+            )
+            checkpoint_path.write_text("损坏的 Checkpoint", encoding="utf-8")
+
+            restored = SessionRestorer(root).restore(session.store.session_id)
+
+        self.assertEqual(first_checkpoint.checkpoint_id, "cp-000001")
+        self.assertEqual(
+            [query.content for query in restored.context_manager.user_queries],
+            ["第一条请求", "第二条请求"],
+        )
+
     def test_restores_committed_compaction_exactly(self) -> None:
         """恢复端应采用压缩后的消息和边界，不再次调用摘要模型。"""
         with TemporaryDirectory() as directory:

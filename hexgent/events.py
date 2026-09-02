@@ -7,6 +7,7 @@ from hexgent.plan import Plan
 from hexgent.tool.tool_result import ToolExecutionStatus
 from hexgent.loop.limits import LoopStopReason
 from hexgent.loop.loop_state import ContinueReason
+from hexgent.session.checkpoint import CheckpointReason
 from hexgent.run_control import UserControlStopReason
 
 
@@ -166,6 +167,20 @@ class LoopTransitionEvent:
 
 
 @dataclass(frozen=True)
+class CheckpointCommittedEvent:
+    """一个安全边界 Checkpoint 已完成持久化和事实提交。"""
+
+    # Session 内递增的快照标识。
+    checkpoint_id: str
+
+    # 快照已覆盖到的最后一条 Transcript 序号。
+    transcript_sequence: int
+
+    # 触发快照提交的明确安全边界语义。
+    reason: CheckpointReason
+
+
+@dataclass(frozen=True)
 class ContextCompactionStartedEvent:
     """活动上下文开始进行主动压缩。"""
 
@@ -217,6 +232,7 @@ AgentEvent: TypeAlias = (
     | PlanUpdatedEvent
     | LoopLimitReachedEvent
     | LoopTransitionEvent
+    | CheckpointCommittedEvent
     | ContextCompactionStartedEvent
     | ContextCompactionFinishedEvent
     | ContextCompactionFailedEvent

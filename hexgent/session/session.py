@@ -9,7 +9,7 @@ from ..plan import Plan
 from ..tool.tool_permission_pipeline import PermissionContext, PermissionMode
 from .run_report import build_run_report
 from .session_store import SessionStore, ToolResultLimits
-from .checkpoint import CheckpointStore
+from .checkpoint import Checkpoint, CheckpointReason, CheckpointStore
 
 
 @dataclass(frozen=True)
@@ -150,9 +150,7 @@ class Session:
         # 2. Run 终态已经写入 Transcript 后，保存对应的安全边界快照。
         if context_manager is not None and self.store.session_id is not None:
             try:
-                CheckpointStore(self.store.session_dir).write(
-                    session_id=self.store.session_id,
-                    transcript_sequence=self.store.next_sequence - 1,
+                self.create_checkpoint(
                     context_manager=context_manager,
                     plan=plan,
                     reason="run_finished",
@@ -183,6 +181,48 @@ class Session:
         finally:
             self._active_run_id = None
             self._active_run_start_sequence = None
+
+    def create_checkpoint(
+        self,
+        *,
+        context_manager: Any,
+        plan: Plan | None,
+        reason: CheckpointReason,
+    ) -> Checkpoint | None:
+        """在已经完成的 Turn 安全边界提交 Checkpoint。"""
+        if self.store is None or self.store.session_id is None:
+            return None
+
+        # 1. 快照先覆盖已落盘的领域事实；未提交成功前不会写 committed 事件。
+        checkpoint_store = CheckpointStore(self.store.session_dir)
+        checkpoint = checkpoint_store.write(
+            session_id=self.store.session_id,
+            transcript_sequence=self.store.next_sequence - 1,
+            context_manager=context_manager,
+            plan=plan,
+            reason=reason,
+        )
+
+        # 2. Transcript 记录快照提交事实，是恢复选择快照的唯一依据。
+        self.record_runtime_event(
+            "checkpoint_committed",
+            {
+                "checkpoint_id": checkpoint.checkpoint_id,
+                "transcript_sequence": checkpoint.transcript_sequence,
+                "checksum": checkpoint.checksum,
+                "reason": checkpoint.reason,
+            },
+        )
+
+        # 3. 索引是可再生加速视图，失败不影响已经提交的恢复事实。
+        try:
+            checkpoint_store.update_index(checkpoint)
+        except Exception as error:
+            self.record_runtime_event(
+                "checkpoint_index_failed",
+                {"checkpoint_id": checkpoint.checkpoint_id, "message": str(error)},
+            )
+        return checkpoint
 
     def record_context_messages(
         self,

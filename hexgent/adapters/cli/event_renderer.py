@@ -7,6 +7,7 @@ from ...events import (
     ContextCompactionFailedEvent,
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
+    CheckpointCommittedEvent,
     LoopLimitReachedEvent,
     PlanCreatedEvent,
     PlanUpdatedEvent,
@@ -36,6 +37,16 @@ PLAN_STATUS_LABELS = {
     "in_progress": "进行中",
     "completed": "已完成",
     "blocked": "已阻塞",
+}
+
+CHECKPOINT_REASON_LABELS = {
+    "tool_batch_completed": "工具批次结果已回填",
+    "plan_continuation_ready": "Plan 继续状态已提交",
+    "context_compaction_completed": "上下文压缩已提交",
+    "reactive_compaction_completed": "应急上下文压缩已提交",
+    "finalization_ready": "收尾状态已提交",
+    "steering_applied": "新要求已在边界生效",
+    "run_finished": "运行已结束",
 }
 
 
@@ -108,6 +119,12 @@ class TerminalEventRenderer:
             )
         elif isinstance(event, ContextCompactionFailedEvent):
             print(f"\033[90m{event.message}\033[0m")
+        elif isinstance(event, CheckpointCommittedEvent):
+            label = CHECKPOINT_REASON_LABELS[event.reason]
+            print(
+                f"\033[90mCheckpoint 已提交：{event.checkpoint_id}，"
+                f"原因：{label}\033[0m"
+            )
         elif isinstance(event, RunFinishedEvent):
             self._render_finished(event)
 

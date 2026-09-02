@@ -68,14 +68,19 @@ class SessionRestorer:
         # 2. 优先采用最近有效 Checkpoint；不存在或损坏时回退全量重放。
         checkpoint = None
         checkpoint_store = CheckpointStore(store.session_dir)
-        candidate_ids = [checkpoint_id] if checkpoint_id else checkpoint_store.list_ids()
-        for candidate_id in candidate_ids:
-            if candidate_id is None:
-                continue
+        commits = _committed_checkpoints(records, checkpoint_id)
+        for candidate_id, commit in commits:
             try:
                 candidate = checkpoint_store.read(candidate_id)
                 if candidate.session_id != session_id:
                     raise ValueError("Checkpoint 所属 Session 不一致")
+                if candidate.transcript_sequence >= records[-1]["sequence"]:
+                    raise ValueError("Checkpoint 覆盖序号超出 Transcript")
+                if (
+                    commit.get("transcript_sequence") != candidate.transcript_sequence
+                    or commit.get("checksum") != candidate.checksum
+                ):
+                    raise ValueError("Checkpoint 与提交事实不一致")
                 checkpoint = candidate
                 break
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
@@ -174,6 +179,28 @@ def _permission_mode(payload: dict[str, Any]) -> PermissionMode:
     if mode not in VALID_PERMISSION_MODES:
         raise ValueError(f"Session Transcript 包含无效权限模式：{mode}")
     return mode  # type: ignore[return-value]
+
+
+def _committed_checkpoints(
+    records: list[dict[str, Any]],
+    requested_id: str | None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """从 Transcript 提交事实中按新到旧选择 Checkpoint。"""
+    committed: list[tuple[str, dict[str, Any]]] = []
+    for record in records:
+        if record["type"] != "checkpoint_committed":
+            continue
+        payload = record["payload"]
+        checkpoint_id = payload.get("checkpoint_id")
+        if isinstance(checkpoint_id, str):
+            committed.append((checkpoint_id, payload))
+    if requested_id is not None:
+        return [
+            (checkpoint_id, payload)
+            for checkpoint_id, payload in committed
+            if checkpoint_id == requested_id
+        ]
+    return list(reversed(committed))
 
 
 def _plan_from_payload(payload: Any) -> Plan | None:
