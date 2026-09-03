@@ -83,7 +83,8 @@ def _failure_stop(state: LoopState, message: str) -> Stop:
             elapsed_seconds=state.elapsed_seconds,
             stop_reason=state.stop_reason,
             status="failed",
-        )
+        ),
+        state,
     )
 
 
@@ -111,7 +112,7 @@ def _apply_plan_exit(
                     action="cleared",
                     reason="completed",
                 )
-        return Stop(AgentLoopResult(output_text, state.elapsed_seconds))
+        return Stop(AgentLoopResult(output_text, state.elapsed_seconds), state)
 
     # 3. 阻塞和提醒耗尽形成明确、可恢复的终态。
     if decision.action == "blocked":
@@ -121,7 +122,8 @@ def _apply_plan_exit(
                 state.elapsed_seconds,
                 stop_reason="plan_blocked",
                 status="blocked",
-            )
+            ),
+            state,
         )
     if decision.action == "incomplete":
         return Stop(
@@ -130,7 +132,8 @@ def _apply_plan_exit(
                 state.elapsed_seconds,
                 stop_reason="plan_still_active",
                 status="incomplete",
-            )
+            ),
+            state,
         )
 
     # 4. 继续动作把领域提醒提交到 Context 和 Transcript，再构造完整下一轮 State。
@@ -197,7 +200,8 @@ def _control_stop(
             elapsed_seconds=state.elapsed_seconds,
             stop_reason=stop_reason,
             status=status,
-        )
+        ),
+        state,
     )
 
 
@@ -455,7 +459,8 @@ def run_turn(
                 state.elapsed_seconds,
                 state.stop_reason,
                 "limit_reached",
-            )
+            ),
+            response_state,
         )
 
     # 13. 无工具轮次是完整边界，先应用 FIFO Steering，再审查 Plan 退出。

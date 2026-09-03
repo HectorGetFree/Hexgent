@@ -15,7 +15,7 @@ from hexgent.events import (
     RunFinishedEvent,
 )
 from .loop_state import LoopState
-from .transitions import Continue
+from .transitions import Continue, Stop
 from .agent_turn import run_turn
 
 
@@ -37,7 +37,7 @@ def agent_loop(
     session: Session | None = None,
     user_confirmation: UserConfirmation = unavailable_user_confirmation,
     run_control: RunControl | None = None,
-) -> Generator[AgentEvent, None, None]:
+) -> Generator[AgentEvent, None, Stop]:
     """持续驱动单轮状态迁移，并在唯一出口发送最终事件。"""
     # 1. 在唯一入口补齐稳定依赖，并初始化本次 Run 的工具缓存与 Session。
     active_client = client if client is not None else get_client()
@@ -68,6 +68,8 @@ def agent_loop(
                         context_manager=state.context_manager,
                         plan=state.tool_context.plan_store.get_plan(),
                         reason=CHECKPOINT_REASON_BY_TRANSITION[turn_output.reason],
+                        loop_state=state,
+                        run_status="active",
                     )
                     if checkpoint is not None:
                         yield CheckpointCommittedEvent(
@@ -90,7 +92,8 @@ def agent_loop(
                 elapsed_seconds=turn_output.terminal.elapsed_seconds,
                 output_text=turn_output.terminal.output_text,
                 plan=state.tool_context.plan_store.get_plan(),
-                context_manager=state.context_manager,
+                context_manager=turn_output.state.context_manager,
+                loop_state=turn_output.state,
             )
         yield RunFinishedEvent(turn_output.terminal)
-        return
+        return turn_output

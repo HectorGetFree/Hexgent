@@ -2,22 +2,58 @@
 """与外部入口无关的 Hexgent Agent Core 门面。"""
 
 from collections.abc import Generator
-from dataclasses import asdict
-from dataclasses import replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Literal
 
 from hexgent.events import AgentEvent
 from .config import HexgentConfig, RunOptions, validate_config
 from .context import ContextManager
 from .loop.agent_loop import agent_loop
-from .loop.loop_state import LoopState
+from .loop.loop_state import LoopState, RunStateSnapshot
+from .loop.transitions import Stop
 from .run_control import RunControl
 from .plan import InMemoryPlanStore
 from .session import Session, SessionRestorer, SessionSettings
 from .tool.tool_context import ToolExecutionContext
 from .tool.tool_execution import UserConfirmation, unavailable_user_confirmation
+
+
+RunIntent = Literal["submit", "continue"]
+
+
+@dataclass(frozen=True)
+class RunRequest:
+    """一次 Session 内 Run 的明确意图，不承担 Session 选择职责。"""
+
+    # submit 写入新的用户 Query；continue 从可续跑 Checkpoint 继续原状态。
+    intent: RunIntent
+
+    # submit 必填，continue 必须为空，防止“续跑”悄然变成新的对话。
+    query: str | None = None
+
+    # 仅本次 Run 可覆盖的配置，不改变 Engine 创建时的基础配置。
+    options: RunOptions | None = None
+
+    @classmethod
+    def submit(
+        cls,
+        query: str,
+        *,
+        options: RunOptions | None = None,
+    ) -> "RunRequest":
+        """构造一条新的用户请求。"""
+        return cls("submit", query, options)
+
+    @classmethod
+    def continue_run(
+        cls,
+        *,
+        options: RunOptions | None = None,
+    ) -> "RunRequest":
+        """构造一次不追加 Query 的恢复执行请求。"""
+        return cls("continue", None, options)
 
 
 class AgentEngine:
@@ -31,6 +67,7 @@ class AgentEngine:
         context_manager: ContextManager | None = None,
         session: Session | None = None,
         tool_context: ToolExecutionContext | None = None,
+        pending_run_state: RunStateSnapshot | None = None,
     ) -> None:
         # 进程级配置只在 Engine 创建时注入，后续 Run 从这里生成有效快照。
         self.config = validate_config(config)
@@ -50,9 +87,17 @@ class AgentEngine:
             self.workdir,
         )
 
+        # 恢复后尚未执行的 Checkpoint 状态；新的 submit 会显式取代它。
+        self._pending_run_state = pending_run_state
+
         # 同一个 Engine 的 Context、Session 和工具状态只能由一个 Run 驱动。
         self._run_lock = Lock()
         self._run_active = False
+
+    @classmethod
+    def create(cls, config: HexgentConfig, workdir: Path) -> "AgentEngine":
+        """创建一个绑定新 Session 的 AgentEngine。"""
+        return cls(config, workdir)
 
     @classmethod
     def restore(
@@ -75,30 +120,7 @@ class AgentEngine:
             context_manager=restored.context_manager,
             session=restored.session,
             tool_context=restored.tool_context,
-        )
-
-    @classmethod
-    def restore_from_checkpoint(
-        cls,
-        config: HexgentConfig,
-        workdir: Path,
-        session_id: str,
-        checkpoint_id: str | None = None,
-    ) -> "AgentEngine":
-        """优先从 Checkpoint 恢复，并由 Transcript 重放其后的增量事件。"""
-        # 1. 恢复器负责选择最新有效快照，损坏时自动退回 Transcript 全量回放。
-        restored = SessionRestorer(
-            workdir,
-            config.tool_result,
-        ).restore(session_id, checkpoint_id)
-
-        # 2. 重新组装新的 Engine，不恢复旧线程、模型流和工具缓存。
-        return cls(
-            config,
-            workdir,
-            context_manager=restored.context_manager,
-            session=restored.session,
-            tool_context=restored.tool_context,
+            pending_run_state=restored.pending_run_state,
         )
 
     def resolve_config(self, options: RunOptions | None = None) -> HexgentConfig:
@@ -127,14 +149,14 @@ class AgentEngine:
 
     def run(
         self,
-        query: str,
+        request: RunRequest | str,
         *,
         options: RunOptions | None = None,
         user_confirmation: UserConfirmation = unavailable_user_confirmation,
         run_control: RunControl | None = None,
         client: Any | None = None,
     ) -> Generator[AgentEvent, None, None]:
-        """接受原始 Query，构造活动 State，并启动事件流。"""
+        """执行当前 Engine 固定 Session 内的一次提交或续跑。"""
         # 1. 事件流首次消费时原子占用 Engine，拒绝并发 Run 污染共享状态。
         with self._run_lock:
             if self._run_active:
@@ -142,21 +164,15 @@ class AgentEngine:
             self._run_active = True
 
         try:
-            # 2. 在修改 Context 前生成并校验本次 Run 的完整配置快照。
-            effective_config = self.resolve_config(options)
+            # 2. 兼容旧的字符串入口，但统一转换为带明确意图的 RunRequest。
+            normalized_request = self._normalize_request(request, options)
+            effective_config = self.resolve_config(normalized_request.options)
 
-            # 3. 用户 Query 同时进入活动 Context 和 Session 事实日志。
-            user_query = self.context_manager.append_user_query(query)
-            self.session.record_user_query(user_query)
+            # 3. submit 产生新事实；continue 只重建 Checkpoint 的活动 State。
+            state = self._build_run_state(normalized_request)
 
-            # 4. LoopState 只保存会演进的活动状态，不包含配置和外部依赖。
-            state = LoopState(
-                context_manager=self.context_manager,
-                tool_context=self.tool_context,
-            )
-
-            # 5. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
-            yield from agent_loop(
+            # 4. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
+            outcome = yield from agent_loop(
                 state,
                 config=effective_config,
                 client=client,
@@ -164,10 +180,66 @@ class AgentEngine:
                 user_confirmation=user_confirmation,
                 run_control=run_control or RunControl(),
             )
+
+            # 5. 终态为暂停或未完成时，当前进程也保留同一份可继续状态。
+            if isinstance(outcome, Stop) and outcome.terminal.status in {
+                "interrupted",
+                "incomplete",
+            }:
+                self._pending_run_state = outcome.state.to_snapshot()
+            elif isinstance(outcome, Stop):
+                self._pending_run_state = None
         finally:
             # 6. 正常结束、异常或调用方关闭事件流时都释放 Engine 占用标记。
             with self._run_lock:
                 self._run_active = False
+
+    def _normalize_request(
+        self,
+        request: RunRequest | str,
+        options: RunOptions | None,
+    ) -> RunRequest:
+        """将兼容入口收束为唯一的 RunRequest 协议。"""
+        if isinstance(request, str):
+            return RunRequest.submit(request, options=options)
+        if not isinstance(request, RunRequest):
+            raise TypeError("run() 只接受 RunRequest 或字符串 Query")
+        if options is not None:
+            raise ValueError("RunRequest 已包含 options，不能重复传入 options")
+        if request.intent == "submit":
+            if not isinstance(request.query, str) or not request.query.strip():
+                raise ValueError("submit RunRequest 必须包含非空 query")
+        elif request.intent == "continue":
+            if request.query is not None:
+                raise ValueError("continue RunRequest 不能携带 query")
+        else:
+            raise ValueError(f"不支持的 RunRequest intent：{request.intent}")
+        return request
+
+    def _build_run_state(self, request: RunRequest) -> LoopState:
+        """根据 Run 意图构造新 State 或恢复既有 State。"""
+        if request.intent == "submit":
+            if self._pending_run_state is not None:
+                self.session.record_runtime_event(
+                    "agent_run_superseded",
+                    {"reason": "新的用户 Query 取代了可继续的 Agent Run"},
+                )
+                self._pending_run_state = None
+            user_query = self.context_manager.append_user_query(request.query or "")
+            self.session.record_user_query(user_query)
+            return LoopState(
+                context_manager=self.context_manager,
+                tool_context=self.tool_context,
+            )
+
+        if self._pending_run_state is None:
+            raise RuntimeError("当前 Session 没有可继续的 Agent Run")
+        snapshot = self._pending_run_state
+        return LoopState.from_snapshot(
+            snapshot,
+            context_manager=self.context_manager,
+            tool_context=self.tool_context,
+        )
 
     def cancel_pending_task(self, reason: str = "用户取消暂停任务") -> None:
         """在没有活跃 Run 时终结保留的 Plan，不回滚已经发生的副作用。"""
@@ -175,6 +247,8 @@ class AgentEngine:
         with self._run_lock:
             if self._run_active:
                 raise RuntimeError("当前 AgentEngine 仍有正在执行的 Agent Run")
+
+            self._pending_run_state = None
 
             # 2. 取消前先把 Plan 快照写入 Session 事实，再清除继续执行义务。
             plan = self.tool_context.plan_store.get_plan()

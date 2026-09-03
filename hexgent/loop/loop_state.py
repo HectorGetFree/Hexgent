@@ -24,6 +24,87 @@ ContinueReason = Literal[
 
 
 @dataclass(frozen=True)
+class RunStateSnapshot:
+    """Checkpoint 中保存的可续跑 LoopState 字段。"""
+
+    # 已完成模型轮次、工具调用和累计 Token，继续时继承原预算消耗。
+    model_rounds: int
+    tool_calls: int
+    input_tokens: int
+    output_tokens: int
+
+    # Plan、上下文恢复和收尾控制相关的跨轮次状态。
+    plan_completion_nudges: int
+    reactive_compaction_attempted: bool
+    mode: LoopMode
+    transition: ContinueReason | None
+    stop_reason: LoopStopReason | None
+
+    # 单调时钟不可持久化，改为保存已经流逝的秒数。
+    elapsed_seconds: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换为稳定的 Checkpoint JSON 对象。"""
+        return {
+            "model_rounds": self.model_rounds,
+            "tool_calls": self.tool_calls,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "plan_completion_nudges": self.plan_completion_nudges,
+            "reactive_compaction_attempted": self.reactive_compaction_attempted,
+            "mode": self.mode,
+            "transition": self.transition,
+            "stop_reason": self.stop_reason,
+            "elapsed_seconds": self.elapsed_seconds,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "RunStateSnapshot":
+        """严格解析持久化的运行状态快照。"""
+        try:
+            snapshot = cls(
+                model_rounds=_snapshot_int(payload, "model_rounds"),
+                tool_calls=_snapshot_int(payload, "tool_calls"),
+                input_tokens=_snapshot_int(payload, "input_tokens"),
+                output_tokens=_snapshot_int(payload, "output_tokens"),
+                plan_completion_nudges=_snapshot_int(
+                    payload,
+                    "plan_completion_nudges",
+                ),
+                reactive_compaction_attempted=payload["reactive_compaction_attempted"],
+                mode=payload["mode"],
+                transition=payload["transition"],
+                stop_reason=payload["stop_reason"],
+                elapsed_seconds=float(payload["elapsed_seconds"]),
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("Checkpoint 运行状态结构无效") from error
+        if (
+            not isinstance(snapshot.reactive_compaction_attempted, bool)
+            or snapshot.mode not in {"working", "finalizing"}
+            or snapshot.transition not in {
+                None,
+                "tool_results_ready",
+                "plan_continuation",
+                "context_compacted",
+                "reactive_context_compacted",
+                "budget_finalization",
+                "steering_applied",
+            }
+            or snapshot.stop_reason not in {
+                None,
+                "max_model_rounds",
+                "max_tool_calls",
+                "max_total_tokens",
+                "max_elapsed_seconds",
+            }
+            or snapshot.elapsed_seconds < 0
+        ):
+            raise ValueError("Checkpoint 运行状态字段无效")
+        return snapshot
+
+
+@dataclass(frozen=True)
 class LoopState:
     """只保存下一轮模型调用必须继承的数据。"""
 
@@ -98,3 +179,50 @@ class LoopState:
             input_tokens = getattr(usage, "input_tokens", 0)
             output_tokens = getattr(usage, "output_tokens", 0)
         return input_tokens or 0, output_tokens or 0
+
+    def to_snapshot(self) -> RunStateSnapshot:
+        """提取可持久化的运行状态，不序列化 Context 和工具对象。"""
+        return RunStateSnapshot(
+            self.model_rounds,
+            self.tool_calls,
+            self.input_tokens,
+            self.output_tokens,
+            self.plan_completion_nudges,
+            self.reactive_compaction_attempted,
+            self.mode,
+            self.transition,
+            self.stop_reason,
+            self.elapsed_seconds,
+        )
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: RunStateSnapshot,
+        *,
+        context_manager: ContextManager,
+        tool_context: ToolExecutionContext,
+    ) -> "LoopState":
+        """使用新进程对象重建下一轮需要的 LoopState。"""
+        return cls(
+            context_manager=context_manager,
+            tool_context=tool_context,
+            model_rounds=snapshot.model_rounds,
+            tool_calls=snapshot.tool_calls,
+            input_tokens=snapshot.input_tokens,
+            output_tokens=snapshot.output_tokens,
+            plan_completion_nudges=snapshot.plan_completion_nudges,
+            reactive_compaction_attempted=snapshot.reactive_compaction_attempted,
+            mode=snapshot.mode,
+            transition=snapshot.transition,
+            started_at=monotonic() - snapshot.elapsed_seconds,
+            stop_reason=snapshot.stop_reason,
+        )
+
+
+def _snapshot_int(payload: dict[str, Any], key: str) -> int:
+    """读取非负整数，拒绝 bool 冒充整数。"""
+    value = payload[key]
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{key} 必须是非负整数")
+    return value

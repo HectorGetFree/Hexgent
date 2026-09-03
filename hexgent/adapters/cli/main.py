@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ...agent_engine import AgentEngine
+from ...agent_engine import AgentEngine, RunRequest
 from ...config import load_config
 from ...run_control import RunControl
 from ...session import SessionStore
@@ -17,12 +17,12 @@ def main(config_path: Path | None = None) -> None:
     terminal_io = TerminalIO()
     workdir = find_workspace_root()
     config = load_config(workdir, config_path)
-    engine = AgentEngine(config, workdir)
+    engine = AgentEngine.create(config, workdir)
 
     print("\033[36mHexgent：\033[0m你好！有什么可以帮你的？")
     print(
         "输入内容后按两次回车或输入 /send 发送消息；"
-        "输入 /restore 恢复历史会话；exit 或 q 可以结束对话。\n"
+        "输入 /restore 恢复历史会话，/continue 续跑暂停任务；exit 或 q 可以结束对话。\n"
     )
 
     # 2. 每条终端消息启动独立 Run，并跨 Run 复用同一个 AgentEngine。
@@ -64,16 +64,24 @@ def main(config_path: Path | None = None) -> None:
             print(f"已恢复会话：{session_id}")
             continue
 
+        if normalized_query == "/continue":
+            request = RunRequest.continue_run()
+        else:
+            request = RunRequest.submit(query)
+
         print("\033[90m正在处理，请稍候……\033[0m")
 
         # 4. 将终端控制和权限确认转换为 Core 端口，并消费结构化事件。
         run_control = RunControl()
         renderer = TerminalEventRenderer(engine.tool_context.plan_store.get_plan)
         event_stream = engine.run(
-            query,
+            request,
             user_confirmation=terminal_io.request_confirmation,
             run_control=run_control,
         )
-        with terminal_io.capture_run_interrupt(run_control):
-            for event in event_stream:
-                renderer.render(event)
+        try:
+            with terminal_io.capture_run_interrupt(run_control):
+                for event in event_stream:
+                    renderer.render(event)
+        except (RuntimeError, ValueError) as error:
+            print(f"运行请求未执行：{error}")

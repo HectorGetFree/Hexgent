@@ -8,9 +8,10 @@ from typing import Any, Literal
 
 from ..context import ContextManager, UserQuery
 from ..plan import Plan
+from ..loop.loop_state import LoopState, RunStateSnapshot
 
 
-CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_SCHEMA_VERSION = 2
 
 CheckpointReason = Literal[
     "tool_batch_completed",  # 工具批次结果已经完整回填。
@@ -20,6 +21,12 @@ CheckpointReason = Literal[
     "finalization_ready",  # 预算收尾状态已经写入 Context。
     "steering_applied",  # Steering Query 已在安全 Turn 边界进入 Context。
     "run_finished",  # 当前 Agent Run 已经终止。
+]
+
+CheckpointRunStatus = Literal[
+    "active",  # Run 在安全边界后仍可继续，进程崩溃后允许恢复。
+    "continuable",  # Run 已暂停或不完整结束，允许后续 continue。
+    "terminal",  # Run 已完成、失败、取消或阻塞，不允许继续原状态。
 ]
 
 
@@ -41,6 +48,10 @@ class Checkpoint:
     context: dict[str, Any]
     # 当前 Plan 完整快照，没有 Plan 时为 null。
     plan: dict[str, Any] | None
+    # 本次 Run 下一轮需要继承的预算和控制状态；终态快照可为空。
+    run_state: dict[str, Any] | None
+    # 说明快照中的 Run 是否仍可通过 engine.run(continue) 执行。
+    run_status: CheckpointRunStatus
     # 不含本字段的内容校验和，用于拒绝损坏或被改写的快照。
     checksum: str
 
@@ -59,6 +70,8 @@ class CheckpointStore:
         context_manager: ContextManager,
         plan: Plan | None,
         reason: CheckpointReason,
+        loop_state: LoopState | None,
+        run_status: CheckpointRunStatus,
     ) -> Checkpoint:
         """在安全边界原子写入一个 Checkpoint。"""
         # 1. 使用已经提交的内存状态构造不可变快照，不包含线程和网络对象。
@@ -71,6 +84,8 @@ class CheckpointStore:
             "reason": reason,
             "context": _context_snapshot(context_manager),
             "plan": asdict(plan) if plan is not None else None,
+            "run_state": loop_state.to_snapshot().to_dict() if loop_state else None,
+            "run_status": run_status,
         }
         checkpoint = Checkpoint(**payload, checksum=_checksum(payload))
 
@@ -96,7 +111,12 @@ class CheckpointStore:
         checksum = payload.pop("checksum", None)
         if not isinstance(checksum, str) or checksum != _checksum(payload):
             raise ValueError("Checkpoint 校验和不匹配")
-        return Checkpoint(**payload, checksum=checksum)
+        checkpoint = Checkpoint(**payload, checksum=checksum)
+        if checkpoint.run_status not in {"active", "continuable", "terminal"}:
+            raise ValueError("Checkpoint 运行状态无效")
+        if checkpoint.run_state is not None:
+            RunStateSnapshot.from_dict(checkpoint.run_state)
+        return checkpoint
 
     def update_index(self, checkpoint: Checkpoint) -> None:
         """原子更新可选索引；恢复不依赖该派生文件。"""

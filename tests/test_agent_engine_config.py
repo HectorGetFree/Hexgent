@@ -5,10 +5,12 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from hexgent.agent_engine import AgentEngine
+from hexgent.agent_engine import AgentEngine, RunRequest
 from hexgent.config import ConfigError, HexgentConfig, RunOptions
 from hexgent.context import ContextLimits
-from hexgent.events import TextDeltaEvent
+from hexgent.events import AgentLoopResult, TextDeltaEvent
+from hexgent.loop.loop_state import LoopState
+from hexgent.loop.transitions import Stop
 from hexgent.loop.limits import LoopLimits
 from hexgent.plan import Plan, PlanStep
 from hexgent.session import Session, SessionSettings
@@ -145,6 +147,51 @@ class AgentEngineConfigTest(unittest.TestCase):
             engine.cancel_pending_task()
 
             self.assertIsNone(engine.tool_context.plan_store.get_plan())
+
+    def test_continue_reuses_checkpoint_state_without_appending_query(self) -> None:
+        """continue 应继承预算状态，且不能重复写入用户 Query。"""
+        with TemporaryDirectory() as directory:
+            engine = AgentEngine(HexgentConfig(), Path(directory), session=Session())
+            first_state = LoopState(
+                context_manager=engine.context_manager,
+                tool_context=engine.tool_context,
+                model_rounds=3,
+                tool_calls=5,
+            )
+            engine._pending_run_state = first_state.to_snapshot()
+
+            def stopped_loop(state: LoopState, **_: object):
+                if False:
+                    yield TextDeltaEvent("")
+                return Stop(
+                    AgentLoopResult("", state.elapsed_seconds, status="completed"),
+                    state,
+                )
+
+            with patch("hexgent.agent_engine.agent_loop", side_effect=stopped_loop) as loop:
+                self.assertEqual(list(engine.run(RunRequest.continue_run())), [])
+
+            (restored_state,) = loop.call_args.args
+            self.assertEqual(restored_state.model_rounds, 3)
+            self.assertEqual(restored_state.tool_calls, 5)
+            self.assertEqual(engine.context_manager.user_queries, ())
+            self.assertIsNone(engine._pending_run_state)
+
+    def test_submit_supersedes_pending_checkpoint_run(self) -> None:
+        """新 Query 必须取代旧快照，不能隐式拼接为 continue。"""
+        with TemporaryDirectory() as directory:
+            engine = AgentEngine(HexgentConfig(), Path(directory), session=Session())
+            state = LoopState(engine.context_manager, engine.tool_context)
+            engine._pending_run_state = state.to_snapshot()
+
+            with patch("hexgent.agent_engine.agent_loop", return_value=iter(())):
+                self.assertEqual(list(engine.run(RunRequest.submit("新的方向"))), [])
+
+            self.assertEqual(
+                [query.content for query in engine.context_manager.user_queries],
+                ["新的方向"],
+            )
+            self.assertIsNone(engine._pending_run_state)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,12 @@ from ..plan import Plan
 from ..tool.tool_permission_pipeline import PermissionContext, PermissionMode
 from .run_report import build_run_report
 from .session_store import SessionStore, ToolResultLimits
-from .checkpoint import Checkpoint, CheckpointReason, CheckpointStore
+from .checkpoint import (
+    Checkpoint,
+    CheckpointReason,
+    CheckpointRunStatus,
+    CheckpointStore,
+)
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,10 @@ class Session:
         session._permission_mode_recorded = True
         return session
 
+    def restore_latest_user_query(self, content: str) -> None:
+        """恢复最近 Query，供 continue 启动新的 Session 内 Run 使用。"""
+        self._latest_user_query = content
+
     @property
     def permission_context(self) -> PermissionContext:
         """取得当前 Session 权限模式的不可变执行快照。"""
@@ -125,6 +134,7 @@ class Session:
         output_text: str,
         plan: Plan | None,
         context_manager: Any | None = None,
+        loop_state: Any | None = None,
     ) -> Path | None:
         """结束当前 Agent Run，并由 Transcript 事实生成 JSON Report。"""
         if self.store is None:
@@ -154,6 +164,12 @@ class Session:
                     context_manager=context_manager,
                     plan=plan,
                     reason="run_finished",
+                    loop_state=loop_state,
+                    run_status=(
+                        "continuable"
+                        if status in {"interrupted", "incomplete"}
+                        else "terminal"
+                    ),
                 )
             except Exception as error:
                 # Checkpoint 是加速快照，失败不能阻断已经完成的 Agent Run。
@@ -188,6 +204,8 @@ class Session:
         context_manager: Any,
         plan: Plan | None,
         reason: CheckpointReason,
+        loop_state: Any | None,
+        run_status: CheckpointRunStatus,
     ) -> Checkpoint | None:
         """在已经完成的 Turn 安全边界提交 Checkpoint。"""
         if self.store is None or self.store.session_id is None:
@@ -201,6 +219,8 @@ class Session:
             context_manager=context_manager,
             plan=plan,
             reason=reason,
+            loop_state=loop_state,
+            run_status=run_status,
         )
 
         # 2. Transcript 记录快照提交事实，是恢复选择快照的唯一依据。
@@ -211,6 +231,7 @@ class Session:
                 "transcript_sequence": checkpoint.transcript_sequence,
                 "checksum": checkpoint.checksum,
                 "reason": checkpoint.reason,
+                "run_status": checkpoint.run_status,
             },
         )
 

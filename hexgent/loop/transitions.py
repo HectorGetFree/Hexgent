@@ -29,5 +29,8 @@ class Stop:
     # 发送给 Loop 唯一出口的终止结果。
     terminal: AgentLoopResult
 
+    # 本轮终止时的最后安全状态，供 Checkpoint 持久化和后续 continue 使用。
+    state: LoopState
+
 
 TurnOutcome: TypeAlias = Continue | Stop

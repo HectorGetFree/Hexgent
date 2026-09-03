@@ -7,8 +7,11 @@ import unittest
 from hexgent.agent_engine import AgentEngine
 from hexgent.config import HexgentConfig
 from hexgent.context import ContextManager
+from hexgent.loop.loop_state import LoopState
 from hexgent.plan import Plan, PlanStep
 from hexgent.session import Session, SessionRestorer, SessionSettings
+from hexgent.tool.tool_context import ToolExecutionContext
+from hexgent.plan import InMemoryPlanStore
 
 
 class SessionRecoveryTest(unittest.TestCase):
@@ -72,6 +75,8 @@ class SessionRecoveryTest(unittest.TestCase):
                 context_manager=context,
                 plan=None,
                 reason="tool_batch_completed",
+                loop_state=None,
+                run_status="terminal",
             )
             second = context.append_user_query("第二条请求")
             session.record_user_query(second)
@@ -79,6 +84,8 @@ class SessionRecoveryTest(unittest.TestCase):
                 context_manager=context,
                 plan=None,
                 reason="tool_batch_completed",
+                loop_state=None,
+                run_status="terminal",
             )
             checkpoint_path = (
                 session.store.session_dir
@@ -94,6 +101,34 @@ class SessionRecoveryTest(unittest.TestCase):
             [query.content for query in restored.context_manager.user_queries],
             ["第一条请求", "第二条请求"],
         )
+
+    def test_restores_pending_run_state_only_from_safe_checkpoint(self) -> None:
+        """可续跑 Checkpoint 不应被新的状态事实静默覆盖。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = ContextManager()
+            session = Session.persistent(root)
+            query = context.append_user_query("继续未完成任务")
+            session.record_user_query(query)
+            state = LoopState(
+                context,
+                ToolExecutionContext(InMemoryPlanStore(), root),
+                model_rounds=2,
+                tool_calls=4,
+            )
+            session.create_checkpoint(
+                context_manager=context,
+                plan=None,
+                reason="tool_batch_completed",
+                loop_state=state,
+                run_status="active",
+            )
+
+            restored = SessionRestorer(root).restore(session.store.session_id)
+
+        self.assertIsNotNone(restored.pending_run_state)
+        self.assertEqual(restored.pending_run_state.model_rounds, 2)
+        self.assertEqual(restored.pending_run_state.tool_calls, 4)
 
     def test_restores_committed_compaction_exactly(self) -> None:
         """恢复端应采用压缩后的消息和边界，不再次调用摘要模型。"""

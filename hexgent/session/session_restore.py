@@ -9,6 +9,7 @@ from ..context import ContextManager
 from ..plan import InMemoryPlanStore, Plan, PlanStep
 from ..tool.tool_context import ToolExecutionContext
 from ..tool.tool_permission_pipeline import PermissionMode
+from ..loop.loop_state import RunStateSnapshot
 from .session import Session, SessionSettings
 from .session_store import SessionStore, ToolResultLimits
 from .checkpoint import CheckpointStore
@@ -36,6 +37,9 @@ class RestoredSession:
 
     # 已恢复 Plan、但不恢复单次 Run 缓存的工具上下文。
     tool_context: ToolExecutionContext
+
+    # 最近一个仍可继续的 Checkpoint 运行状态；没有时为 None。
+    pending_run_state: RunStateSnapshot | None = None
 
 
 class SessionRestorer:
@@ -125,7 +129,10 @@ class SessionRestorer:
             elif record_type == "plan_state_changed":
                 current_plan = _plan_from_payload(payload.get("plan"))
 
-        # 3. 崩溃可能留下无配对结果的工具调用；只补充未知状态，不自动重试。
+        # 3. 仅当 Checkpoint 后没有新的状态事实时，才允许继续其运行预算。
+        pending_run_state = _pending_run_state(checkpoint, records)
+
+        # 4. 崩溃可能留下无配对结果的工具调用；只补充未知状态，不自动重试。
         repair_outputs = _build_interrupted_tool_outputs(
             context_manager.active_messages
         )
@@ -148,7 +155,7 @@ class SessionRestorer:
                 },
             )
 
-        # 4. PlanStore 只恢复当前快照；读取缓存和重复调用缓存从空状态开始。
+        # 5. PlanStore 只恢复当前快照；读取缓存和重复调用缓存从空状态开始。
         plan_store = InMemoryPlanStore()
         if current_plan is not None:
             plan_store.set_plan(current_plan)
@@ -156,6 +163,12 @@ class SessionRestorer:
             store,
             SessionSettings(permission_mode),
         )
+        latest_query = next(
+            (query.content for query in reversed(context_manager.user_queries)),
+            None,
+        )
+        if latest_query is not None:
+            session.restore_latest_user_query(latest_query)
         session.record_runtime_event(
             "session_recovered",
             {
@@ -164,12 +177,14 @@ class SessionRestorer:
                     current_plan.revision if current_plan is not None else None
                 ),
                 "repaired_tool_call_count": len(repair_outputs),
+                "has_pending_run": pending_run_state is not None,
             },
         )
         return RestoredSession(
             context_manager,
             session,
             ToolExecutionContext(plan_store, self.workdir),
+            pending_run_state,
         )
 
 
@@ -201,6 +216,35 @@ def _committed_checkpoints(
             if checkpoint_id == requested_id
         ]
     return list(reversed(committed))
+
+
+def _pending_run_state(
+    checkpoint: Any | None,
+    records: list[dict[str, Any]],
+) -> RunStateSnapshot | None:
+    """判断恢复出的 Checkpoint 是否仍能安全地继续运行。"""
+    if checkpoint is None or checkpoint.run_status not in {"active", "continuable"}:
+        return None
+    if not isinstance(checkpoint.run_state, dict):
+        return None
+
+    # 1. 快照之后出现新的 Context/模型/工具事实时，运行计数已过期，不能猜测续跑。
+    stateful_events = {
+        "context_user_query_appended",
+        "context_messages_appended",
+        "context_compaction_applied",
+        "model_response_completed",
+        "agent_run_finished",
+    }
+    if any(
+        record["sequence"] > checkpoint.transcript_sequence
+        and record["type"] in stateful_events
+        for record in records
+    ):
+        return None
+
+    # 2. 通过严格解析后才把预算和控制状态交给下一次 run(continue)。
+    return RunStateSnapshot.from_dict(checkpoint.run_state)
 
 
 def _plan_from_payload(payload: Any) -> Plan | None:
