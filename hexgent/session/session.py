@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..context.context_manager import UserQuery
+from ..memory import ContextRecordInput, ContextRecordMutation, ContextRecordStore
 from ..plan import Plan
 from ..tool.tool_permission_pipeline import PermissionContext, PermissionMode
 from .run_report import build_run_report
@@ -34,6 +35,9 @@ class Session:
 
     # 当前会话实际采用的权限设置，初始化后不受全局配置变化影响。
     settings: SessionSettings = field(default_factory=SessionSettings)
+
+    # 当前 Session 的可追溯核心上下文记录，不进入 ContextManager 活动消息。
+    context_records: ContextRecordStore = field(default_factory=ContextRecordStore)
 
     # 最近一次由 Context 接受的用户原始 Query。
     _latest_user_query: str | None = field(default=None, init=False, repr=False)
@@ -69,9 +73,10 @@ class Session:
         cls,
         store: SessionStore,
         settings: SessionSettings,
+        context_records: ContextRecordStore | None = None,
     ) -> "Session":
         """使用已经打开的 Store 构造可继续追加事实的 Session。"""
-        session = cls(store, settings)
+        session = cls(store, settings, context_records or ContextRecordStore())
         session._permission_mode_recorded = True
         return session
 
@@ -266,6 +271,38 @@ class Session:
         """记录不进入模型 Context 的完整 Session 事实。"""
         if self.store is not None:
             self.store.append_transcript(event_type, payload)
+
+    def upsert_context_records(
+        self,
+        candidates: list[ContextRecordInput],
+    ) -> tuple[ContextRecordMutation, ...]:
+        """提交核心上下文记录变更，并同步事实日志与 JSON 投影。"""
+        # 1. Store 只执行可解释的新增、来源合并和显式替代。
+        if self.store is not None:
+            for candidate in candidates:
+                if any(
+                    sequence >= self.store.next_sequence
+                    for sequence in candidate.source_sequences
+                ):
+                    raise ValueError("ContextRecord 证据序号尚未落盘")
+        mutations = self.context_records.upsert(candidates)
+        if not mutations:
+            return ()
+
+        # 2. 每个变更先写入不可变 Transcript，投影文件不是恢复权威来源。
+        for mutation in mutations:
+            self.record_runtime_event(
+                "context_record_changed",
+                {
+                    "action": mutation.action,
+                    "item": asdict(mutation.item),
+                },
+            )
+
+        # 3. 条目投影写入失败不能撤销已提交事实，后续恢复可重建该文件。
+        if self.store is not None:
+            self.store.persist_context_records(self.context_records.to_dict())
+        return mutations
 
     def record_compaction(self, boundary: dict[str, Any]) -> None:
         """记录一次已经提交、可确定性重放的 Context 压缩。"""

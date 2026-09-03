@@ -10,6 +10,13 @@ from .session_store import (
     build_persisted_output_message,
 )
 from .checkpoint import Checkpoint, CheckpointReason, CheckpointRunStatus, CheckpointStore
+from ..memory import (
+    ContextRecord,
+    ContextRecordCategory,
+    ContextRecordInput,
+    ContextRecordMutation,
+    ContextRecordStore,
+)
 
 __all__ = [
     "PersistedToolResult",
@@ -26,4 +33,9 @@ __all__ = [
     "CheckpointReason",
     "CheckpointRunStatus",
     "CheckpointStore",
+    "ContextRecord",
+    "ContextRecordCategory",
+    "ContextRecordInput",
+    "ContextRecordMutation",
+    "ContextRecordStore",
 ]

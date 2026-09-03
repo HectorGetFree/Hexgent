@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..context import ContextManager
+from ..memory import ContextRecordStore
 from ..plan import InMemoryPlanStore, Plan, PlanStep
 from ..tool.tool_context import ToolExecutionContext
 from ..tool.tool_permission_pipeline import PermissionMode
@@ -129,10 +130,22 @@ class SessionRestorer:
             elif record_type == "plan_state_changed":
                 current_plan = _plan_from_payload(payload.get("plan"))
 
-        # 3. 仅当 Checkpoint 后没有新的状态事实时，才允许继续其运行预算。
+        # 3. ContextRecord 不属于模型 Context；始终由完整 Transcript 重放其投影。
+        context_records = ContextRecordStore()
+        for record in records:
+            if record["type"] not in {
+                "context_record_changed",
+                "context_item_changed",  # 兼容 ContextRecord 重命名前的历史事实。
+            }:
+                continue
+            context_records.apply_mutation(
+                ContextRecordStore.mutation_from_payload(record["payload"])
+            )
+
+        # 4. 仅当 Checkpoint 后没有新的状态事实时，才允许继续其运行预算。
         pending_run_state = _pending_run_state(checkpoint, records)
 
-        # 4. 崩溃可能留下无配对结果的工具调用；只补充未知状态，不自动重试。
+        # 5. 崩溃可能留下无配对结果的工具调用；只补充未知状态，不自动重试。
         repair_outputs = _build_interrupted_tool_outputs(
             context_manager.active_messages
         )
@@ -155,13 +168,14 @@ class SessionRestorer:
                 },
             )
 
-        # 5. PlanStore 只恢复当前快照；读取缓存和重复调用缓存从空状态开始。
+        # 6. PlanStore 只恢复当前快照；读取缓存和重复调用缓存从空状态开始。
         plan_store = InMemoryPlanStore()
         if current_plan is not None:
             plan_store.set_plan(current_plan)
         session = Session.restored(
             store,
             SessionSettings(permission_mode),
+            context_records,
         )
         latest_query = next(
             (query.content for query in reversed(context_manager.user_queries)),

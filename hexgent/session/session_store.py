@@ -85,6 +85,9 @@ class SessionStore:
         # 保存每次 Agent Run 结构化报告及索引的目录。
         self.reports_dir = self.session_dir / "reports"
 
+        # 保存当前有效/失效 ContextRecord 的可再生 JSON 投影。
+        self.context_records_path = self.session_dir / "context-records.json"
+
         # 当前会话采用的工具结果内联和预览限制。
         self.tool_result_limits = tool_result_limits or ToolResultLimits()
 
@@ -212,6 +215,7 @@ class SessionStore:
         self.transcript_path = self.session_dir / "transcript.jsonl"
         self.tool_results_dir = self.session_dir / "tool-results"
         self.reports_dir = self.session_dir / "reports"
+        self.context_records_path = self.session_dir / "context-records.json"
 
     def start_session(self, first_query: str) -> None:
         """确保会话已由首轮 Query 命名，并记录会话开始事实。"""
@@ -351,6 +355,14 @@ class SessionStore:
         index["updated_at"] = report["finished_at"]
         _write_json_atomically(index_path, index)
         return report_path
+
+    def persist_context_records(self, projection: dict[str, Any]) -> Path | None:
+        """原子保存 Session ContextRecord 投影，恢复仍以 Transcript 为准。"""
+        if self.session_id is None:
+            return None
+        self._ensure_session_dir()
+        _write_json_atomically(self.context_records_path, projection)
+        return self.context_records_path
 
     def persist_tool_result(
         self,

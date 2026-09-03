@@ -15,7 +15,13 @@ from .loop.loop_state import LoopState, RunStateSnapshot
 from .loop.transitions import Stop
 from .run_control import RunControl
 from .plan import InMemoryPlanStore
-from .session import Session, SessionRestorer, SessionSettings
+from .session import (
+    ContextRecordInput,
+    ContextRecordMutation,
+    Session,
+    SessionRestorer,
+    SessionSettings,
+)
 from .tool.tool_context import ToolExecutionContext
 from .tool.tool_execution import UserConfirmation, unavailable_user_confirmation
 
@@ -264,3 +270,16 @@ class AgentEngine:
                 action="cleared",
                 reason="cancelled",
             )
+
+    def upsert_context_records(
+        self,
+        candidates: list[ContextRecordInput],
+    ) -> tuple[ContextRecordMutation, ...]:
+        """在安全 Run 边界外提交 Session 核心上下文记录。"""
+        # 1. 条目来源必须已经形成 Transcript 事实，活跃 Run 中不允许并发插入。
+        with self._run_lock:
+            if self._run_active:
+                raise RuntimeError("当前 Agent Run 未结束，不能更新 ContextRecord")
+
+            # 2. Session 负责追加事实、更新 JSON 投影并返回精确变更结果。
+            return self.session.upsert_context_records(candidates)
