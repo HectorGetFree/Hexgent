@@ -7,6 +7,12 @@ from .context_records import (
     ContextRecordMutation,
     ContextRecordStore,
 )
+from .context_retrieval import (
+    ContextRecordRetriever,
+    ContextRetrievalLimits,
+    RetrievedContextRecord,
+    format_retrieved_context,
+)
 
 __all__ = [
     "ContextRecord",
@@ -14,4 +20,8 @@ __all__ = [
     "ContextRecordInput",
     "ContextRecordMutation",
     "ContextRecordStore",
+    "ContextRecordRetriever",
+    "ContextRetrievalLimits",
+    "RetrievedContextRecord",
+    "format_retrieved_context",
 ]

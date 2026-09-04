@@ -10,6 +10,7 @@ except ModuleNotFoundError:  # Python 3.10 使用兼容实现。
     import tomli as tomllib
 
 from .context.context_budget import ContextLimits
+from .memory import ContextRetrievalLimits
 from .session import ToolResultLimits
 from .loop.limits import LoopLimits
 from .tool.tool_scheduler import ToolParallelLimits
@@ -25,6 +26,7 @@ ConfigSection = TypeVar(
     ToolParallelLimits,
     ToolRetryLimits,
     PermissionConfig,
+    ContextRetrievalLimits,
 )
 
 
@@ -54,6 +56,9 @@ class HexgentConfig:
     # 新 Session 使用的默认权限模式配置。
     permission: PermissionConfig = PermissionConfig()
 
+    # 新 Query 对当前 Session ContextRecord 的召回预算。
+    context_retrieval: ContextRetrievalLimits = ContextRetrievalLimits()
+
 
 @dataclass(frozen=True)
 class RunOptions:
@@ -70,6 +75,9 @@ class RunOptions:
 
     # 本次 Run 可选覆盖的工具重试配置。
     tool_retry: ToolRetryLimits | None = None
+
+    # 本次 Run 可选覆盖的历史 ContextRecord 召回预算。
+    context_retrieval: ContextRetrievalLimits | None = None
 
 
 def load_config(
@@ -103,6 +111,7 @@ def load_config(
         "tool_parallel",
         "tool_retry",
         "permission",
+        "context_retrieval",
     }
     unknown_sections = set(raw_config) - known_sections
     if unknown_sections:
@@ -137,6 +146,11 @@ def load_config(
             raw_config.get("permission"),
             PermissionConfig,
         ),
+        context_retrieval=_load_section(
+            "context_retrieval",
+            raw_config.get("context_retrieval"),
+            ContextRetrievalLimits,
+        ),
     )
     return validate_config(config)
 
@@ -151,6 +165,10 @@ def validate_config(config: HexgentConfig) -> HexgentConfig:
         "tool_parallel": (config.tool_parallel, ToolParallelLimits),
         "tool_retry": (config.tool_retry, ToolRetryLimits),
         "permission": (config.permission, PermissionConfig),
+        "context_retrieval": (
+            config.context_retrieval,
+            ContextRetrievalLimits,
+        ),
     }
     for section_name, (section, section_type) in sections.items():
         if not isinstance(section, section_type):
@@ -251,6 +269,10 @@ def _validate_relationships(config: HexgentConfig) -> None:
     if not 0 < context.min_compaction_savings_ratio <= 1:
         raise ConfigError(
             "[context].min_compaction_savings_ratio 必须大于 0 且小于或等于 1"
+        )
+    if config.context_retrieval.minimum_score > 1:
+        raise ConfigError(
+            "[context_retrieval].minimum_score 必须小于或等于 1"
         )
     if (
         config.tool_result.preview_characters

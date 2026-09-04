@@ -150,6 +150,11 @@ class AgentEngine:
                 if overrides.tool_retry is not None
                 else self.config.tool_retry
             ),
+            context_retrieval=(
+                overrides.context_retrieval
+                if overrides.context_retrieval is not None
+                else self.config.context_retrieval
+            ),
         )
         return validate_config(effective_config)
 
@@ -175,7 +180,7 @@ class AgentEngine:
             effective_config = self.resolve_config(normalized_request.options)
 
             # 3. submit 产生新事实；continue 只重建 Checkpoint 的活动 State。
-            state = self._build_run_state(normalized_request)
+            state = self._build_run_state(normalized_request, effective_config)
 
             # 4. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
             outcome = yield from agent_loop(
@@ -222,7 +227,11 @@ class AgentEngine:
             raise ValueError(f"不支持的 RunRequest intent：{request.intent}")
         return request
 
-    def _build_run_state(self, request: RunRequest) -> LoopState:
+    def _build_run_state(
+        self,
+        request: RunRequest,
+        config: HexgentConfig,
+    ) -> LoopState:
         """根据 Run 意图构造新 State 或恢复既有 State。"""
         if request.intent == "submit":
             if self._pending_run_state is not None:
@@ -233,9 +242,15 @@ class AgentEngine:
                 self._pending_run_state = None
             user_query = self.context_manager.append_user_query(request.query or "")
             self.session.record_user_query(user_query)
+            relevant_context = self.session.retrieve_context_records(
+                request.query or "",
+                (user_query.sequence,),
+                config.context_retrieval,
+            )
             return LoopState(
                 context_manager=self.context_manager,
                 tool_context=self.tool_context,
+                relevant_context=relevant_context,
             )
 
         if self._pending_run_state is None:

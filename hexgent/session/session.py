@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from ..context.context_manager import UserQuery
-from ..memory import ContextRecordInput, ContextRecordMutation, ContextRecordStore
+from ..memory import (
+    ContextRecordInput,
+    ContextRecordMutation,
+    ContextRecordRetriever,
+    ContextRecordStore,
+    ContextRetrievalLimits,
+    RetrievedContextRecord,
+)
 from ..plan import Plan
 from ..tool.tool_permission_pipeline import PermissionContext, PermissionMode
 from .run_report import build_run_report
@@ -295,14 +302,45 @@ class Session:
                 "context_record_changed",
                 {
                     "action": mutation.action,
-                    "item": asdict(mutation.item),
+                    "record": asdict(mutation.record),
                 },
             )
 
-        # 3. 条目投影写入失败不能撤销已提交事实，后续恢复可重建该文件。
+        # 3. 记录投影写入失败不能撤销已提交事实，后续恢复可重建该文件。
         if self.store is not None:
             self.store.persist_context_records(self.context_records.to_dict())
         return mutations
+
+    def retrieve_context_records(
+        self,
+        query: str,
+        query_sequences: tuple[int, ...],
+        limits: ContextRetrievalLimits,
+    ) -> tuple[RetrievedContextRecord, ...]:
+        """为新 Query 召回 Session 历史记录并保存可观测事实。"""
+        # 1. 检索器只读取 active 投影，不修改 Record 和用户原始 Query。
+        records = ContextRecordRetriever(limits).retrieve(
+            query,
+            self.context_records.active_records,
+        )
+
+        # 2. Transcript 只记录引用、评分与原因，不重复复制 Record 正文。
+        self.record_runtime_event(
+            "context_records_retrieved",
+            {
+                "context_query_sequences": list(query_sequences),
+                "records": [
+                    {
+                        "record_id": record.record_id,
+                        "score": record.score,
+                        "match_reasons": list(record.match_reasons),
+                    }
+                    for record in records
+                ],
+                "total_characters": sum(len(record.content) for record in records),
+            },
+        )
+        return records
 
     def record_compaction(self, boundary: dict[str, Any]) -> None:
         """记录一次已经提交、可确定性重放的 Context 压缩。"""

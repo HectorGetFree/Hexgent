@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from hexgent.context.context_manager import ContextManager
 
+from ..memory import RetrievedContextRecord
 from ..tool.tool_context import ToolExecutionContext
 from .limits import LoopStopReason
 
@@ -40,6 +41,9 @@ class RunStateSnapshot:
     transition: ContinueReason | None
     stop_reason: LoopStopReason | None
 
+    # 当前 Run 固定使用的历史记录召回结果，continue 时不重新检索。
+    relevant_context: tuple[RetrievedContextRecord, ...]
+
     # 单调时钟不可持久化，改为保存已经流逝的秒数。
     elapsed_seconds: float
 
@@ -55,6 +59,9 @@ class RunStateSnapshot:
             "mode": self.mode,
             "transition": self.transition,
             "stop_reason": self.stop_reason,
+            "relevant_context": [
+                record.to_dict() for record in self.relevant_context
+            ],
             "elapsed_seconds": self.elapsed_seconds,
         }
 
@@ -75,6 +82,10 @@ class RunStateSnapshot:
                 mode=payload["mode"],
                 transition=payload["transition"],
                 stop_reason=payload["stop_reason"],
+                relevant_context=tuple(
+                    RetrievedContextRecord.from_dict(record)
+                    for record in payload.get("relevant_context", [])
+                ),
                 elapsed_seconds=float(payload["elapsed_seconds"]),
             )
         except (KeyError, TypeError, ValueError) as error:
@@ -113,6 +124,9 @@ class LoopState:
 
     # 跨轮次共享的工具上下文，包括工作区和 PlanStore。
     tool_context: ToolExecutionContext
+
+    # 当前 Query 召回且在整个 Run 中保持稳定的历史上下文记录。
+    relevant_context: tuple[RetrievedContextRecord, ...] = ()
 
     # 已收到完整响应的正常模型调用次数。
     model_rounds: int = 0
@@ -192,6 +206,7 @@ class LoopState:
             self.mode,
             self.transition,
             self.stop_reason,
+            self.relevant_context,
             self.elapsed_seconds,
         )
 
@@ -217,6 +232,7 @@ class LoopState:
             transition=snapshot.transition,
             started_at=monotonic() - snapshot.elapsed_seconds,
             stop_reason=snapshot.stop_reason,
+            relevant_context=snapshot.relevant_context,
         )
 
 

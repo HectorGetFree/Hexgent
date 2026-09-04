@@ -32,18 +32,16 @@ class ContextRecordTest(unittest.TestCase):
                         "所有错误信息与注释使用中文。",
                         "constraint",
                         (3,),
-                        ("中文", "注释"),
                     )
                 ]
             )
-            item_id = created[0].item.item_id
+            record_id = created[0].record.record_id
             updated = session.upsert_context_records(
                 [
                     ContextRecordInput(
                         "所有错误信息与注释使用中文。",
                         "constraint",
                         (4,),
-                        ("错误信息",),
                     )
                 ]
             )
@@ -53,8 +51,7 @@ class ContextRecordTest(unittest.TestCase):
                         "所有新代码的注释使用中文；固定接口标识保持原样。",
                         "decision",
                         (5,),
-                        ("中文", "接口"),
-                        (item_id,),
+                        (record_id,),
                     )
                 ]
             )
@@ -69,17 +66,17 @@ class ContextRecordTest(unittest.TestCase):
             [mutation.action for mutation in replaced],
             ["superseded", "created"],
         )
-        self.assertEqual(projection["schema_version"], 1)
-        self.assertEqual(len(projection["items"]), 2)
-        self.assertEqual(len(restored.session.context_records.items), 2)
-        self.assertEqual(len(restored.session.context_records.active_items), 1)
-        old_item = next(
-            item
-            for item in restored.session.context_records.items
-            if item.item_id == item_id
+        self.assertEqual(projection["schema_version"], 2)
+        self.assertEqual(len(projection["records"]), 2)
+        self.assertEqual(len(restored.session.context_records.records), 2)
+        self.assertEqual(len(restored.session.context_records.active_records), 1)
+        old_record = next(
+            record
+            for record in restored.session.context_records.records
+            if record.record_id == record_id
         )
-        self.assertEqual(old_item.source_sequences, (3, 4))
-        self.assertEqual(old_item.status, "superseded")
+        self.assertEqual(old_record.source_sequences, (3, 4))
+        self.assertEqual(old_record.status, "superseded")
 
     def test_rejects_source_sequence_that_is_not_yet_a_transcript_fact(self) -> None:
         """Session 入口后续会把条目绑定到已经落盘的安全事实。"""
@@ -94,8 +91,8 @@ class ContextRecordTest(unittest.TestCase):
                     [ContextRecordInput("未落盘事实", "fact", (99,))]
                 )
 
-    def test_engine_exposes_session_item_submission_at_safe_boundary(self) -> None:
-        """外部入口应通过 Engine 访问条目，而不是直接操作 Session 内部。"""
+    def test_engine_exposes_session_record_submission_at_safe_boundary(self) -> None:
+        """外部入口应通过 Engine 访问记录，而不是直接操作 Session 内部。"""
         with TemporaryDirectory() as directory:
             root = Path(directory)
             engine = AgentEngine.create(HexgentConfig(), root)

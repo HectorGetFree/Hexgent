@@ -61,6 +61,7 @@ def _continue_with_finalization(
     next_state = LoopState(
         context_manager=state.context_manager,
         tool_context=state.tool_context,
+        relevant_context=state.relevant_context,
         model_rounds=state.model_rounds,
         tool_calls=state.tool_calls,
         input_tokens=state.input_tokens,
@@ -209,6 +210,7 @@ def _continue_with_steering(
     state: LoopState,
     run_control: RunControl,
     session: Session | None,
+    config: HexgentConfig,
 ) -> Continue | None:
     """在安全 Turn 边界按 FIFO 注入当前已到达的全部 Steering Query。"""
     # 1. drain 使用原子快照；调用期间新到达的 Query 留给下一个边界。
@@ -217,8 +219,10 @@ def _continue_with_steering(
         return None
 
     # 2. 每条 Query 保持独立原文进入 Context 和 Transcript，不合并、不摘要。
+    applied_queries = []
     for query in queries:
         user_query = state.context_manager.append_user_query(query.content)
+        applied_queries.append(user_query)
         if session is not None:
             session.record_user_query(user_query, source="steering")
             session.record_runtime_event(
@@ -230,9 +234,19 @@ def _continue_with_steering(
                 },
             )
 
-    # 3. 新用户要求重置 Plan 退出提醒，但保留同一 Run 的预算、耗时和 Plan。
+    # 3. Steering 是当前 Run 内的新 Query，因此重新召回并固定相关历史记录。
+    relevant_context = state.relevant_context
+    if session is not None:
+        relevant_context = session.retrieve_context_records(
+            "\n".join(query.content for query in queries),
+            tuple(query.sequence for query in applied_queries),
+            config.context_retrieval,
+        )
+
+    # 4. 新用户要求重置 Plan 退出提醒，但保留同一 Run 的预算、耗时和 Plan。
     next_state = replace(
         state,
+        relevant_context=relevant_context,
         plan_completion_nudges=0,
         transition="steering_applied",
     )
@@ -261,6 +275,7 @@ def run_turn(
         state,
         active_control,
         session,
+        config,
     )
     if steering_transition is not None:
         return steering_transition
@@ -274,7 +289,7 @@ def run_turn(
 
     # 4. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
-    instructions = build_context(state.tool_context)
+    instructions = build_context(state.tool_context, state.relevant_context)
     active_context_limits = config.context
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
@@ -469,6 +484,7 @@ def run_turn(
             response_state,
             active_control,
             session,
+            config,
         )
         if steering_transition is not None:
             return steering_transition
@@ -518,6 +534,7 @@ def run_turn(
     next_state = LoopState(
         context_manager=state.context_manager,
         tool_context=state.tool_context,
+        relevant_context=state.relevant_context,
         model_rounds=model_rounds,
         tool_calls=state.tool_calls + batch.budgeted_call_count,
         input_tokens=input_tokens,
@@ -533,6 +550,7 @@ def run_turn(
         next_state,
         active_control,
         session,
+        config,
     )
     if steering_transition is not None:
         return steering_transition

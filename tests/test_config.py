@@ -46,6 +46,12 @@ initial_backoff_seconds = 0.1
 
 [permission]
 default_mode = "accept_edits"
+
+[context_retrieval]
+max_records = 4
+max_characters = 1200
+minimum_score = 0.2
+max_unmatched_constraints = 2
 """.strip(),
                 encoding="utf-8",
             )
@@ -65,6 +71,9 @@ default_mode = "accept_edits"
         self.assertEqual(config.tool_retry.max_attempts, 4)
         self.assertEqual(config.tool_retry.initial_backoff_seconds, 0.1)
         self.assertEqual(config.permission.default_mode, "accept_edits")
+        self.assertEqual(config.context_retrieval.max_records, 4)
+        self.assertEqual(config.context_retrieval.max_characters, 1_200)
+        self.assertEqual(config.context_retrieval.minimum_score, 0.2)
 
     def test_unknown_or_invalid_fields_are_rejected(self) -> None:
         """未知字段和错误类型不能被静默忽略。"""
@@ -75,6 +84,7 @@ default_mode = "accept_edits"
             ("[tool_parallel]\nmax_workers = 0", "必须大于 0"),
             ("[tool_retry]\nmax_attempts = 0", "必须大于 0"),
             ("[permission]\ndefault_mode = 'unknown'", "必须是以下值之一"),
+            ("[context_retrieval]\nminimum_score = 1.2", "小于或等于 1"),
             (
                 "[context]\ncontext_window_tokens = 10000\n"
                 "reserved_output_tokens = 8000\nsafety_margin_tokens = 4000",
