@@ -2,8 +2,13 @@
 
 from dataclasses import dataclass
 import json
-import re
 from typing import Any
+
+from hexgent.utils.retrieval_text import (
+    normalize_retrieval_text as _normalize_text,
+    retrieval_token_weight as _token_weight,
+    tokenize_retrieval_text as _tokenize,
+)
 
 from .context_records import ContextRecord, ContextRecordCategory
 
@@ -198,53 +203,10 @@ def _score_record(
         strongest = sorted(shared, key=lambda token: (-_token_weight(token), token))[:5]
         reasons.append(f"token_overlap:{','.join(strongest)}")
     if any(
-        len(token) >= 3 and re.fullmatch(r"[a-z0-9_./\\-]+", token)
+        len(token) >= 3 and token.isascii() and token.replace("_", "").replace("-", "").isalnum()
         for token in shared
     ):
         # 稳定代码标识符比自然语言短片段更能表达用户正在讨论的对象。
         score = max(score, 0.35)
         reasons.append("code_identifier")
     return min(1.0, score), tuple(reasons)
-
-
-def _tokenize(text: str) -> set[str]:
-    """提取路径、代码标识符、英文词和中文二/三元片段。"""
-    tokens: set[str] = set()
-    for raw in re.findall(r"[A-Za-z0-9_./\\-]+", text):
-        lowered = raw.lower().strip("./\\-")
-        if len(lowered) >= 2:
-            tokens.add(lowered)
-        for part in re.split(r"[\s_./\\-]+", raw):
-            for component in re.findall(
-                r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+",
-                part,
-            ):
-                component = component.lower()
-                if len(component) >= 2:
-                    tokens.add(component)
-
-    for chinese in re.findall(r"[\u3400-\u9fff]+", text):
-        if len(chinese) >= 2:
-            tokens.add(chinese)
-        for size in (2, 3):
-            for index in range(len(chinese) - size + 1):
-                tokens.add(chinese[index : index + size])
-    return tokens
-
-
-def _token_weight(token: str) -> float:
-    """让路径和稳定代码标识符比普通短片段拥有更高权重。"""
-    if any(separator in token for separator in ("/", "\\", ".", "_", "-")):
-        return 3.0
-    if re.fullmatch(r"[a-z0-9]+", token):
-        return 1.5 if len(token) >= 3 else 1.0
-    if len(token) >= 4:
-        return 2.0
-    if len(token) == 3:
-        return 1.0
-    return 0.6
-
-
-def _normalize_text(text: str) -> str:
-    """压缩空白并统一英文大小写，用于短语命中。"""
-    return " ".join(text.lower().split())

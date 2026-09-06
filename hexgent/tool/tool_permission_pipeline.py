@@ -207,6 +207,13 @@ ALLOW_RULES: tuple[PermissionRule, ...] = (
         lambda _args, _context: True,
         lambda _args, _context: "允许维护当前 Session 的 Plan 状态",
     ),
+    PermissionRule(
+        "memory_state_management",
+        "allow",
+        ("remember",),
+        lambda _args, _context: True,
+        lambda _args, _context: "允许保存用户明确要求的长期记忆",
+    ),
 )
 
 

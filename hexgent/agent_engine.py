@@ -15,6 +15,7 @@ from .loop.loop_state import LoopState, RunStateSnapshot
 from .loop.transitions import Stop
 from .run_control import RunControl
 from .plan import InMemoryPlanStore
+from .memory import MemoryRetriever, MemoryStore
 from .session import (
     ContextRecordInput,
     ContextRecordMutation,
@@ -73,6 +74,7 @@ class AgentEngine:
         context_manager: ContextManager | None = None,
         session: Session | None = None,
         tool_context: ToolExecutionContext | None = None,
+        memory_store: MemoryStore | None = None,
         pending_run_state: RunStateSnapshot | None = None,
     ) -> None:
         # 进程级配置只在 Engine 创建时注入，后续 Run 从这里生成有效快照。
@@ -88,10 +90,14 @@ class AgentEngine:
             config.tool_result,
             SessionSettings(config.permission.default_mode),
         )
-        self.tool_context = tool_context or ToolExecutionContext(
-            InMemoryPlanStore(),
-            self.workdir,
-        )
+        if tool_context is not None:
+            self.tool_context = tool_context
+            self.memory_store = memory_store or tool_context.memory_store
+        else:
+            self.memory_store = memory_store or MemoryStore(self.workdir)
+            self.tool_context = ToolExecutionContext(
+                InMemoryPlanStore(), self.workdir, self.memory_store,
+            )
 
         # 恢复后尚未执行的 Checkpoint 状态；新的 submit 会显式取代它。
         self._pending_run_state = pending_run_state
@@ -159,6 +165,11 @@ class AgentEngine:
                 overrides.context_retrieval
                 if overrides.context_retrieval is not None
                 else self.config.context_retrieval
+            ),
+            memory_retrieval=(
+                overrides.memory_retrieval
+                if overrides.memory_retrieval is not None
+                else self.config.memory_retrieval
             ),
         )
         return validate_config(effective_config)
@@ -252,10 +263,14 @@ class AgentEngine:
                 (user_query.sequence,),
                 config.context_retrieval,
             )
+            relevant_memory = MemoryRetriever(config.memory_retrieval).retrieve(
+                request.query or "", self.memory_store.items,
+            )
             return LoopState(
                 context_manager=self.context_manager,
                 tool_context=self.tool_context,
                 relevant_context=relevant_context,
+                relevant_memory=relevant_memory,
             )
 
         if self._pending_run_state is None:

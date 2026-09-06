@@ -10,7 +10,7 @@ except ModuleNotFoundError:  # Python 3.10 使用兼容实现。
     import tomli as tomllib
 
 from .context.context_budget import ContextLimits
-from .memory import ContextRetrievalLimits
+from .memory import ContextRetrievalLimits, MemoryRetrievalLimits
 from .memory.context_record_extraction import ContextExtractionLimits
 from .session import ToolResultLimits
 from .loop.limits import LoopLimits
@@ -29,6 +29,7 @@ ConfigSection = TypeVar(
     PermissionConfig,
     ContextRetrievalLimits,
     ContextExtractionLimits,
+    MemoryRetrievalLimits,
 )
 
 
@@ -64,6 +65,10 @@ class HexgentConfig:
     # 在完整 Turn 边界自动提取会话记录的频率和预算。
     context_extraction: ContextExtractionLimits = ContextExtractionLimits()
 
+    # 跨 Session Markdown Memory 的召回预算。
+    memory_retrieval: MemoryRetrievalLimits = MemoryRetrievalLimits()
+
+
 
 @dataclass(frozen=True)
 class RunOptions:
@@ -86,6 +91,10 @@ class RunOptions:
 
     # 本次 Run 可覆盖的自动提取配置。
     context_extraction: ContextExtractionLimits | None = None
+
+    # 本次 Run 可覆盖的跨 Session Memory 召回预算。
+    memory_retrieval: MemoryRetrievalLimits | None = None
+
 
 
 def load_config(
@@ -121,6 +130,7 @@ def load_config(
         "permission",
         "context_retrieval",
         "context_extraction",
+        "memory_retrieval",
     }
     unknown_sections = set(raw_config) - known_sections
     if unknown_sections:
@@ -163,6 +173,9 @@ def load_config(
         context_extraction=_load_section(
             "context_extraction", raw_config.get("context_extraction"), ContextExtractionLimits,
         ),
+        memory_retrieval=_load_section(
+            "memory_retrieval", raw_config.get("memory_retrieval"), MemoryRetrievalLimits,
+        ),
     )
     return validate_config(config)
 
@@ -182,6 +195,7 @@ def validate_config(config: HexgentConfig) -> HexgentConfig:
             ContextRetrievalLimits,
         ),
         "context_extraction": (config.context_extraction, ContextExtractionLimits),
+        "memory_retrieval": (config.memory_retrieval, MemoryRetrievalLimits),
     }
     for section_name, (section, section_type) in sections.items():
         if not isinstance(section, section_type):

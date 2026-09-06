@@ -13,6 +13,14 @@ from .context_retrieval import (
     RetrievedContextRecord,
     format_retrieved_context,
 )
+from .memory_retrieval import (
+    MemoryRetriever,
+    MemoryRetrievalLimits,
+    RetrievedMemory,
+    format_retrieved_memory,
+)
+from .memory_store import MemoryCategory, MemoryItem, MemoryMutation, MemoryStore
+from .memory_auto_extraction import MemoryAutoExtractionLimits
 
 __all__ = [
     "ContextRecord",
@@ -24,4 +32,13 @@ __all__ = [
     "ContextRetrievalLimits",
     "RetrievedContextRecord",
     "format_retrieved_context",
+    "MemoryCategory",
+    "MemoryItem",
+    "MemoryMutation",
+    "MemoryStore",
+    "MemoryRetriever",
+    "MemoryRetrievalLimits",
+    "RetrievedMemory",
+    "format_retrieved_memory",
+    "MemoryAutoExtractionLimits",
 ]

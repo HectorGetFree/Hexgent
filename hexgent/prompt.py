@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 - 调用工具前后保持简洁，不要把自己表现成只会编程的 Coding Agent。
 - 不确定时坦诚说明；需求不清楚且会影响结果时，再向用户提问。
 - 默认使用与用户相同的语言回答。
+- 只有用户明确要求“记住”、要求以后持续遵守某项偏好或约束时，才调用 remember 保存长期记忆；不要把一次任务的临时要求当作长期记忆。
 """
 
 TOOLS = [
@@ -241,6 +242,33 @@ TOOLS = [
                 "blocked_reason",
                 "steps"
             ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "remember",
+        "description": "保存用户明确要求长期记住的偏好、约束、项目知识或设计决策。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "可独立理解的简短长期记忆，不得记录本次任务的临时步骤。",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["preference", "constraint", "project", "decision"],
+                    "description": "记忆类别。",
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "用于未来词法召回的少量关键词。",
+                },
+            },
+            "required": ["content", "category", "keywords"],
             "additionalProperties": False,
         },
         "strict": True,

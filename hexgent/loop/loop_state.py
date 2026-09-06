@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from hexgent.context.context_manager import ContextManager
 
-from ..memory import RetrievedContextRecord
+from ..memory import RetrievedContextRecord, RetrievedMemory
 from ..tool.tool_context import ToolExecutionContext
 from .limits import LoopStopReason
 
@@ -44,6 +44,9 @@ class RunStateSnapshot:
     # 当前 Run 固定使用的历史记录召回结果，continue 时不重新检索。
     relevant_context: tuple[RetrievedContextRecord, ...]
 
+    # 当前 Run 固定使用的跨 Session Memory 召回结果，continue 时不重新检索。
+    relevant_memory: tuple[RetrievedMemory, ...]
+
     # 单调时钟不可持久化，改为保存已经流逝的秒数。
     elapsed_seconds: float
 
@@ -61,6 +64,9 @@ class RunStateSnapshot:
             "stop_reason": self.stop_reason,
             "relevant_context": [
                 record.to_dict() for record in self.relevant_context
+            ],
+            "relevant_memory": [
+                memory.to_dict() for memory in self.relevant_memory
             ],
             "elapsed_seconds": self.elapsed_seconds,
         }
@@ -85,6 +91,10 @@ class RunStateSnapshot:
                 relevant_context=tuple(
                     RetrievedContextRecord.from_dict(record)
                     for record in payload.get("relevant_context", [])
+                ),
+                relevant_memory=tuple(
+                    RetrievedMemory.from_dict(memory)
+                    for memory in payload.get("relevant_memory", [])
                 ),
                 elapsed_seconds=float(payload["elapsed_seconds"]),
             )
@@ -127,6 +137,9 @@ class LoopState:
 
     # 当前 Query 召回且在整个 Run 中保持稳定的历史上下文记录。
     relevant_context: tuple[RetrievedContextRecord, ...] = ()
+
+    # 当前 Query 召回且在整个 Run 中保持稳定的跨 Session Memory。
+    relevant_memory: tuple[RetrievedMemory, ...] = ()
 
     # 已收到完整响应的正常模型调用次数。
     model_rounds: int = 0
@@ -207,6 +220,7 @@ class LoopState:
             self.transition,
             self.stop_reason,
             self.relevant_context,
+            self.relevant_memory,
             self.elapsed_seconds,
         )
 
@@ -233,6 +247,7 @@ class LoopState:
             started_at=monotonic() - snapshot.elapsed_seconds,
             stop_reason=snapshot.stop_reason,
             relevant_context=snapshot.relevant_context,
+            relevant_memory=snapshot.relevant_memory,
         )
 
 

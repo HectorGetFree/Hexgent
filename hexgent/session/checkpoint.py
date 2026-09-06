@@ -183,7 +183,9 @@ def _context_snapshot(context_manager: ContextManager) -> dict[str, Any]:
                 "content": message.content,
             }
             if isinstance(message, UserQuery)
-            else message
+            # SDK 的 ResponseOutputMessage、ResponseReasoningItem 等对象不能
+            # 直接 JSON 序列化；Checkpoint 只保存其模型输入等价的基础数据。
+            else _json_value(message)
             for message in context_manager.active_messages
         ],
         "round_boundaries": list(context_manager.round_boundaries),
@@ -192,6 +194,30 @@ def _context_snapshot(context_manager: ContextManager) -> dict[str, Any]:
         "partial_compaction_count": context_manager.partial_compaction_count,
         "next_query_sequence": context_manager._next_query_sequence,
     }
+
+
+def _json_value(value: Any) -> Any:
+    """递归转换 SDK 消息，拒绝静默降级不可恢复的未知对象。"""
+    # 1. 基础 JSON 类型直接保留，保证快照与模型输入语义一致。
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    # 2. Responses SDK 使用 Pydantic 模型，优先获得 JSON 模式的完整字典。
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _json_value(model_dump(mode="json"))
+        except TypeError:
+            return _json_value(model_dump())
+
+    # 3. 递归处理模型消息中的 content、annotations 等嵌套结构。
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+
+    # 4. 未知运行时对象不允许被 str() 偷偷替换，避免恢复出错误上下文。
+    raise TypeError(f"Checkpoint 不支持序列化 {type(value).__name__} 类型的上下文消息")
 
 
 def _checksum(payload: dict[str, Any]) -> str:

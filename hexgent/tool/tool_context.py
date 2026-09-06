@@ -1,6 +1,6 @@
 """工具执行期间共享的运行时上下文。"""
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -8,6 +8,7 @@ from threading import Lock
 from typing import Any
 
 from hexgent.plan import PlanStore
+from hexgent.memory.memory_store import MemoryStore
 
 
 MAX_DUPLICATE_TOOL_CALLS = 3
@@ -56,6 +57,12 @@ class ToolExecutionContext:
     # 文件和命令工具默认操作的工作区根目录。
     workdir: Path
 
+    # 构造时允许调用方注入既有 MemoryStore；为空时按工作区创建。
+    initial_memory_store: InitVar[MemoryStore | None] = None
+
+    # 构造完成后必定存在的工作区级 Markdown Memory。
+    memory_store: MemoryStore = field(init=False)
+
     # 当前活动模型上下文中已经完整读取过的文件及其内容状态。
     read_file_cache: dict[ReadFileCacheKey, ReadFileCacheEntry] = field(
         default_factory=dict
@@ -69,6 +76,14 @@ class ToolExecutionContext:
 
     # 保护并行只读工具共享的缓存字典，不覆盖实际文件 I/O。
     cache_lock: Lock = field(default_factory=Lock, repr=False, compare=False)
+
+    def __post_init__(self, initial_memory_store: MemoryStore | None) -> None:
+        """保证每个工具上下文都有统一的工作区级 MemoryStore。"""
+        object.__setattr__(
+            self,
+            "memory_store",
+            initial_memory_store or MemoryStore(self.workdir),
+        )
 
     def clear_read_file_cache(self) -> None:
         """在旧文件正文可能离开活动上下文后清空读取状态。"""

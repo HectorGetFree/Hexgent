@@ -63,6 +63,49 @@ class SessionRecoveryTest(unittest.TestCase):
         self.assertEqual(records[-1]["sequence"], next_sequence + 1)
         self.assertEqual(records[-1]["payload"]["content"], "继续执行")
 
+    def test_checkpoint_serializes_sdk_style_response_items(self) -> None:
+        """Checkpoint 应将 SDK 响应对象转成恢复可用的普通消息字典。"""
+        class ResponseOutputMessage:
+            def model_dump(self, *, mode: str | None = None) -> dict[str, object]:
+                self_mode = mode
+                return {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "已完成"}],
+                    "serialization_mode": self_mode,
+                }
+
+        class ResponseReasoningItem:
+            def model_dump(self, *, mode: str | None = None) -> dict[str, object]:
+                return {
+                    "type": "reasoning",
+                    "content": [],
+                    "serialization_mode": mode,
+                }
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = ContextManager()
+            session = Session.persistent(root)
+            query = context.append_user_query("验证 SDK 响应快照")
+            session.record_user_query(query)
+            context.append_messages(
+                [ResponseReasoningItem(), ResponseOutputMessage()],
+                completes_round=True,
+            )
+            checkpoint = session.create_checkpoint(
+                context_manager=context,
+                plan=None,
+                reason="tool_batch_completed",
+                loop_state=None,
+                run_status="terminal",
+            )
+            restored = SessionRestorer(root).restore(session.store.session_id)
+
+        self.assertEqual(checkpoint.context["active_messages"][1]["type"], "reasoning")
+        self.assertEqual(checkpoint.context["active_messages"][2]["type"], "message")
+        self.assertEqual(restored.context_manager.model_messages()[2]["content"][0]["text"], "已完成")
+
     def test_uses_earlier_committed_checkpoint_when_latest_is_corrupted(self) -> None:
         """最新快照损坏时应回退更早提交快照并重放增量事实。"""
         with TemporaryDirectory() as directory:

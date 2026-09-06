@@ -12,6 +12,7 @@ from .plan_tools import (
     validate_create_plan,
     validate_update_plan,
 )
+from hexgent.tool.memory_tools import remember, validate_remember
 from .builtin_tools import (
     bash,
     edit_file,
@@ -40,6 +41,7 @@ ToolPermissionCapability = Literal[
     "workspace_write",  # 创建、覆盖或编辑工作区内文件。
     "shell",  # 执行可能组合本地、网络或外部副作用的 Shell 命令。
     "plan_state",  # 仅维护当前 Session 内的结构化 Plan 状态。
+    "memory_state",  # 维护工作区级 Markdown Memory。
 ]
 ToolInterruptBehavior = Literal[
     "cancel",  # 工具只读且可安全请求终止，不产生需要保留的副作用。
@@ -311,6 +313,23 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         display_argument="status",
         output_schema=PLAN_OUTPUT_SCHEMA,
         permission_capability="plan_state",
+    ),
+    "remember": RegisteredTool(
+        remember,
+        requires_context=True,
+        validator=validate_remember,
+        display_argument="content",
+        deduplication_policy="exact",
+        output_schema={
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string"},
+                "action": {"type": "string", "enum": ["created", "updated"]},
+            },
+            "required": ["memory_id", "action"],
+            "additionalProperties": False,
+        },
+        permission_capability="memory_state",
     ),
 }
 

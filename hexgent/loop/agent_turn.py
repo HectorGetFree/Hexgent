@@ -62,6 +62,7 @@ def _continue_with_finalization(
         context_manager=state.context_manager,
         tool_context=state.tool_context,
         relevant_context=state.relevant_context,
+        relevant_memory=state.relevant_memory,
         model_rounds=state.model_rounds,
         tool_calls=state.tool_calls,
         input_tokens=state.input_tokens,
@@ -236,17 +237,24 @@ def _continue_with_steering(
 
     # 3. Steering 是当前 Run 内的新 Query，因此重新召回并固定相关历史记录。
     relevant_context = state.relevant_context
+    relevant_memory = state.relevant_memory
     if session is not None:
         relevant_context = session.retrieve_context_records(
             "\n".join(query.content for query in queries),
             tuple(query.sequence for query in applied_queries),
             config.context_retrieval,
         )
+        from ..memory import MemoryRetriever
+        relevant_memory = MemoryRetriever(config.memory_retrieval).retrieve(
+            "\n".join(query.content for query in queries),
+            state.tool_context.memory_store.items,
+        )
 
     # 4. 新用户要求重置 Plan 退出提醒，但保留同一 Run 的预算、耗时和 Plan。
     next_state = replace(
         state,
         relevant_context=relevant_context,
+        relevant_memory=relevant_memory,
         plan_completion_nudges=0,
         transition="steering_applied",
     )
@@ -289,7 +297,9 @@ def run_turn(
 
     # 4. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
-    instructions = build_context(state.tool_context, state.relevant_context)
+    instructions = build_context(
+        state.tool_context, state.relevant_context, state.relevant_memory,
+    )
     active_context_limits = config.context
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
