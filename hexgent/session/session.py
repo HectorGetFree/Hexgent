@@ -46,6 +46,9 @@ class Session:
     # 当前 Session 的可追溯核心上下文记录，不进入 ContextManager 活动消息。
     context_records: ContextRecordStore = field(default_factory=ContextRecordStore)
 
+    # 已成功完成 Record 提取处理的最后一条 Transcript 序号；空结果同样推进。
+    last_extracted_transcript_sequence: int = 0
+
     # 最近一次由 Context 接受的用户原始 Query。
     _latest_user_query: str | None = field(default=None, init=False, repr=False)
 
@@ -282,6 +285,8 @@ class Session:
     def upsert_context_records(
         self,
         candidates: list[ContextRecordInput],
+        *,
+        processed_sequence: int | None = None,
     ) -> tuple[ContextRecordMutation, ...]:
         """提交核心上下文记录变更，并同步事实日志与 JSON 投影。"""
         # 1. Store 只执行可解释的新增、来源合并和显式替代。
@@ -292,7 +297,29 @@ class Session:
                     for sequence in candidate.source_sequences
                 ):
                     raise ValueError("ContextRecord 证据序号尚未落盘")
-        mutations = self.context_records.upsert(candidates)
+        staged = ContextRecordStore(self.context_records.records)
+        mutations = staged.upsert(candidates)
+        if processed_sequence is not None:
+            if (self.store is None or type(processed_sequence) is not int
+                    or not self.last_extracted_transcript_sequence < processed_sequence < self.store.next_sequence):
+                raise ValueError("ContextRecord 提取进度不在有效的已落盘范围内")
+            if any(sequence > processed_sequence for candidate in candidates for sequence in candidate.source_sequences):
+                raise ValueError("ContextRecord 证据超出本次提取范围")
+            # 自动提取将候选变更与进度作为一个事实提交，空结果也可恢复。
+            self.record_runtime_event("context_record_extraction_committed", {
+                "through_sequence": processed_sequence,
+                "mutations": [{"action": mutation.action, "record": asdict(mutation.record)}
+                              for mutation in mutations],
+            })
+            self.context_records = staged
+            self.last_extracted_transcript_sequence = processed_sequence
+            try:
+                self.store.persist_context_records(staged.to_dict())
+            except OSError:
+                self.record_runtime_event("context_record_projection_failed", {
+                    "message": "记录变更已提交，JSON 投影可由 Transcript 重建",
+                })
+            return mutations
         if not mutations:
             return ()
 
@@ -306,6 +333,7 @@ class Session:
                 },
             )
 
+        self.context_records = staged
         # 3. 记录投影写入失败不能撤销已提交事实，后续恢复可重建该文件。
         if self.store is not None:
             self.store.persist_context_records(self.context_records.to_dict())

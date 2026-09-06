@@ -1,6 +1,7 @@
 """Agent Loop 状态机的公开流式入口。"""
 
 from collections.abc import Generator
+from dataclasses import replace
 from typing import Any
 
 from ..client import get_client
@@ -16,7 +17,8 @@ from hexgent.events import (
 )
 from .loop_state import LoopState
 from .transitions import Continue, Stop
-from .agent_turn import run_turn
+from .agent_turn import _control_stop, run_turn
+from .extract_context_records import extract_context_records
 
 
 CHECKPOINT_REASON_BY_TRANSITION: dict[str, CheckpointReason] = {
@@ -59,6 +61,53 @@ def agent_loop(
             user_confirmation=user_confirmation,
             run_control=active_control,
         )
+
+        # 3. 完整 Turn 已落盘；提取稳定事实后，再写入下一状态 Checkpoint。
+        next_state = (
+            turn_output.next_state
+            if isinstance(turn_output, Continue)
+            else turn_output.state
+        )
+        normal_finish = (
+            isinstance(turn_output, Stop)
+            and turn_output.terminal.status == "completed"
+        )
+        if (
+            session is not None
+            and not active_control.interrupt_controller.interrupted
+            and (next_state.model_rounds > state.model_rounds or normal_finish)
+        ):
+            extraction_input_tokens, extraction_output_tokens = (
+                extract_context_records(
+                    session,
+                    active_client,
+                    config.context_extraction,
+                    active_control.interrupt_controller,
+                    force=normal_finish,
+                )
+            )
+            next_state = replace(
+                next_state,
+                input_tokens=next_state.input_tokens + extraction_input_tokens,
+                output_tokens=next_state.output_tokens + extraction_output_tokens,
+            )
+            if active_control.interrupt_controller.interrupted:
+                turn_output = _control_stop(
+                    next_state,
+                    active_control,
+                    session,
+                    "context_record_extraction",
+                )
+            elif isinstance(turn_output, Continue):
+                turn_output = Continue(next_state, turn_output.reason)
+            else:
+                turn_output = Stop(
+                    replace(
+                        turn_output.terminal,
+                        elapsed_seconds=next_state.elapsed_seconds,
+                    ),
+                    next_state,
+                )
         if isinstance(turn_output, Continue):
             yield LoopTransitionEvent(turn_output.reason)
             state = turn_output.next_state
@@ -84,7 +133,7 @@ def agent_loop(
                     )
             continue
 
-        # 3. Stop 是 Agent Loop 的唯一正常出口。
+        # 4. Stop 是 Agent Loop 的唯一正常出口。
         if session is not None:
             session.finish_run(
                 status=turn_output.terminal.status,

@@ -11,6 +11,7 @@ except ModuleNotFoundError:  # Python 3.10 使用兼容实现。
 
 from .context.context_budget import ContextLimits
 from .memory import ContextRetrievalLimits
+from .memory.context_record_extraction import ContextExtractionLimits
 from .session import ToolResultLimits
 from .loop.limits import LoopLimits
 from .tool.tool_scheduler import ToolParallelLimits
@@ -27,6 +28,7 @@ ConfigSection = TypeVar(
     ToolRetryLimits,
     PermissionConfig,
     ContextRetrievalLimits,
+    ContextExtractionLimits,
 )
 
 
@@ -59,6 +61,9 @@ class HexgentConfig:
     # 新 Query 对当前 Session ContextRecord 的召回预算。
     context_retrieval: ContextRetrievalLimits = ContextRetrievalLimits()
 
+    # 在完整 Turn 边界自动提取会话记录的频率和预算。
+    context_extraction: ContextExtractionLimits = ContextExtractionLimits()
+
 
 @dataclass(frozen=True)
 class RunOptions:
@@ -78,6 +83,9 @@ class RunOptions:
 
     # 本次 Run 可选覆盖的历史 ContextRecord 召回预算。
     context_retrieval: ContextRetrievalLimits | None = None
+
+    # 本次 Run 可覆盖的自动提取配置。
+    context_extraction: ContextExtractionLimits | None = None
 
 
 def load_config(
@@ -112,6 +120,7 @@ def load_config(
         "tool_retry",
         "permission",
         "context_retrieval",
+        "context_extraction",
     }
     unknown_sections = set(raw_config) - known_sections
     if unknown_sections:
@@ -151,6 +160,9 @@ def load_config(
             raw_config.get("context_retrieval"),
             ContextRetrievalLimits,
         ),
+        context_extraction=_load_section(
+            "context_extraction", raw_config.get("context_extraction"), ContextExtractionLimits,
+        ),
     )
     return validate_config(config)
 
@@ -169,6 +181,7 @@ def validate_config(config: HexgentConfig) -> HexgentConfig:
             config.context_retrieval,
             ContextRetrievalLimits,
         ),
+        "context_extraction": (config.context_extraction, ContextExtractionLimits),
     }
     for section_name, (section, section_type) in sections.items():
         if not isinstance(section, section_type):
@@ -250,6 +263,8 @@ def _validate_field(
 
 def _validate_relationships(config: HexgentConfig) -> None:
     """校验需要结合多个字段才能判断的配置约束。"""
+    if config.context_extraction.max_input_characters < 512:
+        raise ConfigError("[context_extraction].max_input_characters 必须至少为 512")
     context = config.context
     reserved_tokens = (
         context.reserved_output_tokens + context.safety_margin_tokens

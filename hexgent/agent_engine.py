@@ -134,6 +134,11 @@ class AgentEngine:
         overrides = options or RunOptions()
         effective_config = replace(
             self.config,
+            context_extraction=(
+                overrides.context_extraction
+                if overrides.context_extraction is not None
+                else self.config.context_extraction
+            ),
             loop=overrides.loop if overrides.loop is not None else self.config.loop,
             context=(
                 overrides.context

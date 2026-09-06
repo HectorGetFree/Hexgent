@@ -38,7 +38,7 @@ class RunReport:
     stop_reason: str | None
 
     # 模型轮数与输入、输出 Token 的聚合统计。
-    usage: dict[str, int]
+    usage: dict[str, Any]
 
     # Run 开始和结束时的 Plan 快照。
     plan: dict[str, Any]
@@ -96,7 +96,19 @@ def build_run_report(
             input_tokens += usage.get("input_tokens", 0) or 0
             output_tokens += usage.get("output_tokens", 0) or 0
 
-    # 3. 按工具名称和最终状态聚合调用，不复制可能很大的工具正文。
+    # 3. 记录提取使用独立模型调用，但同样计入本次 Run 的总消耗。
+    extraction_usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+    for record in records:
+        if record["type"] != "context_record_extraction_response":
+            continue
+        usage = record["payload"].get("usage") or {}
+        if not isinstance(usage, dict):
+            continue
+        extraction_usage["calls"] += 1
+        extraction_usage["input_tokens"] += usage.get("input_tokens", 0) or 0
+        extraction_usage["output_tokens"] += usage.get("output_tokens", 0) or 0
+
+    # 4. 按工具名称和最终状态聚合调用，不复制可能很大的工具正文。
     tool_records = [
         record
         for record in records
@@ -115,7 +127,7 @@ def build_run_report(
         and isinstance(failure.get("code"), str)
     )
 
-    # 4. 保存每次压缩的前后预算，并对内容寻址工件按 artifact_id 去重。
+    # 5. 保存每次压缩的前后预算，并对内容寻址工件按 artifact_id 去重。
     compactions = [
         {
             "before_tokens": record["payload"].get("before_tokens"),
@@ -147,7 +159,7 @@ def build_run_report(
         )
         artifact["call_ids"].append(persisted.get("call_id"))
 
-    # 5. 错误只保存稳定诊断字段，避免把完整工具结果再次写入 Report。
+    # 6. 错误只保存稳定诊断字段，避免把完整工具结果再次写入 Report。
     errors = [
         {
             "type": "model_response_failed",
@@ -170,7 +182,7 @@ def build_run_report(
         if record["payload"].get("status") in {"invalid", "denied", "error"}
     )
 
-    # 6. Plan 可能在正常退出前从 PlanStore 清除，此时使用最后一次持久化快照。
+    # 7. Plan 可能在正常退出前从 PlanStore 清除，此时使用最后一次持久化快照。
     plan_records = [
         record["payload"].get("plan")
         for record in records
@@ -204,6 +216,12 @@ def build_run_report(
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
+            "context_extraction": extraction_usage,
+            "total_tokens_including_context_extraction": (
+                input_tokens + output_tokens
+                + extraction_usage["input_tokens"]
+                + extraction_usage["output_tokens"]
+            ),
         },
         plan={
             "initial": started_payload.get("plan"),

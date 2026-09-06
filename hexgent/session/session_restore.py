@@ -132,7 +132,20 @@ class SessionRestorer:
 
         # 3. ContextRecord 不属于模型 Context；始终由完整 Transcript 重放其投影。
         context_records = ContextRecordStore()
+        last_extracted_transcript_sequence = 0
         for record in records:
+            if record["type"] == "context_record_extraction_committed":
+                payload = record["payload"]
+                through = _required_int(payload, "through_sequence")
+                if not last_extracted_transcript_sequence < through < record["sequence"]:
+                    raise ValueError("ContextRecord 提取进度不连续或超出事实范围")
+                mutations = payload.get("mutations")
+                if not isinstance(mutations, list):
+                    raise ValueError("ContextRecord 提取提交缺少变更数组")
+                for mutation in mutations:
+                    context_records.apply_mutation(ContextRecordStore.mutation_from_payload(mutation))
+                last_extracted_transcript_sequence = through
+                continue
             if record["type"] not in {
                 "context_record_changed",
                 "context_item_changed",  # 兼容 ContextRecord 重命名前的历史事实。
@@ -177,6 +190,7 @@ class SessionRestorer:
             SessionSettings(permission_mode),
             context_records,
         )
+        session.last_extracted_transcript_sequence = last_extracted_transcript_sequence
         latest_query = next(
             (query.content for query in reversed(context_manager.user_queries)),
             None,
