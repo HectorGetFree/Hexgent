@@ -1,0 +1,4 @@
+interface:
+  display_name: "接口联调"
+  short_description: "从源码确认接口调用链、准备前置数据并完成真实接口联调"
+  default_prompt: "使用 $interface-integration 帮我梳理并联调这个接口。"

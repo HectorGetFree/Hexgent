@@ -64,11 +64,12 @@ class SkillDefinition:
 
 
 class SkillRegistry:
-    """只发现工作区 `.hexgent/skills` 下的目录式 Skill。"""
+    """只发现工作区 `skills` 下的目录式 Skill。"""
 
     def __init__(self, workdir: Path) -> None:
         self.workdir = workdir.resolve()
-        self.directory = self.workdir / ".hexgent" / "skills"
+        # 项目 Skill 属于可版本管理的工作流资产，不应写入被 Git 忽略的运行时目录。
+        self.directory = self.workdir / "skills"
         self._skills = self._load()
 
     @property
@@ -79,6 +80,50 @@ class SkillRegistry:
     def get(self, name: str) -> SkillDefinition | None:
         """按稳定名称查找已发现的 Skill。"""
         return self._skills.get(name)
+
+    def refresh(self) -> None:
+        """重新扫描项目目录，使新创建的 Skill 在下一轮可被发现。"""
+        self._skills = self._load()
+
+    def create(
+        self,
+        name: str,
+        description: str,
+        allowed_tools: tuple[str, ...],
+        instructions: str,
+    ) -> SkillDefinition:
+        """原子创建新的目录式 Skill，拒绝覆盖已经存在的文件。"""
+        if not _SKILL_NAME_PATTERN.fullmatch(name):
+            raise ValueError("Skill name 必须由小写字母、数字和短横线组成")
+        target = self.directory / name / "SKILL.md"
+        if target.exists():
+            raise FileExistsError(f"Skill 已存在，不能覆盖：{name}")
+        candidate = SkillDefinition(
+            name,
+            " ".join(description.split()),
+            instructions.strip(),
+            tuple(dict.fromkeys(allowed_tools)),
+            target.relative_to(self.workdir).as_posix(),
+        )
+        _validate_skill(candidate, target)
+
+        # 1. 只在项目级目标目录中创建文件，临时文件替换避免半份 SKILL.md。
+        target.parent.mkdir(parents=True, exist_ok=False)
+        temporary = target.with_suffix(".md.tmp")
+        try:
+            temporary.write_text(_format_skill(candidate), encoding="utf-8")
+            temporary.replace(target)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            target.parent.rmdir()
+            raise
+
+        # 2. 创建成功后刷新目录；后续模型轮次即可通过 Catalog 看到新 Skill。
+        self.refresh()
+        created = self.get(name)
+        if created is None:
+            raise RuntimeError(f"Skill 创建后未被注册表发现：{name}")
+        return created
 
     def catalog(self) -> str:
         """构造小型目录上下文，不在未激活时注入完整正文。"""
@@ -119,23 +164,39 @@ def _parse_skill(path: Path, workdir: Path) -> SkillDefinition:
     name = frontmatter.get("name")
     description = frontmatter.get("description")
     allowed_tools = frontmatter.get("allowed_tools", ())
-    if not isinstance(name, str) or not _SKILL_NAME_PATTERN.fullmatch(name):
-        raise ValueError(f"Skill name 无效：{path}")
-    if not isinstance(description, str) or not description.strip():
-        raise ValueError(f"Skill description 不能为空：{path}")
-    if not isinstance(allowed_tools, tuple) or not all(
-        isinstance(tool, str) and tool.strip() for tool in allowed_tools
-    ):
-        raise ValueError(f"Skill allowed_tools 无效：{path}")
-    if not instructions.strip():
-        raise ValueError(f"Skill 正文不能为空：{path}")
-    return SkillDefinition(
+    definition = SkillDefinition(
         name,
         " ".join(description.split()),
         instructions.strip(),
         tuple(dict.fromkeys(allowed_tools)),
         path.relative_to(workdir).as_posix(),
     )
+    _validate_skill(definition, path)
+    return definition
+
+
+def _validate_skill(skill: SkillDefinition, path: Path) -> None:
+    """校验从文件读取或即将写入的同一份 Skill 定义。"""
+    if not isinstance(skill.name, str) or not _SKILL_NAME_PATTERN.fullmatch(skill.name):
+        raise ValueError(f"Skill name 无效：{path}")
+    if not isinstance(skill.description, str) or not skill.description.strip():
+        raise ValueError(f"Skill description 不能为空：{path}")
+    if not isinstance(skill.allowed_tools, tuple) or not all(
+        isinstance(tool, str) and tool.strip() for tool in skill.allowed_tools
+    ):
+        raise ValueError(f"Skill allowed_tools 无效：{path}")
+    if not isinstance(skill.instructions, str) or not skill.instructions.strip():
+        raise ValueError(f"Skill 正文不能为空：{path}")
+
+
+def _format_skill(skill: SkillDefinition) -> str:
+    """使用 V1 固定格式生成可编辑、可再次解析的 SKILL.md。"""
+    lines = ["---", f"name: {skill.name}", f"description: {skill.description}"]
+    if skill.allowed_tools:
+        lines.append("allowed_tools:")
+        lines.extend(f"  - {tool}" for tool in skill.allowed_tools)
+    lines.extend(["---", "", skill.instructions, ""])
+    return "\n".join(lines)
 
 
 def _split_frontmatter(text: str, path: Path) -> tuple[dict[str, object], str]:

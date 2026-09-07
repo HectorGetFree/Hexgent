@@ -18,6 +18,7 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 - 默认使用与用户相同的语言回答。
 - 只有用户明确要求“记住”、要求以后持续遵守某项偏好或约束时，才调用 remember 保存长期记忆；不要把一次任务的临时要求当作长期记忆。
 - 当 available-skills 中存在与用户目标高度匹配的项目 Skill 时，可以调用 activate_skill；激活后必须遵守该 Skill 的完整说明和工具限制。
+- 只有用户明确要求将流程沉淀为可复用 Skill 时，才调用 create_skill；创建后不要隐式激活，应在下一轮根据需要调用 activate_skill。
 """
 
 TOOLS = [
@@ -287,6 +288,36 @@ TOOLS = [
                 }
             },
             "required": ["name"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "create_skill",
+        "description": "将用户明确要求复用的工作流程创建为新的项目级 Skill。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "小写短横线格式的唯一 Skill 名称。",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "供未来选择 Skill 时阅读的简短用途说明。",
+                },
+                "allowed_tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "该工作流实际需要的最小工具白名单；为空数组表示不额外收紧。",
+                },
+                "instructions": {
+                    "type": "string",
+                    "description": "完整、可复用的中文工作流说明，不包含 YAML frontmatter。",
+                },
+            },
+            "required": ["name", "description", "allowed_tools", "instructions"],
             "additionalProperties": False,
         },
         "strict": True,

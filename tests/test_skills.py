@@ -9,7 +9,11 @@ from hexgent.loop.agent_turn import _activated_skill, _available_tools_for_state
 from hexgent.loop.loop_state import LoopState, RunStateSnapshot
 from hexgent.plan import InMemoryPlanStore
 from hexgent.skill import SkillRegistry
-from hexgent.tool.skill_tools import activate_skill, validate_activate_skill
+from hexgent.tool.skill_tools import (
+    activate_skill,
+    create_skill,
+    validate_activate_skill,
+)
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_scheduler import CompletedToolCall
 from hexgent.tool.tool_result import ToolExecutionResult
@@ -22,7 +26,7 @@ class SkillTest(unittest.TestCase):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.workdir = Path(self.directory.name)
-        skill_path = self.workdir / ".hexgent" / "skills" / "code-review" / "SKILL.md"
+        skill_path = self.workdir / "skills" / "code-review" / "SKILL.md"
         skill_path.parent.mkdir(parents=True)
         skill_path.write_text(
             """---
@@ -85,7 +89,7 @@ allowed_tools:
 
     def test_unknown_declared_tool_is_rejected_before_activation(self) -> None:
         """Skill 白名单不能写入不存在工具并静默造成错误工作流。"""
-        skill_path = self.workdir / ".hexgent" / "skills" / "code-review" / "SKILL.md"
+        skill_path = self.workdir / "skills" / "code-review" / "SKILL.md"
         skill_path.write_text(
             skill_path.read_text(encoding="utf-8").replace("  - glob", "  - nonexistent_tool"),
             encoding="utf-8",
@@ -97,3 +101,31 @@ allowed_tools:
         error = validate_activate_skill({"name": "code-review"}, context)
 
         self.assertEqual(error, "Skill 声明了未注册工具：nonexistent_tool")
+
+    def test_create_skill_refreshes_registry_without_overwriting_existing_file(self) -> None:
+        """显式创建应立即进入目录，并拒绝以同名请求覆盖已有 Skill。"""
+        context = ToolExecutionContext(InMemoryPlanStore(), self.workdir)
+
+        created = create_skill(
+            "test-review",
+            "核对测试覆盖与边界。",
+            ["glob", "read_file"],
+            "先读取测试，再核对实现；结论必须区分已覆盖与未覆盖边界。",
+            context,
+        )
+        duplicate = create_skill(
+            "test-review",
+            "不同说明不应覆盖。",
+            [],
+            "不应写入。",
+            context,
+        )
+
+        self.assertTrue(created.ok)
+        self.assertTrue(created.data["created"])
+        self.assertEqual(context.skill_registry.get("test-review").description, "核对测试覆盖与边界。")  # type: ignore[union-attr]
+        self.assertTrue(
+            (self.workdir / "skills" / "test-review" / "SKILL.md").exists()
+        )
+        self.assertFalse(duplicate.ok)
+        self.assertIn("不能覆盖", duplicate.output)

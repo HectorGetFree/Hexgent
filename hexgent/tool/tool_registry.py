@@ -13,7 +13,12 @@ from .plan_tools import (
     validate_update_plan,
 )
 from hexgent.tool.memory_tools import remember, validate_remember
-from hexgent.tool.skill_tools import activate_skill, validate_activate_skill
+from hexgent.tool.skill_tools import (
+    activate_skill,
+    create_skill,
+    validate_activate_skill,
+    validate_create_skill,
+)
 from .builtin_tools import (
     bash,
     edit_file,
@@ -252,6 +257,15 @@ SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
     "required": ["skill"],
     "additionalProperties": False,
 }
+CREATE_SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "skill": SKILL_OUTPUT_SCHEMA["properties"]["skill"],
+        "created": {"type": "boolean"},
+    },
+    "required": ["skill", "created"],
+    "additionalProperties": False,
+}
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
@@ -360,6 +374,16 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         deduplication_policy="exact",
         output_schema=SKILL_OUTPUT_SCHEMA,
         permission_capability="skill_state",
+    ),
+    "create_skill": RegisteredTool(
+        create_skill,
+        requires_context=True,
+        validator=validate_create_skill,
+        display_argument="name",
+        deduplication_policy="exact",
+        invalidates_tool_call_cache=True,
+        output_schema=CREATE_SKILL_OUTPUT_SCHEMA,
+        permission_capability="workspace_write",
     ),
 }
 
