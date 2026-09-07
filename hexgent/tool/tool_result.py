@@ -28,6 +28,7 @@ ToolFailureCode = Literal[
     "confirmation_unavailable",  # 当前入口无法完成需要的用户审批。
     "tool_timeout",  # 工具或并行批次超过执行时间限制。
     "tool_internal_error",  # 工具实现抛出未预期的内部异常。
+    "resource_not_found",  # 请求的本地文件或其他指定资源不存在。
     "external_dependency_failed",  # 文件系统、进程或外部服务调用失败。
     "rate_limited",  # 外部依赖触发限流，可按服务端建议时间重试。
     "invalid_tool_output",  # 工具返回值不符合处理器输出协议。

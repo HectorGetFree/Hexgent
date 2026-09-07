@@ -68,14 +68,10 @@ def agent_loop(
             if isinstance(turn_output, Continue)
             else turn_output.state
         )
-        normal_finish = (
-            isinstance(turn_output, Stop)
-            and turn_output.terminal.status == "completed"
-        )
         if (
             session is not None
             and not active_control.interrupt_controller.interrupted
-            and (next_state.model_rounds > state.model_rounds or normal_finish)
+            and next_state.model_rounds > state.model_rounds
         ):
             extraction_input_tokens, extraction_output_tokens = (
                 extract_context_records(
@@ -83,7 +79,7 @@ def agent_loop(
                     active_client,
                     config.context_extraction,
                     active_control.interrupt_controller,
-                    force=normal_finish,
+                    force=False,
                 )
             )
             next_state = replace(

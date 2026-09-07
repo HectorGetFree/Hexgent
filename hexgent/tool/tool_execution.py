@@ -259,6 +259,13 @@ def _execute_prepared_tool_call(
     # 1. 真正执行工具，并把基础设施异常转换为结构化失败。
     try:
         handler_result = prepared.tool.execute(prepared.arguments, context)
+    except FileNotFoundError as error:
+        return _failure_result(
+            "error",
+            "resource_not_found",
+            "execution",
+            f"资源不存在：{error.filename or error}",
+        )
     except OSError as error:
         return _failure_result(
             "error",

@@ -139,8 +139,8 @@ class ContextRecordExtractionTest(unittest.TestCase):
         override = replace(config.context_extraction, enabled=True)
         self.assertIs(engine.resolve_config(RunOptions(context_extraction=override)).context_extraction, override)
 
-    def test_loop_forces_extraction_before_normal_finish(self):
-        """正常结束前强制处理剩余事实，并将提取用量写入终态 Checkpoint。"""
+    def test_loop_does_not_block_normal_finish_for_extraction(self):
+        """正常结束不应为可延后的记录提取额外阻塞用户响应。"""
         engine = AgentEngine(HexgentConfig(), self.root, session=Session())
         state = LoopState(context_manager=self.context, tool_context=engine.tool_context)
 
@@ -149,15 +149,8 @@ class ContextRecordExtractionTest(unittest.TestCase):
                 yield None
             return Stop(AgentLoopResult("完成", 0.0), state)
 
-        def extracted(active_session, *_args, **_kwargs):
-            active_session.record_runtime_event(
-                "context_record_extraction_response",
-                {"usage": {"input_tokens": 7, "output_tokens": 3}},
-            )
-            return (7, 3)
-
         with patch.object(agent_loop_module, "run_turn", finished_turn), patch.object(
-            agent_loop_module, "extract_context_records", side_effect=extracted
+            agent_loop_module, "extract_context_records"
         ) as extraction:
             outcome = list(agent_loop_module.agent_loop(
                 state,
@@ -166,22 +159,41 @@ class ContextRecordExtractionTest(unittest.TestCase):
                 session=self.session,
             ))
 
-        extraction.assert_called_once()
-        self.assertTrue(extraction.call_args.kwargs["force"])
+        extraction.assert_not_called()
         self.assertEqual(outcome[-1].result.status, "completed")
         checkpoint = CheckpointStore(self.session.store.session_dir).read("cp-000001")
-        self.assertEqual(checkpoint.run_state["input_tokens"], 7)
-        self.assertEqual(checkpoint.run_state["output_tokens"], 3)
+        self.assertEqual(checkpoint.run_state["input_tokens"], 0)
+        self.assertEqual(checkpoint.run_state["output_tokens"], 0)
         report = json.loads(
             (self.session.store.session_dir / "reports" / "run-001.json").read_text(
                 encoding="utf-8"
             )
         )
         self.assertEqual(report["usage"]["context_extraction"], {
-            "calls": 1,
-            "input_tokens": 7,
-            "output_tokens": 3,
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
         })
+
+    def test_failed_extraction_is_suppressed_until_next_run(self):
+        """同一 Run 内失败后不能反复阻塞相同事实批次。"""
+        with patch("hexgent.loop.extract_context_records.get_model", return_value="模拟模型"):
+            extract_context_records(
+                self.session,
+                SimpleNamespace(responses=SimpleNamespace(create=lambda **_kwargs: iter(()))),
+                self.limits,
+                InterruptController(),
+                force=True,
+            )
+        self.assertTrue(self.session.context_record_extraction_suppressed)
+
+        client = self.fake_client(self.candidate_text())
+        self.assertEqual(
+            extract_context_records(
+                self.session, client, self.limits, InterruptController(), force=True,
+            ),
+            (0, 0),
+        )
 
 
 if __name__ == "__main__":

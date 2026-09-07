@@ -132,7 +132,11 @@ class SkillRegistry:
         lines = ["<available-skills>", "以下是可按需调用 activate_skill 激活的项目 Skill："]
         for skill in self.skills:
             lines.append(f"- {skill.name}: {skill.description}")
-        lines.extend(["激活后必须遵守其完整说明和工具限制。", "</available-skills>"])
+        lines.extend([
+            "当用户目标与某个 Skill 描述明显匹配时，应先调用 activate_skill，再执行其工作流。",
+            "不匹配时不要激活；激活后必须遵守其完整说明和工具限制。",
+            "</available-skills>",
+        ])
         return "\n".join(lines)
 
     def _load(self) -> dict[str, SkillDefinition]:

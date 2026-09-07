@@ -81,6 +81,20 @@ class ToolFailureBoundariesTest(unittest.TestCase):
         self.assertEqual(result.failure.code, "business_failure")
         self.assertEqual(result.failure.side_effect_state, "not_started")
 
+    def test_missing_file_is_not_retryable_external_dependency(self) -> None:
+        """路径不存在是确定性资源定位失败，不能被标记为可自动重试。"""
+        with TemporaryDirectory() as directory:
+            context = ToolExecutionContext(
+                InMemoryPlanStore(), Path(directory).resolve()
+            )
+            result = execute_tool_call(
+                "read_file", '{"path":"missing.py"}', context=context
+            )
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(result.failure.code, "resource_not_found")
+        self.assertFalse(result.failure.retryable)
+
     def test_nonzero_bash_exit_is_business_failure(self) -> None:
         """Shell 非零退出码必须形成结构化失败而不是 success。"""
         with TemporaryDirectory() as directory:

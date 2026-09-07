@@ -15,17 +15,17 @@ class ContextExtractionLimits:
     # 是否在完整 Turn 边界自动沉淀记录。
     enabled: bool = True
     # 积累多少个未处理完整 Turn 后执行一次提取。
-    turn_interval: int = 3
+    turn_interval: int = 4
     # 每次请求的事实正文与已有记录合计最大字符数。
-    max_input_characters: int = 16_000
+    max_input_characters: int = 8_000
     # 单条 Transcript 事件最多展示的正文字符数。
-    max_event_characters: int = 2_000
+    max_event_characters: int = 1_000
     # 每次最多创建或更新的候选记录数。
-    max_records: int = 6
+    max_records: int = 4
     # 提取模型的最大输出 Token 数。
-    max_output_tokens: int = 2_000
+    max_output_tokens: int = 1_000
     # 提取请求的网络超时；请求不做 SDK 自动重试。
-    timeout_seconds: float = 15.0
+    timeout_seconds: float = 8.0
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,9 @@ class ContextLimits:
     # 为 Token 估算误差和请求固定内容预留的安全余量。
     safety_margin_tokens: int = 8_000
 
+    # 即使物理窗口尚有余量，也在此目标规模附近主动压缩，避免长请求显著拖慢模型。
+    proactive_threshold_tokens: int = 64_000
+
     # 单次上下文摘要允许生成的最大 Token 数量。
     summary_output_tokens: int = 2_000
 
@@ -40,12 +43,11 @@ class ContextLimits:
     @property
     def compaction_threshold_tokens(self) -> int:
         """返回触发主动压缩的上下文 Token 阈值。"""
-        return max(
+        physical_threshold = max(
             1,
-            self.context_window_tokens
-            - self.reserved_output_tokens
-            - self.safety_margin_tokens,
+            self.context_window_tokens - self.reserved_output_tokens - self.safety_margin_tokens,
         )
+        return min(physical_threshold, self.proactive_threshold_tokens)
 
     @property
     def blocking_threshold_tokens(self) -> int:

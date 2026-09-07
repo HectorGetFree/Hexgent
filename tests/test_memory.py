@@ -8,6 +8,7 @@ from hexgent.agent_engine import AgentEngine, RunRequest
 from hexgent.config import HexgentConfig
 from hexgent.context import build_context
 from hexgent.memory import MemoryRetriever, MemoryStore
+from hexgent.memory import RetrievedContextRecord, RetrievedMemory
 from hexgent.tool.memory_tools import remember
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
@@ -51,6 +52,21 @@ class MemoryTest(unittest.TestCase):
         store.upsert("不得创建工作区之外的文件", "constraint", source="explicit")
         results = MemoryRetriever().retrieve("帮我写一首诗", store.items)
         self.assertEqual(results[0].category, "constraint")
+
+    def test_context_record_suppresses_duplicate_memory_in_instructions(self) -> None:
+        """同一事实跨 Session 与工作区重复出现时只保留 Session Record。"""
+        record = RetrievedContextRecord(
+            "ctx-test", "所有代码注释使用中文", "constraint", (1,), 1.0, ("exact_phrase",),
+        )
+        memory = RetrievedMemory(
+            "mem-test", "所有代码注释使用中文", "preference", 1.0, ("exact_phrase",),
+        )
+        context = ToolExecutionContext(InMemoryPlanStore(), self.workdir)
+
+        instructions = build_context(context, (record,), (memory,))
+
+        self.assertIn("<relevant-session-context>", instructions)
+        self.assertNotIn("<relevant-memory>", instructions)
 
     def test_legacy_single_file_is_migrated_to_authoritative_items(self) -> None:
         """首次加载旧版单文件时，保留事实并生成新的索引与条目文件。"""

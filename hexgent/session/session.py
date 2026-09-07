@@ -49,6 +49,9 @@ class Session:
     # 已成功完成 Record 提取处理的最后一条 Transcript 序号；空结果同样推进。
     last_extracted_transcript_sequence: int = 0
 
+    # 当前 Run 内提取已经失败时置为真，避免对同一批稳定事实同步重复超时。
+    context_record_extraction_suppressed: bool = False
+
     # 最近一次由 Context 接受的用户原始 Query。
     _latest_user_query: str | None = field(default=None, init=False, repr=False)
 
@@ -128,6 +131,8 @@ class Session:
         if self._active_run_id is not None:
             raise RuntimeError("当前 Session 已有尚未结束的 Agent Run")
 
+        # 每个新的 Run 可以重新尝试未提交的提取；同一 Run 内失败后不重复阻塞主链路。
+        self.context_record_extraction_suppressed = False
         self._active_run_id = self.store.next_run_id()
         self._active_run_start_sequence = self.store.next_sequence
         self.record_runtime_event(

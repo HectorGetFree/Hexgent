@@ -72,65 +72,73 @@ def call_model(
     **request: Any,
 ) -> Generator[AgentEvent, None, Any]:
     """调用模型、发送文本增量，并返回协议完整的响应。"""
-    # 1. 发起流式请求，只把文本增量立即交给界面层。
-    stream = None
-    completed_response = None
-    remove_interrupt_callback = None
-    try:
-        if interrupt_controller is not None and interrupt_controller.interrupted:
-            raise ModelCallInterrupted()
-        stream = client.responses.create(**request, stream=True)
-        close = getattr(stream, "close", None)
-        if interrupt_controller is not None and callable(close):
-            remove_interrupt_callback = interrupt_controller.add_callback(close)
-        for event in stream:
+    # 1. 只有未输出任何文本且未收到 completed 的空流，才可安全重试一次。
+    #    此时没有完整 Response、更没有工具调用，重复请求不会造成外部副作用或界面文字重复。
+    for attempt in range(2):
+        stream = None
+        completed_response = None
+        remove_interrupt_callback = None
+        emitted_text = False
+        try:
             if interrupt_controller is not None and interrupt_controller.interrupted:
                 raise ModelCallInterrupted()
-            if event.type == "response.output_text.delta":
-                yield TextDeltaEvent(event.delta)
-            elif event.type == "response.completed":
-                completed_response = event.response
-            elif event.type == "response.failed":
-                response = getattr(event, "response", None)
-                error = getattr(event, "error", None) or getattr(response, "error", None)
-                message = getattr(error, "message", None) or error or "未知错误"
-                reason: ModelCallErrorReason = (
-                    "prompt_too_long"
-                    if _is_prompt_too_long(error)
-                    else "response_failed"
-                )
-                raise ModelCallError(f"模型流式响应失败：{message}", reason)
-            elif event.type == "response.incomplete":
-                response = getattr(event, "response", None)
-                details = getattr(response, "incomplete_details", None)
-                reason = getattr(details, "reason", None)
-                suffix = f"：{reason}" if reason else ""
-                raise ModelCallError(
-                    f"模型流式响应未完整结束{suffix}，本轮无法安全继续",
-                    "response_incomplete",
-                )
-            elif event.type == "error":
-                message = getattr(event, "message", None) or "未知错误"
-                raise _model_call_error(f"模型流式响应错误：{message}", event)
-    except (ModelCallError, ModelCallInterrupted):
-        raise
-    except Exception as error:
-        if interrupt_controller is not None and interrupt_controller.interrupted:
-            raise ModelCallInterrupted() from error
-        raise _model_call_error(f"模型流式响应错误：{error}", error) from error
-    finally:
-        if remove_interrupt_callback is not None:
-            remove_interrupt_callback()
-        close = getattr(stream, "close", None)
-        if callable(close):
-            close()
+            stream = client.responses.create(**request, stream=True)
+            close = getattr(stream, "close", None)
+            if interrupt_controller is not None and callable(close):
+                remove_interrupt_callback = interrupt_controller.add_callback(close)
+            for event in stream:
+                if interrupt_controller is not None and interrupt_controller.interrupted:
+                    raise ModelCallInterrupted()
+                if event.type == "response.output_text.delta":
+                    emitted_text = True
+                    yield TextDeltaEvent(event.delta)
+                elif event.type == "response.completed":
+                    completed_response = event.response
+                elif event.type == "response.failed":
+                    response = getattr(event, "response", None)
+                    error = getattr(event, "error", None) or getattr(response, "error", None)
+                    message = getattr(error, "message", None) or error or "未知错误"
+                    reason: ModelCallErrorReason = (
+                        "prompt_too_long"
+                        if _is_prompt_too_long(error)
+                        else "response_failed"
+                    )
+                    raise ModelCallError(f"模型流式响应失败：{message}", reason)
+                elif event.type == "response.incomplete":
+                    response = getattr(event, "response", None)
+                    details = getattr(response, "incomplete_details", None)
+                    reason = getattr(details, "reason", None)
+                    suffix = f"：{reason}" if reason else ""
+                    raise ModelCallError(
+                        f"模型流式响应未完整结束{suffix}，本轮无法安全继续",
+                        "response_incomplete",
+                    )
+                elif event.type == "error":
+                    message = getattr(event, "message", None) or "未知错误"
+                    raise _model_call_error(f"模型流式响应错误：{message}", event)
+        except (ModelCallError, ModelCallInterrupted):
+            raise
+        except Exception as error:
+            if interrupt_controller is not None and interrupt_controller.interrupted:
+                raise ModelCallInterrupted() from error
+            raise _model_call_error(f"模型流式响应错误：{error}", error) from error
+        finally:
+            if remove_interrupt_callback is not None:
+                remove_interrupt_callback()
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
 
-    # 2. 只有 completed 事件中的完整 Response 可以进入后续工具循环。
-    if interrupt_controller is not None and interrupt_controller.interrupted:
-        raise ModelCallInterrupted()
-    if completed_response is None:
+        # 2. 只有 completed 事件中的完整 Response 可以进入后续工具循环。
+        if interrupt_controller is not None and interrupt_controller.interrupted:
+            raise ModelCallInterrupted()
+        if completed_response is not None:
+            return completed_response
+        if attempt == 0 and not emitted_text:
+            continue
         raise ModelCallError(
             "模型流式响应结束，但没有收到 response.completed 事件",
             "missing_completed",
         )
-    return completed_response
+
+    raise AssertionError("模型流重试循环未按预期结束")

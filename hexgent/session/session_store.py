@@ -23,16 +23,16 @@ class ToolResultLimits:
     """控制工具结果内联和落盘预览的大小。"""
 
     # 工具结果超过该字符数后不再完整放入模型上下文。
-    max_inline_characters: int = 50_000
+    max_inline_characters: int = 12_000
 
     # 大结果落盘后继续向模型展示的开头预览字符数。
     preview_characters: int = 500
 
     # 同一工具批次允许完整内联到模型上下文的结果 Token 总量。
-    max_batch_inline_tokens: int = 8_000
+    max_batch_inline_tokens: int = 3_000
 
     # 同一工具批次所有外置结果允许保留的预览 Token 总量。
-    max_batch_preview_tokens: int = 4_000
+    max_batch_preview_tokens: int = 1_000
 
 
 @dataclass(frozen=True)

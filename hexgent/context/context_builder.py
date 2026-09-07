@@ -21,7 +21,11 @@ def build_context(
     """组合系统提示词和当前 Plan 运行时状态。"""
     plan_context = format_plan_context(context.plan_store.get_plan())
     retrieved_context = format_retrieved_context(relevant_context)
-    retrieved_memory = format_retrieved_memory(relevant_memory)
+    # Session Record 优先于同内容的工作区 Memory，避免同一事实重复占用请求预算。
+    deduplicated_memory = _without_context_duplicates(
+        relevant_context, relevant_memory,
+    )
+    retrieved_memory = format_retrieved_memory(deduplicated_memory)
     skill_catalog = context.skill_registry.catalog()
     sections = [SYSTEM_PROMPT]
     if plan_context:
@@ -41,3 +45,21 @@ def build_context(
             "</active-skill>"
         )
     return "\n\n".join(sections)
+
+
+def _without_context_duplicates(
+    records: tuple[RetrievedContextRecord, ...],
+    memories: tuple[RetrievedMemory, ...],
+) -> tuple[RetrievedMemory, ...]:
+    """移除与已召回 Session Record 内容等价的长期 Memory。"""
+    record_contents = {_normalize_recalled_content(item.content) for item in records}
+    return tuple(
+        item
+        for item in memories
+        if _normalize_recalled_content(item.content) not in record_contents
+    )
+
+
+def _normalize_recalled_content(content: str) -> str:
+    """只做稳定的文本规范化，不在组装阶段推断两条不同事实是否语义相同。"""
+    return " ".join(content.casefold().split())

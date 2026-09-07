@@ -21,7 +21,12 @@ def extract_context_records(
     force: bool = False,
 ) -> tuple[int, int]:
     """执行至多一次增量提取，返回已知用量，不把提取文字发给界面。"""
-    if session.store is None or not limits.enabled or controller.interrupted:
+    if (
+        session.store is None
+        or not limits.enabled
+        or controller.interrupted
+        or session.context_record_extraction_suppressed
+    ):
         return (0, 0)
     input_tokens = output_tokens = 0
     try:
@@ -81,6 +86,8 @@ def extract_context_records(
         candidates = parse_candidates(response.output_text, batch, limits)
         session.upsert_context_records(candidates, processed_sequence=batch.through_sequence)
     except Exception as error:
+        # 同一批事实在本 Run 内反复超时不会产生新信息，只会阻塞主任务。
+        session.context_record_extraction_suppressed = True
         session.record_runtime_event("context_record_extraction_failed", {
             "error_type": type(error).__name__,
             "message": "上下文记录提取未完成，保留原处理进度，等待后续安全边界",
