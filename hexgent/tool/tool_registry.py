@@ -13,6 +13,7 @@ from .plan_tools import (
     validate_update_plan,
 )
 from hexgent.tool.memory_tools import remember, validate_remember
+from hexgent.tool.skill_tools import activate_skill, validate_activate_skill
 from .builtin_tools import (
     bash,
     edit_file,
@@ -42,6 +43,7 @@ ToolPermissionCapability = Literal[
     "shell",  # 执行可能组合本地、网络或外部副作用的 Shell 命令。
     "plan_state",  # 仅维护当前 Session 内的结构化 Plan 状态。
     "memory_state",  # 维护工作区级 Markdown Memory。
+    "skill_state",  # 激活当前 Run 使用的项目级 Skill。
 ]
 ToolInterruptBehavior = Literal[
     "cancel",  # 工具只读且可安全请求终止，不产生需要保留的副作用。
@@ -231,6 +233,25 @@ PLAN_OUTPUT_SCHEMA: dict[str, Any] = {
     "required": ["status", "revision", "step_count", "completed_count"],
     "additionalProperties": False,
 }
+SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "skill": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "instructions": {"type": "string"},
+                "allowed_tools": {"type": "array", "items": {"type": "string"}},
+                "relative_path": {"type": "string"},
+            },
+            "required": ["name", "description", "instructions", "allowed_tools", "relative_path"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["skill"],
+    "additionalProperties": False,
+}
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
@@ -330,6 +351,15 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
             "additionalProperties": False,
         },
         permission_capability="memory_state",
+    ),
+    "activate_skill": RegisteredTool(
+        activate_skill,
+        requires_context=True,
+        validator=validate_activate_skill,
+        display_argument="name",
+        deduplication_policy="exact",
+        output_schema=SKILL_OUTPUT_SCHEMA,
+        permission_capability="skill_state",
     ),
 }
 

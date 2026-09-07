@@ -7,6 +7,7 @@ from typing import Any, Literal
 from hexgent.context.context_manager import ContextManager
 
 from ..memory import RetrievedContextRecord, RetrievedMemory
+from ..skill import SkillDefinition
 from ..tool.tool_context import ToolExecutionContext
 from .limits import LoopStopReason
 
@@ -47,6 +48,9 @@ class RunStateSnapshot:
     # 当前 Run 固定使用的跨 Session Memory 召回结果，continue 时不重新检索。
     relevant_memory: tuple[RetrievedMemory, ...]
 
+    # 当前 Run 已激活的 Skill；继续执行时使用冻结快照而不重新读取文件。
+    active_skill: SkillDefinition | None
+
     # 单调时钟不可持久化，改为保存已经流逝的秒数。
     elapsed_seconds: float
 
@@ -68,6 +72,9 @@ class RunStateSnapshot:
             "relevant_memory": [
                 memory.to_dict() for memory in self.relevant_memory
             ],
+            "active_skill": (
+                self.active_skill.to_dict() if self.active_skill is not None else None
+            ),
             "elapsed_seconds": self.elapsed_seconds,
         }
 
@@ -95,6 +102,10 @@ class RunStateSnapshot:
                 relevant_memory=tuple(
                     RetrievedMemory.from_dict(memory)
                     for memory in payload.get("relevant_memory", [])
+                ),
+                active_skill=(
+                    SkillDefinition.from_dict(payload["active_skill"])
+                    if payload.get("active_skill") is not None else None
                 ),
                 elapsed_seconds=float(payload["elapsed_seconds"]),
             )
@@ -140,6 +151,9 @@ class LoopState:
 
     # 当前 Query 召回且在整个 Run 中保持稳定的跨 Session Memory。
     relevant_memory: tuple[RetrievedMemory, ...] = ()
+
+    # 当前 Run 已激活的 Skill；仅由 activate_skill 的成功结果驱动变更。
+    active_skill: SkillDefinition | None = None
 
     # 已收到完整响应的正常模型调用次数。
     model_rounds: int = 0
@@ -221,6 +235,7 @@ class LoopState:
             self.stop_reason,
             self.relevant_context,
             self.relevant_memory,
+            self.active_skill,
             self.elapsed_seconds,
         )
 
@@ -248,6 +263,7 @@ class LoopState:
             stop_reason=snapshot.stop_reason,
             relevant_context=snapshot.relevant_context,
             relevant_memory=snapshot.relevant_memory,
+            active_skill=snapshot.active_skill,
         )
 
 

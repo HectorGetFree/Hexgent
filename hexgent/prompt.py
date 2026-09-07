@@ -17,6 +17,7 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 - 不确定时坦诚说明；需求不清楚且会影响结果时，再向用户提问。
 - 默认使用与用户相同的语言回答。
 - 只有用户明确要求“记住”、要求以后持续遵守某项偏好或约束时，才调用 remember 保存长期记忆；不要把一次任务的临时要求当作长期记忆。
+- 当 available-skills 中存在与用户目标高度匹配的项目 Skill 时，可以调用 activate_skill；激活后必须遵守该 Skill 的完整说明和工具限制。
 """
 
 TOOLS = [
@@ -269,6 +270,23 @@ TOOLS = [
                 },
             },
             "required": ["content", "category", "keywords"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "activate_skill",
+        "description": "激活一个项目级 Skill，使后续轮次遵守其工作流和工具限制。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "available-skills 中列出的 Skill 名称。",
+                }
+            },
+            "required": ["name"],
             "additionalProperties": False,
         },
         "strict": True,

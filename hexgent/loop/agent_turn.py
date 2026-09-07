@@ -7,10 +7,12 @@ from typing import Any
 from ..client import get_model
 from ..config import HexgentConfig
 from ..context.context_compaction import compact_context_if_needed
+from ..memory import MemoryRetriever
 from ..prompt import TOOLS
 from ..plan import review_plan_exit
 from ..run_control import RunControl
 from ..session import Session
+from ..skill import SkillDefinition
 from ..tool.tool_execution import UserConfirmation
 from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
@@ -63,6 +65,7 @@ def _continue_with_finalization(
         tool_context=state.tool_context,
         relevant_context=state.relevant_context,
         relevant_memory=state.relevant_memory,
+        active_skill=state.active_skill,
         model_rounds=state.model_rounds,
         tool_calls=state.tool_calls,
         input_tokens=state.input_tokens,
@@ -244,7 +247,6 @@ def _continue_with_steering(
             tuple(query.sequence for query in applied_queries),
             config.context_retrieval,
         )
-        from ..memory import MemoryRetriever
         relevant_memory = MemoryRetriever(config.memory_retrieval).retrieve(
             "\n".join(query.content for query in queries),
             state.tool_context.memory_store.items,
@@ -299,11 +301,12 @@ def run_turn(
     model = get_model()
     instructions = build_context(
         state.tool_context, state.relevant_context, state.relevant_memory,
+        state.active_skill,
     )
     active_context_limits = config.context
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
-    request_tools = TOOLS if state.mode == "working" else []
+    request_tools = _available_tools_for_state(state) if state.mode == "working" else []
     compaction = yield from compact_context_if_needed(
         state.context_manager,
         client,
@@ -335,7 +338,7 @@ def run_turn(
         "input": state.context_manager.model_messages(),
     }
     if state.mode == "working":
-        request["tools"] = TOOLS
+        request["tools"] = request_tools
         if limits.enforce_run_limits:
             remaining_tokens = limits.max_total_tokens - state.total_tokens
             request["max_output_tokens"] = max(
@@ -545,6 +548,8 @@ def run_turn(
         context_manager=state.context_manager,
         tool_context=state.tool_context,
         relevant_context=state.relevant_context,
+        relevant_memory=state.relevant_memory,
+        active_skill=_activated_skill(state.active_skill, batch.completed_calls),
         model_rounds=model_rounds,
         tool_calls=state.tool_calls + batch.budgeted_call_count,
         input_tokens=input_tokens,
@@ -565,3 +570,28 @@ def run_turn(
     if steering_transition is not None:
         return steering_transition
     return Continue(next_state, "tool_results_ready")
+
+
+def _available_tools_for_state(state: LoopState) -> list[dict[str, Any]]:
+    """根据已激活 Skill 的白名单收紧模型可见工具，不改变权限管线。"""
+    skill = state.active_skill
+    if skill is None or not skill.allowed_tools:
+        return TOOLS
+    allowed = set(skill.allowed_tools) | {"activate_skill"}
+    return [tool for tool in TOOLS if tool["name"] in allowed]
+
+
+def _activated_skill(
+    current: SkillDefinition | None,
+    completed_calls: tuple[Any, ...],
+) -> SkillDefinition | None:
+    """仅接受 activate_skill 成功且 Schema 已校验的结果，更新下一轮状态。"""
+    active = current
+    for completed in completed_calls:
+        if completed.tool_name != "activate_skill" or completed.result.status != "success":
+            continue
+        data = completed.result.data
+        if not isinstance(data, dict) or not isinstance(data.get("skill"), dict):
+            continue
+        active = SkillDefinition.from_dict(data["skill"])
+    return active

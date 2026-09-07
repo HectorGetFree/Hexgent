@@ -56,6 +56,21 @@ class ToolBatchResult:
     # 本批次计入工具预算的真实执行和去重调用数量。
     budgeted_call_count: int
 
+    # 已完成调用的结构化结果，供 Loop 根据成功工具结果构造下一状态。
+    completed_calls: tuple["CompletedToolCall", ...] = ()
+
+
+@dataclass(frozen=True)
+class CompletedToolCall:
+    """一个已完成工具调用的最小控制流结果。"""
+
+    # 模型本次调用提供的稳定标识。
+    call_id: str
+    # 已通过注册表查找的工具名称。
+    tool_name: str
+    # 完整执行管线后的结构化结果。
+    result: ToolExecutionResult
+
 
 @dataclass(frozen=True)
 class ToolCallGroup:
@@ -409,6 +424,7 @@ def execute_tool_batch(
     outputs: list[dict[str, str]] = []
     inline_results: list[tuple[int, str, str, str, str]] = []
     persisted_results: dict[int, PersistedToolResult] = {}
+    completed_calls: list[CompletedToolCall] = []
     budgeted_call_count = 0
     limit_message: str | None = None
 
@@ -601,6 +617,10 @@ def execute_tool_batch(
                     model_output = result.output
                     scheduled.result = result
 
+            completed_calls.append(
+                CompletedToolCall(tool_call.call_id, tool_call.name, result)
+            )
+
             outputs.append(
                 {
                     "type": "function_call_output",
@@ -700,4 +720,4 @@ def execute_tool_batch(
         context.clear_tool_caches()
         for output in outputs:
             output["output"] = f"错误：工具结果批次持久化失败：{error}"
-    return ToolBatchResult(outputs, budgeted_call_count)
+    return ToolBatchResult(outputs, budgeted_call_count, tuple(completed_calls))

@@ -214,6 +214,13 @@ ALLOW_RULES: tuple[PermissionRule, ...] = (
         lambda _args, _context: True,
         lambda _args, _context: "允许保存用户明确要求的长期记忆",
     ),
+    PermissionRule(
+        "skill_state_management",
+        "allow",
+        ("activate_skill",),
+        lambda _args, _context: True,
+        lambda _args, _context: "允许激活项目级 Skill 工作流",
+    ),
 )
 
 
