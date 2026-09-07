@@ -14,6 +14,11 @@ from ..loop.loop_state import RunStateSnapshot
 from .session import Session, SessionSettings
 from .session_store import SessionStore, ToolResultLimits
 from .checkpoint import CheckpointStore
+from .tool_call_recovery import (
+    UnclosedToolCall,
+    build_recovery_tool_output,
+    find_unclosed_tool_calls,
+)
 
 
 VALID_PERMISSION_MODES: set[str] = {
@@ -159,8 +164,9 @@ class SessionRestorer:
         pending_run_state = _pending_run_state(checkpoint, records)
 
         # 5. 崩溃可能留下无配对结果的工具调用；只补充未知状态，不自动重试。
-        repair_outputs = _build_interrupted_tool_outputs(
-            context_manager.active_messages
+        repair_outputs, repaired_calls = _build_interrupted_tool_outputs(
+            records,
+            context_manager.active_messages,
         )
         if repair_outputs:
             context_manager.append_messages(repair_outputs, completes_round=True)
@@ -175,9 +181,14 @@ class SessionRestorer:
             store.append_transcript(
                 "session_recovery_repaired",
                 {
-                    "repaired_call_ids": [
-                        output["call_id"] for output in repair_outputs
-                    ]
+                    "repaired_calls": [
+                        {
+                            "call_id": item.call_id,
+                            "tool_name": item.tool_name,
+                            "recovery_action": item.recovery_action,
+                        }
+                        for item in repaired_calls
+                    ],
                 },
             )
 
@@ -317,9 +328,12 @@ def _plan_from_payload(payload: Any) -> Plan | None:
         raise ValueError("Plan 状态记录结构无效") from error
 
 
-def _build_interrupted_tool_outputs(messages: list[Any]) -> list[dict[str, str]]:
-    """为活动上下文中未闭合的 Function Call 构造未知副作用结果。"""
-    calls: list[str] = []
+def _build_interrupted_tool_outputs(
+    records: list[dict[str, Any]],
+    messages: list[Any],
+) -> tuple[list[dict[str, str]], tuple[UnclosedToolCall, ...]]:
+    """根据执行账本为未闭合 Function Call 构造保守配对结果。"""
+    calls: set[str] = set()
     completed: set[str] = set()
     for message in messages:
         if not isinstance(message, dict):
@@ -327,23 +341,13 @@ def _build_interrupted_tool_outputs(messages: list[Any]) -> list[dict[str, str]]
         if message.get("type") == "function_call" and isinstance(
             message.get("call_id"), str
         ):
-            calls.append(message["call_id"])
+            calls.add(message["call_id"])
         elif message.get("type") == "function_call_output" and isinstance(
             message.get("call_id"), str
         ):
             completed.add(message["call_id"])
-    return [
-        {
-            "type": "function_call_output",
-            "call_id": call_id,
-            "output": (
-                "错误：上次会话在工具调用完成配对前中断；工具是否已经产生副作用未知，"
-                "系统没有自动重试。请先核验当前状态再决定后续操作。"
-            ),
-        }
-        for call_id in calls
-        if call_id not in completed
-    ]
+    unresolved = find_unclosed_tool_calls(records, calls - completed)
+    return [build_recovery_tool_output(item) for item in unresolved], unresolved
 
 
 def _required_string(payload: dict[str, Any], key: str) -> str:

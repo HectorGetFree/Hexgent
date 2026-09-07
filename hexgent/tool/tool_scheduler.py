@@ -450,6 +450,12 @@ def execute_tool_batch(
                         "tool_name": tool_call.name,
                         "arguments": tool_call.arguments,
                         "description": description,
+                        "recovery_action": (
+                            "safe_to_retry"
+                            if registered_tool is not None
+                            and registered_tool.interrupt_behavior == "cancel"
+                            else "verify_before_retry"
+                        ),
                     },
                 )
             if limit_message is None:
@@ -520,6 +526,28 @@ def execute_tool_batch(
                 executable_count,
                 min(limits.max_workers, executable_count),
             )
+        # 3. 在提交线程或同步执行前持久化派发边界；进程崩溃后不能猜测副作用。
+        if session_store is not None:
+            for scheduled in scheduled_calls:
+                if (
+                    scheduled.prepared is None
+                    or scheduled.pending_duplicate_source_call_id is not None
+                ):
+                    continue
+                session_store.append_transcript(
+                    "tool_execution_dispatched",
+                    {
+                        "call_id": scheduled.tool_call.call_id,
+                        "tool_name": scheduled.tool_call.name,
+                        "recovery_action": (
+                            "safe_to_retry"
+                            if get_tool(scheduled.tool_call.name) is not None
+                            and get_tool(scheduled.tool_call.name).interrupt_behavior
+                            == "cancel"
+                            else "verify_before_retry"
+                        ),
+                    },
+                )
         _, elapsed_seconds = yield from _execute_scheduled_group(
             scheduled_calls,
             concurrency_safe=group.concurrency_safe,
@@ -550,6 +578,15 @@ def execute_tool_batch(
                     context,
                 )
             else:
+                if session_store is not None:
+                    session_store.append_transcript(
+                        "tool_execution_dispatched",
+                        {
+                            "call_id": scheduled.tool_call.call_id,
+                            "tool_name": scheduled.tool_call.name,
+                            "recovery_action": "verify_before_retry",
+                        },
+                    )
                 scheduled.result = _run_scheduled_call(
                     scheduled,
                     context,

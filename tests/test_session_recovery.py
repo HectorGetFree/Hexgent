@@ -209,8 +209,8 @@ class SessionRecoveryTest(unittest.TestCase):
         self.assertEqual(restored.context_manager.round_boundaries, expected_boundaries)
         self.assertEqual(restored.context_manager.compaction_count, 1)
 
-    def test_repairs_unclosed_tool_call_without_retrying_it(self) -> None:
-        """崩溃留下的 Tool Call 应获得未知副作用结果且只修复一次。"""
+    def test_repairs_unstarted_tool_call_without_retrying_it(self) -> None:
+        """尚未进入工具管线的 Call 应明确标为未执行且只修复一次。"""
         with TemporaryDirectory() as directory:
             root = Path(directory)
             context = ContextManager()
@@ -242,8 +242,64 @@ class SessionRecoveryTest(unittest.TestCase):
         ]
         self.assertEqual(len(outputs), 1)
         self.assertEqual(outputs[0]["call_id"], "call-interrupted")
-        self.assertIn("副作用未知", outputs[0]["output"])
+        self.assertIn("未执行", outputs[0]["output"])
         self.assertEqual(first_restore.context_manager.round_boundaries, [3])
+
+    def test_recovery_uses_dispatch_ledger_to_distinguish_retry_safety(self) -> None:
+        """已派发的只读与副作用工具必须得到不同的保守恢复结论。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = ContextManager()
+            session = Session.persistent(root)
+            query = context.append_user_query("恢复中断工具")
+            session.record_user_query(query)
+            calls = [
+                {
+                    "type": "function_call",
+                    "name": "read_file",
+                    "call_id": "call-read",
+                    "arguments": '{"path":"README.md"}',
+                },
+                {
+                    "type": "function_call",
+                    "name": "write_file",
+                    "call_id": "call-write",
+                    "arguments": '{"path":"README.md","content":"x"}',
+                },
+            ]
+            context.append_messages(calls, completes_round=False)
+            session.record_context_messages(
+                calls,
+                completes_round=False,
+                source="model_response",
+            )
+            assert session.store is not None
+            for call_id, tool_name, action in (
+                ("call-read", "read_file", "safe_to_retry"),
+                ("call-write", "write_file", "verify_before_retry"),
+            ):
+                session.store.append_transcript(
+                    "tool_execution_started",
+                    {"call_id": call_id, "tool_name": tool_name},
+                )
+                session.store.append_transcript(
+                    "tool_execution_dispatched",
+                    {
+                        "call_id": call_id,
+                        "tool_name": tool_name,
+                        "recovery_action": action,
+                    },
+                )
+            restored = SessionRestorer(root).restore(session.store.session_id)
+
+        outputs = {
+            message["call_id"]: message["output"]
+            for message in restored.context_manager.active_messages
+            if isinstance(message, dict)
+            and message.get("type") == "function_call_output"
+        }
+        self.assertIn("可以按需重新调用", outputs["call-read"])
+        self.assertIn("副作用状态未知", outputs["call-write"])
 
     def test_cleared_plan_is_not_restored(self) -> None:
         """最后一次 Plan 状态为空时不得恢复此前已经完成的计划。"""

@@ -10,6 +10,7 @@ from .session_store import (
     build_persisted_output_message,
 )
 from .checkpoint import Checkpoint, CheckpointReason, CheckpointRunStatus, CheckpointStore
+from .tool_call_recovery import UnclosedToolCall
 from ..memory import (
     ContextRecord,
     ContextRecordCategory,
@@ -33,6 +34,7 @@ __all__ = [
     "CheckpointReason",
     "CheckpointRunStatus",
     "CheckpointStore",
+    "UnclosedToolCall",
     "ContextRecord",
     "ContextRecordCategory",
     "ContextRecordInput",
