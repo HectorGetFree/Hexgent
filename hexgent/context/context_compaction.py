@@ -1,7 +1,7 @@
 """将较早的完整模型轮次压缩为连续性摘要。"""
 
 from collections.abc import Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 from typing import Any, Literal
 
@@ -66,6 +66,9 @@ class CompactionOutcome:
 
     # 压缩成功提交后应由 Session 持久化的边界事实。
     boundary: dict[str, Any] | None = None
+
+    # 压缩检查时完整请求的分项 Token 估算，供运行时诊断使用。
+    request_budget: dict[str, int] = field(default_factory=dict)
 
 
 def _usage_values(usage: Any) -> tuple[int, int]:
@@ -155,6 +158,7 @@ def compact_context_if_needed(
     limits: ContextLimits,
     *,
     force: bool = False,
+    instruction_budget: dict[str, int] | None = None,
 ) -> Generator[AgentEvent, None, CompactionOutcome]:
     """在主模型调用前检查容量，并在需要时压缩较早的完整轮次。"""
     # 1. 估算包含运行时指令和工具定义的完整请求大小。
@@ -163,8 +167,17 @@ def compact_context_if_needed(
         context_manager.model_messages(),
         tools,
     )
+    request_budget = {
+        **(instruction_budget or {"instructions_total": estimate_value_tokens(instructions)}),
+        "active_messages": estimate_value_tokens(context_manager.model_messages()),
+        "tool_schemas": estimate_value_tokens(tools),
+        "request_total": before_tokens,
+    }
     if not force and before_tokens < limits.compaction_threshold_tokens:
-        return CompactionOutcome("not_needed", before_tokens, before_tokens)
+        return CompactionOutcome(
+            "not_needed", before_tokens, before_tokens,
+            request_budget=request_budget,
+        )
 
     # 2. 连续失败达到上限时停止重复调用摘要模型。
     if (
@@ -178,7 +191,10 @@ def compact_context_if_needed(
             if before_tokens >= limits.blocking_threshold_tokens
             else "failed"
         )
-        return CompactionOutcome(status, before_tokens, before_tokens, message=message)
+        return CompactionOutcome(
+            status, before_tokens, before_tokens, message=message,
+            request_budget=request_budget,
+        )
 
     # 3. 只在完整 API 轮次边界上选择压缩范围。
     cut_index = _select_cut_index(context_manager, limits.recent_context_tokens)
@@ -190,7 +206,10 @@ def compact_context_if_needed(
             if before_tokens >= limits.blocking_threshold_tokens
             else "failed"
         )
-        return CompactionOutcome(status, before_tokens, before_tokens, message=message)
+        return CompactionOutcome(
+            status, before_tokens, before_tokens, message=message,
+            request_budget=request_budget,
+        )
 
     yield ContextCompactionStartedEvent(before_tokens)
 
@@ -276,6 +295,7 @@ def compact_context_if_needed(
             recent_tokens=recent_tokens,
             status=status,
         )
+        boundary["request_budget"] = request_budget
         yield ContextCompactionFinishedEvent(before_tokens, after_tokens, status)
         return CompactionOutcome(
             status,
@@ -284,6 +304,7 @@ def compact_context_if_needed(
             total_input_tokens,
             total_output_tokens,
             boundary=boundary,
+            request_budget=request_budget,
         )
 
     # 6. 所有尝试均无效时累计熔断计数，硬阈值以上明确阻塞。
@@ -302,4 +323,5 @@ def compact_context_if_needed(
         total_input_tokens,
         total_output_tokens,
         message,
+        request_budget=request_budget,
     )

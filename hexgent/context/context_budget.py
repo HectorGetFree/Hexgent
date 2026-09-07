@@ -23,6 +23,12 @@ class ContextLimits:
     # 用户原始 Query 和工具结果属于活动消息，由完整请求预算与压缩机制单独控制。
     runtime_injection_tokens: int = 12_000
 
+    # Plan 超过该估算 Token 数时记录预算告警，但不截断计划正文。
+    plan_warning_tokens: int = 4_000
+
+    # 已激活 Skill 超过该估算 Token 数时记录预算告警，但不截断 Skill 正文。
+    active_skill_warning_tokens: int = 6_000
+
     # 单次上下文摘要允许生成的最大 Token 数量。
     summary_output_tokens: int = 2_000
 

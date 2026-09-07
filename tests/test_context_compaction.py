@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 
 from hexgent.context.context_compaction import compact_context_if_needed
-from hexgent.utils.token_estimator import estimate_request_tokens
+from hexgent.utils.token_estimator import estimate_request_tokens, estimate_value_tokens
 from hexgent.context.context_budget import ContextLimits
 from hexgent.context.context_manager import ContextManager, UserQuery
 from hexgent.events import (
@@ -106,6 +106,15 @@ class ContextCompactionTest(unittest.TestCase):
         )
         self.assertEqual(outcome.input_tokens, 20)
         self.assertEqual(outcome.output_tokens, 8)
+        self.assertEqual(
+            outcome.request_budget["instructions_total"],
+            estimate_value_tokens("系统提示词"),
+        )
+        self.assertIn("active_messages", outcome.request_budget)
+        self.assertIn("tool_schemas", outcome.request_budget)
+        self.assertEqual(
+            outcome.boundary["request_budget"], outcome.request_budget,
+        )
 
     def test_active_context_keeps_latest_query_after_compaction(self) -> None:
         """活动上下文压缩后只强制保留最新 Query。"""

@@ -1,5 +1,7 @@
 """构建每轮模型调用所需的运行时上下文。"""
 
+from dataclasses import dataclass
+
 from hexgent.plan import format_plan_context
 from hexgent.prompt import SYSTEM_PROMPT
 from hexgent.memory import (
@@ -13,6 +15,20 @@ from hexgent.skill import SkillDefinition
 from hexgent.utils.token_estimator import estimate_value_tokens
 
 
+@dataclass(frozen=True)
+class BuiltContext:
+    """一次模型调用的 instructions 与可审计的分项 Token 估算。"""
+
+    # 最终传入模型的完整 instructions。
+    instructions: str
+
+    # System Prompt、Plan、Skill、召回内容各自的估算 Token。
+    instruction_tokens: dict[str, int]
+
+    # 不截断正文、仅供 Session 记录的超大固定区块告警。
+    warnings: tuple[str, ...]
+
+
 def build_context(
     context: ToolExecutionContext,
     relevant_context: tuple[RetrievedContextRecord, ...] = (),
@@ -21,27 +37,63 @@ def build_context(
     runtime_injection_tokens: int | None = None,
 ) -> str:
     """组合系统提示词和受统一预算约束的运行时上下文。"""
+    return build_context_details(
+        context,
+        relevant_context,
+        relevant_memory,
+        active_skill,
+        runtime_injection_tokens,
+    ).instructions
+
+
+def build_context_details(
+    context: ToolExecutionContext,
+    relevant_context: tuple[RetrievedContextRecord, ...] = (),
+    relevant_memory: tuple[RetrievedMemory, ...] = (),
+    active_skill: SkillDefinition | None = None,
+    runtime_injection_tokens: int | None = None,
+    *,
+    plan_warning_tokens: int | None = None,
+    active_skill_warning_tokens: int | None = None,
+) -> BuiltContext:
+    """构建 instructions，并返回分项预算快照供运行时审计使用。"""
     plan_context = format_plan_context(context.plan_store.get_plan())
     # Session Record 优先于同内容的工作区 Memory，避免同一事实重复占用请求预算。
     deduplicated_memory = _without_context_duplicates(
         relevant_context, relevant_memory,
     )
     sections = [SYSTEM_PROMPT]
+    fixed_tokens = {"system_prompt": estimate_value_tokens(SYSTEM_PROMPT)}
+    warnings: list[str] = []
     if plan_context:
         sections.append(plan_context)
+        fixed_tokens["plan"] = estimate_value_tokens(plan_context)
+        if (
+            plan_warning_tokens is not None
+            and fixed_tokens["plan"] > plan_warning_tokens
+        ):
+            warnings.append("Plan 正文过大，可能挤占近期对话上下文")
     if active_skill is not None:
-        sections.append(
+        active_skill_context = (
             "<active-skill\n"
             f'name="{active_skill.name}"\n'
             f'path="{active_skill.relative_path}">\n'
             f"{active_skill.instructions}\n"
             "</active-skill>"
         )
+        sections.append(active_skill_context)
+        fixed_tokens["active_skill"] = estimate_value_tokens(active_skill_context)
+        if (
+            active_skill_warning_tokens is not None
+            and fixed_tokens["active_skill"] > active_skill_warning_tokens
+        ):
+            warnings.append("激活 Skill 正文过大，可能挤占近期对话上下文")
     else:
         # 激活后完整 Skill 已进入上下文，重复目录只会浪费 Token。
         skill_catalog = context.skill_registry.catalog()
         if skill_catalog:
             sections.append(skill_catalog)
+            fixed_tokens["skill_catalog"] = estimate_value_tokens(skill_catalog)
 
     selected_context, selected_memory = _fit_retrieval_budget(
         relevant_context,
@@ -55,7 +107,13 @@ def build_context(
         sections.append(retrieved_context)
     if retrieved_memory:
         sections.append(retrieved_memory)
-    return "\n\n".join(sections)
+    if retrieved_context:
+        fixed_tokens["context_records"] = estimate_value_tokens(retrieved_context)
+    if retrieved_memory:
+        fixed_tokens["memory"] = estimate_value_tokens(retrieved_memory)
+    instructions = "\n\n".join(sections)
+    fixed_tokens["instructions_total"] = estimate_value_tokens(instructions)
+    return BuiltContext(instructions, fixed_tokens, tuple(warnings))
 
 
 def _without_context_duplicates(

@@ -7,12 +7,14 @@ import unittest
 from hexgent.agent_engine import AgentEngine, RunRequest
 from hexgent.config import HexgentConfig
 from hexgent.context import build_context
+from hexgent.context.context_builder import build_context_details
 from hexgent.utils.token_estimator import estimate_value_tokens
 from hexgent.memory import MemoryRetriever, MemoryStore
 from hexgent.memory import RetrievedContextRecord, RetrievedMemory
 from hexgent.tool.memory_tools import remember
 from hexgent.plan import InMemoryPlanStore
 from hexgent.tool.tool_context import ToolExecutionContext
+from hexgent.skill import SkillDefinition
 
 
 class MemoryTest(unittest.TestCase):
@@ -89,6 +91,27 @@ class MemoryTest(unittest.TestCase):
 
         self.assertNotIn("<relevant-session-context>", instructions)
         self.assertNotIn("<relevant-memory>", instructions)
+
+    def test_oversized_active_skill_records_warning_without_truncation(self) -> None:
+        """超大 Skill 只产生诊断告警，正文仍完整进入 instructions。"""
+        context = ToolExecutionContext(InMemoryPlanStore(), self.workdir)
+        active_skill = SkillDefinition(
+            "large-skill",
+            "用于测试固定上下文预算告警。",
+            "必须完整保留的规则。" * 100,
+            (),
+            "skills/large-skill/SKILL.md",
+        )
+
+        result = build_context_details(
+            context,
+            active_skill=active_skill,
+            active_skill_warning_tokens=1,
+        )
+
+        self.assertIn("必须完整保留的规则", result.instructions)
+        self.assertIn("激活 Skill 正文过大", result.warnings[0])
+        self.assertGreater(result.instruction_tokens["active_skill"], 1)
 
     def test_legacy_single_file_is_migrated_to_authoritative_items(self) -> None:
         """首次加载旧版单文件时，保留事实并生成新的索引与条目文件。"""

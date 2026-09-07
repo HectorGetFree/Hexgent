@@ -17,7 +17,7 @@ from ..utils.retrieval_text import is_context_reference_query
 from ..tool.tool_execution import UserConfirmation
 from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
-from hexgent.context import build_context
+from hexgent.context.context_builder import build_context_details
 from hexgent.events import (
     AgentEvent,
     AgentLoopResult,
@@ -304,10 +304,22 @@ def run_turn(
     # 4. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
     active_context_limits = config.context
-    instructions = build_context(
+    built_context = build_context_details(
         state.tool_context, state.relevant_context, state.relevant_memory,
         state.active_skill, active_context_limits.runtime_injection_tokens,
+        plan_warning_tokens=active_context_limits.plan_warning_tokens,
+        active_skill_warning_tokens=active_context_limits.active_skill_warning_tokens,
     )
+    instructions = built_context.instructions
+    if session is not None:
+        for message in built_context.warnings:
+            session.record_runtime_event(
+                "context_budget_warning",
+                {
+                    "message": message,
+                    "instruction_tokens": built_context.instruction_tokens,
+                },
+            )
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
     request_tools = _available_tools_for_state(state) if state.mode == "working" else []
@@ -318,7 +330,17 @@ def run_turn(
         instructions,
         request_tools,
         active_context_limits,
+        instruction_budget=built_context.instruction_tokens,
     )
+    if session is not None and compaction.status != "not_needed":
+        session.record_runtime_event(
+            "context_budget_observed",
+            {
+                "mode": state.mode,
+                "status": compaction.status,
+                "request_budget": compaction.request_budget,
+            },
+        )
     if compaction.status in {"compacted", "partial"}:
         if compaction.boundary is not None and session is not None:
             session.record_compaction(compaction.boundary)
@@ -404,7 +426,18 @@ def run_turn(
                 request_tools,
                 reactive_limits,
                 force=True,
+                instruction_budget=built_context.instruction_tokens,
             )
+            if session is not None:
+                session.record_runtime_event(
+                    "context_budget_observed",
+                    {
+                        "mode": state.mode,
+                        "status": reactive_compaction.status,
+                        "request_budget": reactive_compaction.request_budget,
+                        "reactive": True,
+                    },
+                )
             if reactive_compaction.status in {"compacted", "partial"}:
                 if (
                     reactive_compaction.boundary is not None
