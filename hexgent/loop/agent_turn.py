@@ -13,6 +13,7 @@ from ..plan import review_plan_exit
 from ..run_control import RunControl
 from ..session import Session
 from ..skill import SkillDefinition
+from ..utils.retrieval_text import is_context_reference_query
 from ..tool.tool_execution import UserConfirmation
 from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
@@ -246,6 +247,9 @@ def _continue_with_steering(
             "\n".join(query.content for query in queries),
             tuple(query.sequence for query in applied_queries),
             config.context_retrieval,
+            allow_recent_fallback=is_context_reference_query(
+                "\n".join(query.content for query in queries)
+            ),
         )
         relevant_memory = MemoryRetriever(config.memory_retrieval).retrieve(
             "\n".join(query.content for query in queries),
@@ -299,11 +303,11 @@ def run_turn(
 
     # 4. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
+    active_context_limits = config.context
     instructions = build_context(
         state.tool_context, state.relevant_context, state.relevant_memory,
-        state.active_skill,
+        state.active_skill, active_context_limits.runtime_injection_tokens,
     )
-    active_context_limits = config.context
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
     request_tools = _available_tools_for_state(state) if state.mode == "working" else []

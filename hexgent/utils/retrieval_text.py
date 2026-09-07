@@ -45,3 +45,13 @@ def retrieval_token_weight(token: str) -> float:
     if len(token) == 3:
         return 1.0
     return 1.0
+
+
+def is_context_reference_query(text: str) -> bool:
+    """识别可能依赖上文指代的短 Query，不把它误当作语义理解。"""
+    normalized = normalize_retrieval_text(text)
+    markers = ("它", "这个", "那个", "前面", "之前", "上次", "上述", "继续")
+    if not normalized or not any(marker in normalized for marker in markers):
+        return False
+    # 明确路径、代码标识符或较长描述仍优先走普通词法召回。
+    return len(normalized) <= 40 and not re.search(r"[a-zA-Z0-9_./\\-]{3,}", normalized)

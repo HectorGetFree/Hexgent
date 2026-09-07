@@ -70,6 +70,27 @@ class ContextRetrievalTest(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertLessEqual(sum(len(result.content) for result in results), 100)
 
+    def test_contextual_reference_falls_back_to_recent_session_fact(self) -> None:
+        """指代式短 Query 无词法命中时可受限延续最近 Session 事实。"""
+        store = ContextRecordStore()
+        store.upsert(
+            [
+                ContextRecordInput("恢复方案采用 Checkpoint 加增量重放。", "decision", (1,)),
+                ContextRecordInput("接口需要 JWT 认证。", "fact", (2,)),
+            ]
+        )
+
+        results = ContextRecordRetriever().retrieve(
+            "前面的方案怎么继续？",
+            store.active_records,
+            allow_recent_fallback=True,
+        )
+
+        self.assertTrue(any(
+            result.match_reasons == ("contextual_reference",)
+            for result in results
+        ))
+
     def test_engine_retrieves_records_and_context_builder_injects_them(self) -> None:
         """新 Query 应在调用 Agent Loop 前完成召回并注入 instructions。"""
         with TemporaryDirectory() as directory:

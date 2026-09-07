@@ -7,6 +7,7 @@ import unittest
 from hexgent.agent_engine import AgentEngine, RunRequest
 from hexgent.config import HexgentConfig
 from hexgent.context import build_context
+from hexgent.utils.token_estimator import estimate_value_tokens
 from hexgent.memory import MemoryRetriever, MemoryStore
 from hexgent.memory import RetrievedContextRecord, RetrievedMemory
 from hexgent.tool.memory_tools import remember
@@ -66,6 +67,27 @@ class MemoryTest(unittest.TestCase):
         instructions = build_context(context, (record,), (memory,))
 
         self.assertIn("<relevant-session-context>", instructions)
+        self.assertNotIn("<relevant-memory>", instructions)
+
+    def test_runtime_injection_budget_drops_retrieval_before_fixed_context(self) -> None:
+        """预算不足时保留系统固定指令，但不让召回内容继续挤占上下文。"""
+        record = RetrievedContextRecord(
+            "ctx-test", "重要事实" * 100, "fact", (1,), 1.0, ("exact_phrase",),
+        )
+        memory = RetrievedMemory(
+            "mem-test", "长期记忆" * 100, "project", 1.0, ("exact_phrase",),
+        )
+        context = ToolExecutionContext(InMemoryPlanStore(), self.workdir)
+        fixed_tokens = estimate_value_tokens(build_context(context))
+
+        instructions = build_context(
+            context,
+            (record,),
+            (memory,),
+            runtime_injection_tokens=fixed_tokens + 1,
+        )
+
+        self.assertNotIn("<relevant-session-context>", instructions)
         self.assertNotIn("<relevant-memory>", instructions)
 
     def test_legacy_single_file_is_migrated_to_authoritative_items(self) -> None:

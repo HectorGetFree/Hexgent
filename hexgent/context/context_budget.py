@@ -19,6 +19,10 @@ class ContextLimits:
     # 即使物理窗口尚有余量，也在此目标规模附近主动压缩，避免长请求显著拖慢模型。
     proactive_threshold_tokens: int = 64_000
 
+    # System Prompt、Plan、Skill 与历史召回合计允许占用的运行时注入预算。
+    # 用户原始 Query 和工具结果属于活动消息，由完整请求预算与压缩机制单独控制。
+    runtime_injection_tokens: int = 12_000
+
     # 单次上下文摘要允许生成的最大 Token 数量。
     summary_output_tokens: int = 2_000
 

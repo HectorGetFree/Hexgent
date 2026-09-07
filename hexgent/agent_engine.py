@@ -16,6 +16,7 @@ from .loop.transitions import Stop
 from .run_control import RunControl
 from .plan import InMemoryPlanStore
 from .memory import MemoryRetriever, MemoryStore
+from .utils.retrieval_text import is_context_reference_query
 from .session import (
     ContextRecordInput,
     ContextRecordMutation,
@@ -262,6 +263,7 @@ class AgentEngine:
                 request.query or "",
                 (user_query.sequence,),
                 config.context_retrieval,
+                allow_recent_fallback=is_context_reference_query(request.query or ""),
             )
             relevant_memory = MemoryRetriever(config.memory_retrieval).retrieve(
                 request.query or "", self.memory_store.items,

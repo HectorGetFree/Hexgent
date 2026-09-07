@@ -349,12 +349,15 @@ class Session:
         query: str,
         query_sequences: tuple[int, ...],
         limits: ContextRetrievalLimits,
+        *,
+        allow_recent_fallback: bool = False,
     ) -> tuple[RetrievedContextRecord, ...]:
         """为新 Query 召回 Session 历史记录并保存可观测事实。"""
         # 1. 检索器只读取 active 投影，不修改 Record 和用户原始 Query。
         records = ContextRecordRetriever(limits).retrieve(
             query,
             self.context_records.active_records,
+            allow_recent_fallback=allow_recent_fallback,
         )
 
         # 2. Transcript 只记录引用、评分与原因，不重复复制 Record 正文。
@@ -371,6 +374,7 @@ class Session:
                     for record in records
                 ],
                 "total_characters": sum(len(record.content) for record in records),
+                "recent_fallback": allow_recent_fallback,
             },
         )
         return records
