@@ -183,6 +183,8 @@ class AgentEngine:
         user_confirmation: UserConfirmation = unavailable_user_confirmation,
         run_control: RunControl | None = None,
         client: Any | None = None,
+        workspace_run_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> Generator[AgentEvent, None, None]:
         """执行当前 Engine 固定 Session 内的一次提交或续跑。"""
         # 1. 事件流首次消费时原子占用 Engine，拒绝并发 Run 污染共享状态。
@@ -198,6 +200,8 @@ class AgentEngine:
 
             # 3. submit 产生新事实；continue 只重建 Checkpoint 的活动 State。
             state = self._build_run_state(normalized_request, effective_config)
+            if workspace_run_id is not None and conversation_id is not None:
+                self.session.bind_runtime_run(workspace_run_id, conversation_id)
 
             # 4. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
             outcome = yield from agent_loop(
@@ -283,6 +287,11 @@ class AgentEngine:
             context_manager=self.context_manager,
             tool_context=self.tool_context,
         )
+
+    @property
+    def has_continuable_run(self) -> bool:
+        """当前 Engine 是否持有可由 continue 请求恢复的 Checkpoint 状态。"""
+        return self._pending_run_state is not None
 
     def cancel_pending_task(self, reason: str = "用户取消暂停任务") -> None:
         """在没有活跃 Run 时终结保留的 Plan，不回滚已经发生的副作用。"""

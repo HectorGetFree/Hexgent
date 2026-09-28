@@ -192,7 +192,12 @@ class SessionStore:
                 display_name = payload.get("display_name") or payload.get("first_query")
             except (OSError, UnicodeError, json.JSONDecodeError):
                 display_name = None
-            details.append((session_id, display_name if isinstance(display_name, str) else session_id))
+            details.append(
+                (
+                    session_id,
+                    display_name if isinstance(display_name, str) else session_id,
+                )
+            )
         return details
 
     def _build_session_dir(self, session_id: str) -> Path:
@@ -229,6 +234,36 @@ class SessionStore:
                 "session_id": self.session_id,
                 "display_name": self.display_name,
                 "first_query": first_query,
+            },
+        )
+        pending_records = self._pending_records
+        self._pending_records = []
+        for record_type, payload in pending_records:
+            self.append_transcript(record_type, payload)
+
+    def start_named_session(self, session_id: str, display_name: str) -> None:
+        """在首个用户 Query 前创建具有外部稳定 ID 的持久化 Session。"""
+        if self._session_started:
+            return
+        valid_characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        if not session_id or any(
+            character not in valid_characters for character in session_id
+        ):
+            raise ValueError("Session ID 只能包含字母、数字、下划线和连字符")
+        self.session_id = session_id
+        self.display_name = display_name
+        self.session_dir = self._build_session_dir(session_id)
+        self.transcript_path = self.session_dir / "transcript.jsonl"
+        self.tool_results_dir = self.session_dir / "tool-results"
+        self.reports_dir = self.session_dir / "reports"
+        self.context_records_path = self.session_dir / "context-records.json"
+        self._session_started = True
+        self.append_transcript(
+            "session_started",
+            {
+                "session_id": self.session_id,
+                "display_name": self.display_name,
+                "first_query": None,
             },
         )
         pending_records = self._pending_records

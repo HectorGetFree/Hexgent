@@ -68,6 +68,10 @@ class Session:
         repr=False,
     )
 
+    # Integration 关联字段；不参与 internal run_id 的生成。
+    _workspace_run_id: str | None = field(default=None, init=False, repr=False)
+    _conversation_id: str | None = field(default=None, init=False, repr=False)
+
     @classmethod
     def persistent(
         cls,
@@ -122,6 +126,11 @@ class Session:
                 },
             )
 
+    def initialize_runtime_session(self, session_id: str) -> None:
+        """为外部 Runtime Adapter 预先创建可写入命令事实的持久化 Session。"""
+        if self.store is not None:
+            self.store.start_named_session(session_id, "Workspace Conversation")
+
     def start_run(self, *, limits_enabled: bool, plan: Plan | None) -> None:
         """开始跟踪一次由最新用户 Query 驱动的 Agent Run。"""
         if self.store is None:
@@ -139,11 +148,18 @@ class Session:
             "agent_run_started",
             {
                 "run_id": self._active_run_id,
+                "workspace_run_id": self._workspace_run_id,
+                "conversation_id": self._conversation_id,
                 "limits_enabled": limits_enabled,
                 "user_query": self._latest_user_query,
                 "plan": asdict(plan) if plan is not None else None,
             },
         )
+
+    def bind_runtime_run(self, workspace_run_id: str, conversation_id: str) -> None:
+        """绑定当前 internal run 的 WS 业务身份。"""
+        self._workspace_run_id = workspace_run_id
+        self._conversation_id = conversation_id
 
     def finish_run(
         self,
@@ -305,17 +321,31 @@ class Session:
         staged = ContextRecordStore(self.context_records.records)
         mutations = staged.upsert(candidates)
         if processed_sequence is not None:
-            if (self.store is None or type(processed_sequence) is not int
-                    or not self.last_extracted_transcript_sequence < processed_sequence < self.store.next_sequence):
+            if (
+                self.store is None
+                or type(processed_sequence) is not int
+                or not self.last_extracted_transcript_sequence
+                < processed_sequence
+                < self.store.next_sequence
+            ):
                 raise ValueError("ContextRecord 提取进度不在有效的已落盘范围内")
-            if any(sequence > processed_sequence for candidate in candidates for sequence in candidate.source_sequences):
+            if any(
+                sequence > processed_sequence
+                for candidate in candidates
+                for sequence in candidate.source_sequences
+            ):
                 raise ValueError("ContextRecord 证据超出本次提取范围")
             # 自动提取将候选变更与进度作为一个事实提交，空结果也可恢复。
-            self.record_runtime_event("context_record_extraction_committed", {
-                "through_sequence": processed_sequence,
-                "mutations": [{"action": mutation.action, "record": asdict(mutation.record)}
-                              for mutation in mutations],
-            })
+            self.record_runtime_event(
+                "context_record_extraction_committed",
+                {
+                    "through_sequence": processed_sequence,
+                    "mutations": [
+                        {"action": mutation.action, "record": asdict(mutation.record)}
+                        for mutation in mutations
+                    ],
+                },
+            )
             self.context_records = staged
             self.last_extracted_transcript_sequence = processed_sequence
             try:

@@ -11,7 +11,7 @@ from threading import Event, Lock
 from typing import Any
 from uuid import uuid4
 
-from ...agent_engine import AgentEngine
+from ...agent_engine import AgentEngine, RunRequest
 from ...config import HexgentConfig
 from ...events import AgentEvent, RunFinishedEvent
 from ...run_control import RunControl
@@ -97,6 +97,9 @@ class RunHandle:
     condition: asyncio.Condition = field(default_factory=asyncio.Condition)
     permissions: dict[str, PendingPermission] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
+    request_intent: str = "submit"
+    workspace_run_id: str | None = None
+    conversation_id: str | None = None
 
 
 class RunManager:
@@ -133,11 +136,27 @@ class RunManager:
             self._engine_factory(session_config, self.workdir),
             permission_mode,
         )
+        handle.engine.session.initialize_runtime_session(session_id)
 
         # 2. 注册表修改统一在异步锁内完成。
         async with self._registry_lock:
             self._sessions[session_id] = handle
         return self._session_response(handle)
+
+    async def restore_session(self, session_id: str) -> SessionResponse:
+        """按已有 Session ID 重建同一 Session 的 Runtime 对象。"""
+        async with self._registry_lock:
+            existing = self._sessions.get(session_id)
+            if existing is not None:
+                return self._session_response(existing)
+            engine = self._engine_factory.restore(self.config, self.workdir, session_id)
+            handle = SessionHandle(
+                session_id,
+                engine,
+                engine.session.settings.permission_mode,
+            )
+            self._sessions[session_id] = handle
+            return self._session_response(handle)
 
     async def get_session(self, session_id: str) -> SessionResponse:
         """返回一个 Session 的当前网络状态。"""
@@ -150,6 +169,8 @@ class RunManager:
         query: str,
         *,
         visible_query: bool = True,
+        workspace_run_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> RunResponse:
         """立即注册 Run，并在后台线程中消费同步 Agent 事件流。"""
         session = self._require_session(session_id)
@@ -174,7 +195,11 @@ class RunManager:
                     {"active_run_id": session.active_run_id},
                 )
             run_id = f"run_{uuid4().hex[:12]}"
-            handle = RunHandle(run_id, session_id, query, visible_query, RunControl())
+            handle = RunHandle(
+                run_id, session_id, query, visible_query, RunControl(),
+                workspace_run_id=workspace_run_id,
+                conversation_id=conversation_id,
+            )
             # Run 已完成登记并可以接收 Pause、Cancel 和 Steer，立即对外视为 running。
             handle.status = "running"
             self._runs[run_id] = handle
@@ -185,6 +210,73 @@ class RunManager:
         handle.task = asyncio.create_task(
             self._run_worker(session, handle),
             name=f"hexgent-{run_id}",
+        )
+        return self._run_response(handle)
+
+    async def continue_run(self, run_id: str) -> RunResponse:
+        """使用同一 Session 的 Checkpoint 继续现有内部 Run。"""
+        handle = self._require_run(run_id)
+        if not self._is_terminal(handle):
+            raise WebAdapterError(409, "run_not_continuable", "当前 Run 尚未进入可继续状态")
+        session = self._require_session(handle.session_id)
+        async with session.lock:
+            if session.active_run_id is not None:
+                raise WebAdapterError(409, "run_already_active", "当前 Session 已有正在运行的 Agent Run")
+            session.active_run_id = run_id
+            handle.request_intent = "continue"
+            handle.status = "running"
+            handle.run_control = RunControl()
+        handle.task = asyncio.create_task(
+            self._run_worker(session, handle),
+            name=f"hexgent-continue-{run_id}",
+        )
+        return self._run_response(handle)
+
+    async def continue_session(
+        self,
+        session_id: str,
+        *,
+        workspace_run_id: str,
+        conversation_id: str,
+    ) -> RunResponse:
+        """从持久化 Session 创建新的进程内续跑 Handle。"""
+        session = self._require_session(session_id)
+        if not session.engine.has_continuable_run:
+            raise WebAdapterError(
+                409,
+                "run_not_continuable",
+                "当前 Session 没有可继续的 Agent Run",
+            )
+
+        # 1. RunHandle 只承载当前进程控制状态，重启后必须新建而非复活旧对象。
+        async with session.lock:
+            if session.active_run_id is not None:
+                raise WebAdapterError(
+                    409,
+                    "run_already_active",
+                    "当前 Session 已有正在运行的 Agent Run",
+                    {"active_run_id": session.active_run_id},
+                )
+            run_id = f"run_{uuid4().hex[:12]}"
+            handle = RunHandle(
+                run_id,
+                session_id,
+                "",
+                False,
+                RunControl(),
+                request_intent="continue",
+                workspace_run_id=workspace_run_id,
+                conversation_id=conversation_id,
+            )
+            handle.status = "running"
+            self._runs[run_id] = handle
+            session.active_run_id = run_id
+            session.run_ids.append(run_id)
+
+        # 2. AgentEngine 通过 RunRequest.continue_run() 恢复 Checkpoint；Adapter 不解释状态内容。
+        handle.task = asyncio.create_task(
+            self._run_worker(session, handle),
+            name=f"hexgent-continue-{run_id}",
         )
         return self._run_response(handle)
 
@@ -310,10 +402,15 @@ class RunManager:
                 {"content": handle.query},
             )
         confirmation = self._build_confirmation(handle, loop)
+        request = (RunRequest.continue_run()
+                   if handle.request_intent == "continue"
+                   else RunRequest.submit(handle.query))
         for event in session.engine.run(
-            handle.query,
+            request,
             user_confirmation=confirmation,
             run_control=handle.run_control,
+            workspace_run_id=handle.workspace_run_id,
+            conversation_id=handle.conversation_id,
         ):
             future = asyncio.run_coroutine_threadsafe(
                 self._publish_agent_event(handle, event),

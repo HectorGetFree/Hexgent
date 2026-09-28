@@ -16,6 +16,8 @@ from .errors import WebAdapterError
 from .routes import router
 from .run_manager import RunManager
 from .settings import WebSettings
+from ...integration.runtime_adapter import RuntimeCommandAdapter
+from ..integration.routes import router as integration_router
 
 
 def create_app(
@@ -54,7 +56,9 @@ def create_app(
         allow_headers=["Accept", "Content-Type", "Last-Event-ID"],
     )
     app.state.run_manager = run_manager
+    app.state.runtime_command_adapter = RuntimeCommandAdapter(run_manager)
     app.include_router(router)
+    app.include_router(integration_router)
 
     # 3. 业务状态冲突使用稳定错误协议，不向网络泄漏 Python 堆栈。
     @app.exception_handler(WebAdapterError)
