@@ -27,18 +27,33 @@ from ...plan import Plan
 
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
+STREAM_EVENT_TYPES = frozenset({
+    "text_delta",
+    "tool_started",
+    "tool_finished",
+    "plan_updated",
+})
+
+
 def serialize_agent_event(
     event: AgentEvent,
     *,
     run_id: str,
+    stream_id: str,
     sequence: int,
-) -> dict[str, Any]:
-    """显式选择公开字段，再转换为带顺序和时间的网络事件。"""
+    response_id: str | None = None,
+) -> dict[str, Any] | None:
+    """将 Core 事件转换为 Phase 3 允许公开的非权威流事件。"""
     event_type, payload = agent_event_payload(event)
+    if event_type not in STREAM_EVENT_TYPES:
+        return None
+    if event_type == "text_delta":
+        payload = {"responseId": response_id, **payload}
     return build_web_event(
         event_type,
         payload,
         run_id=run_id,
+        stream_id=stream_id,
         sequence=sequence,
     )
 
@@ -143,6 +158,7 @@ def build_web_event(
     payload: dict[str, Any],
     *,
     run_id: str,
+    stream_id: str,
     sequence: int,
 ) -> dict[str, Any]:
     """构造 Adapter 自身产生的稳定网络事件。"""
@@ -151,5 +167,6 @@ def build_web_event(
         "type": event_type,
         "created_at": datetime.now(BEIJING_TIMEZONE).isoformat(),
         "run_id": run_id,
+        "stream_id": stream_id,
         "payload": payload,
     }

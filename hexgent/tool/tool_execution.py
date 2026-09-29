@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from dataclasses import asdict, dataclass
+import inspect
 from time import sleep
 from typing import TYPE_CHECKING, Any
 
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
     from hexgent.run_control import InterruptController
 
 
-UserConfirmation = Callable[[str, str], UserConfirmationResult]
+UserConfirmation = Callable[[str, str, str | None], UserConfirmationResult]
 ToolExecutionNotifier = Callable[[str], None]
 PermissionEventRecorder = Callable[[str, dict[str, Any]], None]
 
@@ -62,6 +63,7 @@ class PreparedToolCall:
 def unavailable_user_confirmation(
     _tool_name: str,
     _message: str,
+    _call_id: str | None = None,
 ) -> UserConfirmationResult:
     """在调用方没有提供界面确认能力时安全地停止执行。"""
     return "unavailable"
@@ -109,7 +111,15 @@ def _resolve_permission(
 
     if decision.behavior == "ask":
         message = decision.message or "本次工具调用需要用户确认"
-        confirmation = user_confirmation(tool_name, message)
+        try:
+            accepts_call_id = len(inspect.signature(user_confirmation).parameters) >= 3
+        except (TypeError, ValueError):
+            accepts_call_id = True
+        confirmation = (
+            user_confirmation(tool_name, message, call_id)
+            if accepts_call_id
+            else user_confirmation(tool_name, message)  # type: ignore[call-arg]
+        )
         if permission_event_recorder is not None:
             resolution_by_confirmation = {
                 "allow": "user_allowed",

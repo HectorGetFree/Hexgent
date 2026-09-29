@@ -163,5 +163,10 @@ async def resolve_permission(
     request: Request,
 ) -> ControlResponse:
     """回应一个仍在等待的工具权限请求。"""
-    await _manager(request).resolve_permission(run_id, request_id, body.decision)
+    await _manager(request).resolve_permission(
+        run_id,
+        request_id,
+        body.decision,
+        body.response_id,
+    )
     return ControlResponse(run_id=run_id, action="permission")

@@ -97,6 +97,7 @@ class TerminalIO:
         self,
         tool_name: str,
         message: str,
+        _call_id: str | None = None,
     ) -> UserConfirmationResult:
         """等待用户确认是否允许本次工具调用。"""
         prompt = (

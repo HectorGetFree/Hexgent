@@ -121,7 +121,7 @@ class WebAdapterTest(unittest.TestCase):
         self.fail("测试 Run 未在期限内结束")
 
     def test_run_events_are_replayed_in_order_and_sse_closes_on_terminal(self) -> None:
-        """SSE 应按 sequence 回放文本和唯一终态事件。"""
+        """SSE 只回放 Phase 3 允许的非权威事件，并在终态后关闭。"""
         session_id = self._create_session()
         started = self.client.post(
             f"/api/sessions/{session_id}/runs",
@@ -135,9 +135,26 @@ class WebAdapterTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: text_delta", response.text)
-        self.assertIn("event: run_finished", response.text)
         self.assertIn("id: 1", response.text)
-        self.assertIn("id: 2", response.text)
+        self.assertIn('"stream_id":"stream_', response.text)
+        self.assertIn('"responseId":"response_', response.text)
+        self.assertNotIn("run_finished", response.text)
+
+    def test_stream_hides_core_events_outside_phase3_allowlist(self) -> None:
+        """SSE 不应暴露终态、批次和内部控制事件。"""
+        session_id = self._create_session()
+        started = self.client.post(
+            f"/api/sessions/{session_id}/runs",
+            json={"query": "你好"},
+        )
+        run_id = started.json()["run_id"]
+        self.assertEqual(self._wait_for_terminal(run_id)["status"], "completed")
+
+        response = self.client.get(f"/api/runs/{run_id}/events")
+
+        self.assertNotIn("run_finished", response.text)
+        self.assertNotIn("tool_execution_completed", response.text)
+        self.assertNotIn("loop_transition", response.text)
 
     def test_session_rejects_second_active_run(self) -> None:
         """同一 Session 的第二个并发 Run 应获得稳定 409。"""
@@ -182,6 +199,10 @@ class WebAdapterTest(unittest.TestCase):
                     break
             time.sleep(0.01)
         self.assertIsNotNone(request_id)
+        self.assertEqual(
+            self.client.get(f"/api/runs/{run_id}").json()["status"],
+            "running",
+        )
         permission_event = next(
             event
             for event in self.client.app.state.run_manager._runs[run_id].events
@@ -192,10 +213,15 @@ class WebAdapterTest(unittest.TestCase):
 
         response = self.client.post(
             f"/api/runs/{run_id}/permissions/{request_id}",
-            json={"decision": "allow"},
+            json={"decision": "allow", "response_id": "response-allow-1"},
         )
 
         self.assertEqual(response.status_code, 202)
+        duplicate = self.client.post(
+            f"/api/runs/{run_id}/permissions/{request_id}",
+            json={"decision": "allow", "response_id": "response-allow-1"},
+        )
+        self.assertEqual(duplicate.status_code, 202)
         self.assertEqual(self._wait_for_terminal(run_id)["status"], "completed")
         self.assertEqual(engine.permission_result, "allow")
 

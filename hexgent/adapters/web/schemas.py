@@ -68,6 +68,7 @@ class PermissionDecisionRequest(BaseModel):
     """回应一次由工具权限管线发起的 Web 审批。"""
 
     decision: Literal["allow", "deny"]
+    response_id: str = Field(min_length=1)
 
 
 class RunResponse(BaseModel):

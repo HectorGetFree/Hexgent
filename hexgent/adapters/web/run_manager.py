@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from ...agent_engine import AgentEngine, RunRequest
 from ...config import HexgentConfig
-from ...events import AgentEvent, RunFinishedEvent
+from ...events import AgentEvent, RunFinishedEvent, TextDeltaEvent, ToolStartedEvent
 from ...run_control import RunControl
 from ...tool.tool_permission_pipeline import (
     PermissionConfig,
@@ -50,18 +50,23 @@ class PendingPermission:
     """一个正在等待网络调用方回应的同步权限请求。"""
 
     request_id: str
+    tool_call_id: str | None
     tool_name: str
     message: str
+    status: str = "PENDING"
+    response_id: str | None = None
     resolved: Event = field(default_factory=Event)
     decision: UserConfirmationResult | None = None
     lock: Lock = field(default_factory=Lock)
 
-    def resolve(self, decision: UserConfirmationResult) -> bool:
+    def resolve(self, decision: UserConfirmationResult, response_id: str) -> bool:
         """只接受第一次审批结果，并唤醒等待中的工具线程。"""
         with self.lock:
             if self.resolved.is_set():
-                return False
+                return self.response_id == response_id and self.decision == decision
             self.decision = decision
+            self.response_id = response_id
+            self.status = "RESOLVED"
             self.resolved.set()
             return True
 
@@ -100,6 +105,8 @@ class RunHandle:
     request_intent: str = "submit"
     workspace_run_id: str | None = None
     conversation_id: str | None = None
+    stream_id: str = field(default_factory=lambda: f"stream_{uuid4().hex[:12]}")
+    response_id: str | None = None
 
 
 class RunManager:
@@ -286,6 +293,24 @@ class RunManager:
         """返回一个 Run 的当前生命周期状态。"""
         return self._run_response(self._require_run(run_id))
 
+    def find_run_by_workspace_id(self, workspace_run_id: str) -> RunHandle:
+        """按 WS 稳定 Run 标识定位当前进程中的 Runtime Run。"""
+        for handle in self._runs.values():
+            if handle.workspace_run_id == workspace_run_id:
+                return handle
+        raise WebAdapterError(404, "run_not_found", "Workspace Agent Run 不存在")
+
+    async def resolve_permission_by_workspace_id(
+        self,
+        workspace_run_id: str,
+        request_id: str,
+        decision: UserConfirmationResult,
+        response_id: str,
+    ) -> RunResponse:
+        """按 WS Run 标识处理 Permission Resolve。"""
+        handle = self.find_run_by_workspace_id(workspace_run_id)
+        return await self.resolve_permission(handle.run_id, request_id, decision, response_id)
+
     async def pause(self, run_id: str) -> RunResponse:
         """请求 Core 在最近安全边界暂停当前 Run。"""
         handle = self._require_active_run(run_id)
@@ -326,13 +351,14 @@ class RunManager:
         run_id: str,
         request_id: str,
         decision: UserConfirmationResult,
+        response_id: str,
     ) -> RunResponse:
         """回应一个仍在等待的 Web 工具审批。"""
-        handle = self._require_active_run(run_id)
+        handle = self._require_run(run_id)
         pending = handle.permissions.get(request_id)
         if pending is None:
             raise WebAdapterError(404, "permission_not_found", "权限请求不存在")
-        if not pending.resolve(decision):
+        if not pending.resolve(decision, response_id):
             raise WebAdapterError(409, "permission_already_resolved", "权限请求已经处理")
         return self._run_response(handle)
 
@@ -427,19 +453,23 @@ class RunManager:
         self,
         handle: RunHandle,
         loop: asyncio.AbstractEventLoop,
-    ) -> Callable[[str, str], UserConfirmationResult]:
+    ) -> Callable[[str, str, str | None], UserConfirmationResult]:
         """构造可以由 HTTP 审批接口唤醒的同步权限确认端口。"""
-        def confirm(tool_name: str, message: str) -> UserConfirmationResult:
+        def confirm(
+            tool_name: str,
+            message: str,
+            call_id: str | None = None,
+        ) -> UserConfirmationResult:
             # 1. 先在事件循环注册请求并发布 permission_requested 事件。
             future = asyncio.run_coroutine_threadsafe(
-                self._create_permission_request(handle, tool_name, message),
+                self._create_permission_request(handle, call_id, tool_name, message),
                 loop,
             )
             pending = future.result()
 
             # 2. 工具线程阻塞等待网络决定；Pause/Cancel 会将其唤醒为 unavailable。
             if not pending.resolved.wait(PERMISSION_WAIT_TIMEOUT_SECONDS):
-                pending.resolve("unavailable")
+                pending.resolve("unavailable", f"timeout_{pending.request_id}")
             return pending.decision or "unavailable"
 
         return confirm
@@ -447,21 +477,34 @@ class RunManager:
     async def _create_permission_request(
         self,
         handle: RunHandle,
+        tool_call_id: str | None,
         tool_name: str,
         message: str,
     ) -> PendingPermission:
         """注册并发布一次 Web 权限确认请求。"""
         request_id = f"permission_{uuid4().hex[:12]}"
-        pending = PendingPermission(request_id, tool_name, message)
+        pending = PendingPermission(request_id, tool_call_id, tool_name, message)
         handle.permissions[request_id] = pending
+        self._require_session(handle.session_id).engine.session.record_runtime_event(
+            "permission_requested",
+            {
+                "request_id": request_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "message": message,
+                "status": "PENDING",
+            },
+        )
         await self._publish_web_event(
             handle,
             "permission_requested",
             {
                 "request_id": request_id,
+                "tool_call_id": tool_call_id,
                 "tool_name": tool_name,
                 "reason": message,
                 "permission_mode": self._session_permission_mode(handle),
+                "status": "PENDING",
             },
         )
         return pending
@@ -473,12 +516,19 @@ class RunManager:
     ) -> None:
         """按 Run 内顺序追加一个 Core 事件并更新网络终态。"""
         async with handle.condition:
+            if isinstance(event, TextDeltaEvent) and handle.response_id is None:
+                handle.response_id = f"response_{uuid4().hex[:12]}"
+            if isinstance(event, ToolStartedEvent):
+                handle.response_id = None
             serialized = serialize_agent_event(
                 event,
                 run_id=handle.run_id,
+                stream_id=handle.stream_id,
                 sequence=len(handle.events) + 1,
+                response_id=handle.response_id,
             )
-            handle.events.append(serialized)
+            if serialized is not None:
+                handle.events.append(serialized)
             if isinstance(event, RunFinishedEvent):
                 handle.status = self._map_terminal_status(event.result.status)
                 handle.finished_at = datetime.now(BEIJING_TIMEZONE)
@@ -497,6 +547,7 @@ class RunManager:
                     event_type,
                     payload,
                     run_id=handle.run_id,
+                    stream_id=handle.stream_id,
                     sequence=len(handle.events) + 1,
                 )
             )
@@ -544,14 +595,28 @@ class RunManager:
             return "paused"
         return status  # type: ignore[return-value]
 
-    @staticmethod
     def _resolve_pending_permissions(
+        self,
         handle: RunHandle,
         decision: UserConfirmationResult,
     ) -> None:
         """批量唤醒当前 Run 中仍在等待的权限请求。"""
         for pending in handle.permissions.values():
-            pending.resolve(decision)
+            if not pending.resolved.is_set():
+                pending.status = "CANCELLED"
+                pending.decision = decision
+                pending.response_id = f"cancelled_{pending.request_id}"
+                pending.resolved.set()
+                self._require_session(handle.session_id).engine.session.record_runtime_event(
+                    "permission_cancelled",
+                    {
+                        "request_id": pending.request_id,
+                        "tool_call_id": pending.tool_call_id,
+                        "tool_name": pending.tool_name,
+                        "status": "CANCELLED",
+                        "reason": "RUNTIME_LOST",
+                    },
+                )
 
     @staticmethod
     def _session_response(handle: SessionHandle) -> SessionResponse:
