@@ -30,6 +30,13 @@ class LifecycleProjector:
         result: list[LifecycleEvent] = []
         counters: dict[str, int] = {}
         latest_command: dict[str, dict[str, Any]] = {}
+        cancelled_runs: set[str] = {
+            (record.get("payload") or {}).get("workspace_run_id")
+            for record in records
+            if record.get("type") == "runtime_command_decided"
+            and (record.get("payload") or {}).get("decision") == "ACCEPTED"
+            and (record.get("payload") or {}).get("command_type") == "CancelRun"
+        }
         for record in records:
             payload = record.get("payload") or {}
             record_type = record.get("type")
@@ -39,6 +46,27 @@ class LifecycleProjector:
             ):
                 latest_command[payload.get("workspace_run_id", "")] = payload
                 commands.append(payload)
+                continue
+            if record_type == "runtime_control_effect":
+                workspace_run_id = payload.get("workspace_run_id")
+                conversation_id = payload.get("conversation_id")
+                event_type = {"paused": "AgentRunPaused", "cancelled": "AgentRunCancelled"}.get(
+                    payload.get("effect")
+                )
+                if event_type == "AgentRunPaused" and workspace_run_id in cancelled_runs:
+                    continue
+                if workspace_run_id and conversation_id and event_type:
+                    counters[workspace_run_id] = counters.get(workspace_run_id, 0) + 1
+                    event_id = hashlib.sha256(
+                        f"{session_id}:{record.get('sequence')}:{event_type}".encode()
+                    ).hexdigest()
+                    result.append(LifecycleEvent(
+                        event_id, counters[workspace_run_id], workspace_run_id,
+                        conversation_id, event_type,
+                        record.get("created_at") or datetime.utcnow().isoformat(),
+                        payload.get("command_id"),
+                        {"internalRunId": payload.get("internal_run_id")},
+                    ))
                 continue
             if record_type not in {"agent_run_started", "agent_run_finished"}:
                 continue
@@ -67,8 +95,9 @@ class LifecycleProjector:
                     occurred_at=record.get("created_at")
                     or datetime.utcnow().isoformat(),
                     caused_by_command_id=(
-                        latest_command.get(workspace_run_id) or {}
-                    ).get("command_id"),
+                        payload.get("caused_by_command_id")
+                        or (latest_command.get(workspace_run_id) or {}).get("command_id")
+                    ),
                     payload={
                         "internalRunId": payload.get("run_id"),
                         "status": payload.get("status"),

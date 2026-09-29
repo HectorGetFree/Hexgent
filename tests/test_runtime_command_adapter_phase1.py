@@ -39,6 +39,7 @@ class _ProbeEngine:
 
     def run(self, request: RunRequest, **kwargs: object):
         """记录真实 Session 事实，并模拟一个可继续的中断终态。"""
+        self._engine._apply_pending_steering_intents()
         self.requests.append(request)
         if request.intent == "submit":
             query = self.context_manager.append_user_query(request.query or "")

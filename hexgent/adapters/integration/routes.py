@@ -3,7 +3,7 @@
 import json
 import os
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -54,6 +54,49 @@ async def accept_command(body: RuntimeCommandRequest, request: Request) -> dict:
         "status": decision.status,
         "reasonCode": decision.reason_code,
         "message": decision.message,
+    }
+
+
+@router.get("/runs/{workspace_run_id}/state")
+async def get_run_state(workspace_run_id: str, request: Request) -> dict:
+    """从 durable Runtime facts 返回 Workspace Run 当前状态。"""
+    _require_integration_token(request)
+    state = _adapter(request).get_run_state(workspace_run_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="RUN_NOT_FOUND")
+    return state
+
+
+@router.get("/commands/{command_id}")
+async def get_command_state(command_id: str, request: Request) -> dict:
+    """查询 durable Command Decision 与因果 Effect。"""
+    _require_integration_token(request)
+    state = _adapter(request).get_command_state(command_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="COMMAND_NOT_FOUND")
+    return state
+
+
+@router.post("/commands/{command_id}/reconcile")
+async def reconcile_command_effect(command_id: str, request: Request) -> dict:
+    """触发 durable ACCEPTED command 的 effect 对账；不创建新 command。"""
+    _require_integration_token(request)
+    return await _adapter(request).reconcile_command_effect(command_id)
+
+
+@router.get("/runs/{workspace_run_id}/lifecycle-events")
+async def get_lifecycle_events(
+    workspace_run_id: str,
+    request: Request,
+    afterSequence: int = 0,
+) -> dict:
+    """按 Workspace Run 和 sequence 回放确定性生命周期事件。"""
+    _require_integration_token(request)
+    return {
+        "integrationRunId": workspace_run_id,
+        "events": _adapter(request).get_lifecycle_events(
+            workspace_run_id, after_sequence=afterSequence,
+        ),
     }
 
 

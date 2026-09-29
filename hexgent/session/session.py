@@ -70,6 +70,8 @@ class Session:
 
     # Integration 关联字段；不参与 internal run_id 的生成。
     _workspace_run_id: str | None = field(default=None, init=False, repr=False)
+    # 最近一次 Runtime Command 的因果标识；只写入 durable lifecycle fact。
+    _caused_by_command_id: str | None = field(default=None, init=False, repr=False)
     _conversation_id: str | None = field(default=None, init=False, repr=False)
 
     @classmethod
@@ -106,7 +108,9 @@ class Session:
         """取得当前 Session 权限模式的不可变执行快照。"""
         return PermissionContext(self.settings.permission_mode)
 
-    def record_user_query(self, query: UserQuery, *, source: str = "user") -> None:
+    def record_user_query(
+        self, query: UserQuery, *, source: str = "user", command_id: str | None = None,
+    ) -> None:
         """先初始化 Session，再记录一条进入活动 Context 的原始 Query。"""
         self._latest_user_query = query.content
         if self.store is not None:
@@ -123,6 +127,7 @@ class Session:
                     "query_sequence": query.sequence,
                     "content": query.content,
                     "source": source,
+                    "command_id": command_id,
                 },
             )
 
@@ -150,6 +155,7 @@ class Session:
                 "run_id": self._active_run_id,
                 "workspace_run_id": self._workspace_run_id,
                 "conversation_id": self._conversation_id,
+                "caused_by_command_id": self._caused_by_command_id,
                 "limits_enabled": limits_enabled,
                 "user_query": self._latest_user_query,
                 "plan": asdict(plan) if plan is not None else None,
@@ -160,6 +166,10 @@ class Session:
         """绑定当前 internal run 的 WS 业务身份。"""
         self._workspace_run_id = workspace_run_id
         self._conversation_id = conversation_id
+
+    def bind_runtime_command(self, command_id: str) -> None:
+        """为本次执行绑定协议层 command 因果关系，不改变 internal run_id。"""
+        self._caused_by_command_id = command_id
 
     def finish_run(
         self,
@@ -187,6 +197,7 @@ class Session:
                 "run_id": run_id,
                 "workspace_run_id": self._workspace_run_id,
                 "conversation_id": self._conversation_id,
+                "caused_by_command_id": self._caused_by_command_id,
                 "status": status,
                 "stop_reason": stop_reason,
                 "elapsed_seconds": elapsed_seconds,
@@ -304,6 +315,84 @@ class Session:
         """记录不进入模型 Context 的完整 Session 事实。"""
         if self.store is not None:
             self.store.append_transcript(event_type, payload)
+
+    def has_runtime_effect(self, command_id: str, effect: str) -> bool:
+        """按 durable Transcript 判断 Integration effect 是否已提交。"""
+        if self.store is None:
+            return False
+        return any(
+            record.get("type") == "runtime_control_effect"
+            and (record.get("payload") or {}).get("command_id") == command_id
+            and (record.get("payload") or {}).get("effect") == effect
+            for record in self.store.read_transcript()
+        )
+
+    def record_runtime_control_effect(
+        self, command_id: str, effect: str, payload: dict[str, Any] | None = None,
+    ) -> bool:
+        """提交一次幂等控制 effect；返回是否由本次调用首次提交。"""
+        if self.has_runtime_effect(command_id, effect):
+            return False
+        self.record_runtime_event("runtime_control_effect", {
+            "command_id": command_id, "effect": effect, **(payload or {}),
+        })
+        return True
+
+    @property
+    def cancellation_committed(self) -> bool:
+        """当前 Session 是否已有 durable Cancel tombstone。"""
+        if self.store is None:
+            return False
+        return any(
+            record.get("type") == "runtime_control_effect"
+            and (record.get("payload") or {}).get("effect") == "cancelled"
+            for record in self.store.read_transcript()
+        )
+
+    def pending_steering_intents(self) -> list[dict[str, Any]]:
+        """返回尚未提交 steering_applied 的 durable steering intent。"""
+        if self.store is None:
+            return []
+        records = self.store.read_transcript()
+        applied = {
+            (record.get("payload") or {}).get("command_id")
+            for record in records
+            if record.get("type") == "runtime_control_effect"
+            and (record.get("payload") or {}).get("effect") == "steering_applied"
+        }
+        return [
+            record.get("payload") or {}
+            for record in records
+            if record.get("type") == "runtime_control_effect"
+            and (record.get("payload") or {}).get("effect") == "steering_intent"
+            and (record.get("payload") or {}).get("command_id") not in applied
+            and not self.steering_context_mutations(
+                (record.get("payload") or {}).get("command_id")
+            )
+        ]
+
+    def steering_intents(self) -> list[dict[str, Any]]:
+        """返回所有 durable Steering intent，供恢复阶段补齐 marker。"""
+        if self.store is None:
+            return []
+        return [
+            record.get("payload") or {}
+            for record in self.store.read_transcript()
+            if record.get("type") == "runtime_control_effect"
+            and (record.get("payload") or {}).get("effect") == "steering_intent"
+        ]
+
+    def steering_context_mutations(self, command_id: str) -> list[dict[str, Any]]:
+        """按 commandId 查找已经写入 Context 的 Steering mutation。"""
+        if self.store is None:
+            return []
+        return [
+            record.get("payload") or {}
+            for record in self.store.read_transcript()
+            if record.get("type") == "context_user_query_appended"
+            and (record.get("payload") or {}).get("source") == "steering"
+            and (record.get("payload") or {}).get("command_id") == command_id
+        ]
 
     def upsert_context_records(
         self,

@@ -202,6 +202,7 @@ class AgentEngine:
             state = self._build_run_state(normalized_request, effective_config)
             if workspace_run_id is not None and conversation_id is not None:
                 self.session.bind_runtime_run(workspace_run_id, conversation_id)
+            self._apply_pending_steering_intents()
 
             # 4. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
             outcome = yield from agent_loop(
@@ -225,6 +226,29 @@ class AgentEngine:
             # 6. 正常结束、异常或调用方关闭事件流时都释放 Engine 占用标记。
             with self._run_lock:
                 self._run_active = False
+
+    def _apply_pending_steering_intents(self) -> None:
+        """在新执行安全边界一次性提交重启前遗留的 steering intent。"""
+        for intent in self.session.steering_intents():
+            command_id = str(intent.get("command_id"))
+            if self.session.has_runtime_effect(command_id, "steering_applied"):
+                continue
+            if self.session.steering_context_mutations(command_id):
+                self.session.record_runtime_control_effect(
+                    command_id, "steering_applied",
+                    {"workspace_run_id": intent.get("workspace_run_id"),
+                     "conversation_id": intent.get("conversation_id")},
+                )
+                continue
+            query = self.context_manager.append_user_query(str(intent.get("instruction", "")))
+            self.session.record_user_query(
+                query, source="steering", command_id=command_id,
+            )
+            self.session.record_runtime_control_effect(
+                command_id, "steering_applied",
+                {"workspace_run_id": intent.get("workspace_run_id"),
+                 "conversation_id": intent.get("conversation_id")},
+            )
 
     def _normalize_request(
         self,
@@ -279,6 +303,8 @@ class AgentEngine:
                 relevant_memory=relevant_memory,
             )
 
+        if self.session.cancellation_committed:
+            raise RuntimeError("当前 Session 已被 Cancel，不能继续执行")
         if self._pending_run_state is None:
             raise RuntimeError("当前 Session 没有可继续的 Agent Run")
         snapshot = self._pending_run_state
@@ -291,7 +317,7 @@ class AgentEngine:
     @property
     def has_continuable_run(self) -> bool:
         """当前 Engine 是否持有可由 continue 请求恢复的 Checkpoint 状态。"""
-        return self._pending_run_state is not None
+        return self._pending_run_state is not None and not self.session.cancellation_committed
 
     def cancel_pending_task(self, reason: str = "用户取消暂停任务") -> None:
         """在没有活跃 Run 时终结保留的 Plan，不回滚已经发生的副作用。"""
