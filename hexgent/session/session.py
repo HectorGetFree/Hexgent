@@ -185,6 +185,8 @@ class Session:
             "agent_run_finished",
             {
                 "run_id": run_id,
+                "workspace_run_id": self._workspace_run_id,
+                "conversation_id": self._conversation_id,
                 "status": status,
                 "stop_reason": stop_reason,
                 "elapsed_seconds": elapsed_seconds,

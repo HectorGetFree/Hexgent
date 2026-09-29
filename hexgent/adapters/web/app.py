@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from os import environ
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -11,13 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ...config import load_config
+from ...integration.lifecycle import LifecycleProjector
+from ...integration.lifecycle_client import WorkspaceLifecycleClient
 from ...workspace import find_workspace_root
 from .errors import WebAdapterError
+from ..integration.routes import router as integration_router
 from .routes import router
 from .run_manager import RunManager
 from .settings import WebSettings
 from ...integration.runtime_adapter import RuntimeCommandAdapter
-from ..integration.routes import router as integration_router
 
 
 def create_app(
@@ -31,9 +34,25 @@ def create_app(
     # 1. 生产入口从工作区加载配置；测试可以显式注入隔离 RunManager。
     if run_manager is None:
         resolved_workdir = (workdir or find_workspace_root()).resolve()
+        lifecycle_url = environ.get("HEXGENT_WORKSPACE_LIFECYCLE_URL")
+        projector = LifecycleProjector()
+        lifecycle_token = environ.get("HEXGENT_WORKSPACE_LIFECYCLE_TOKEN")
+        lifecycle_client = (
+            WorkspaceLifecycleClient(lifecycle_url, lifecycle_token)
+            if lifecycle_url and lifecycle_token
+            else None
+        )
+
+        def deliver_lifecycle(session_id: str, records: list[dict]) -> None:
+            if lifecycle_client is None:
+                return
+            for event in projector.project(session_id, records):
+                lifecycle_client.publish(event)
+
         run_manager = RunManager(
             load_config(resolved_workdir, config_path),
             resolved_workdir,
+            lifecycle_callback=deliver_lifecycle,
         )
 
     # 2. Adapter 生命周期只负责收束自身启动的后台 Run。

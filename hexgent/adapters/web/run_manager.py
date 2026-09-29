@@ -111,6 +111,7 @@ class RunManager:
         workdir: Path,
         *,
         engine_factory: Callable[[HexgentConfig, Path], AgentEngine] = AgentEngine,
+        lifecycle_callback: Callable[[str, list[dict[str, Any]]], None] | None = None,
     ) -> None:
         # 所有 Web Session 共享服务启动配置，但各自拥有独立 AgentEngine。
         self.config = config
@@ -119,6 +120,7 @@ class RunManager:
         self._sessions: dict[str, SessionHandle] = {}
         self._runs: dict[str, RunHandle] = {}
         self._registry_lock = asyncio.Lock()
+        self._lifecycle_callback = lifecycle_callback
 
     async def create_session(
         self,
@@ -384,6 +386,9 @@ class RunManager:
         except Exception as error:
             await self._mark_failed(handle, f"Agent Run 执行失败：{error}")
         finally:
+            if self._lifecycle_callback is not None and session.engine.session.store is not None:
+                records = session.engine.session.store.read_transcript()
+                self._lifecycle_callback(session.session_id, records)
             self._resolve_pending_permissions(handle, "unavailable")
             async with session.lock:
                 if session.active_run_id == handle.run_id:
