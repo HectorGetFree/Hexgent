@@ -24,6 +24,22 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 TOOLS = [
     {
         "type": "function",
+        "name": "search_workspace",
+        "description": "Search the current authorized Workspace knowledge base for information relevant to a query.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "要检索的知识问题或关键词。"},
+                "topK": {"type": ["integer", "null"], "minimum": 1, "maximum": 20,
+                         "description": "最多返回的知识片段数量；不传则使用默认值。"},
+            },
+            "required": ["query", "topK"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "workspace_capability",
         "description": "调用 Workspace 提供的受控 Capability。",
         "parameters": {

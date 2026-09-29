@@ -27,7 +27,7 @@ from .builtin_tools import (
     validate_read_file,
     write_file,
 )
-from .workspace_capability_tool import invoke_workspace_capability
+from .workspace_capability_tool import invoke_search_workspace, invoke_workspace_capability
 from .tool_result import (
     ToolHandlerResult,
     ToolOutputValidator,
@@ -270,6 +270,12 @@ CREATE_SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
+    "search_workspace": RegisteredTool(
+        invoke_search_workspace,
+        requires_context=True,
+        display_argument="query",
+        permission_capability="workspace_read",
+    ),
     "workspace_capability": RegisteredTool(
         invoke_workspace_capability,
         requires_context=True,

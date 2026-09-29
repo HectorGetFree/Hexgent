@@ -48,6 +48,21 @@ class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
         )
         self.assertEqual("error", failed.status)
 
+    @patch("hexgent.tool.workspace_capability_tool.WorkspaceCapabilityClient.invoke")
+    def test_search_workspace_uses_existing_capability_pipeline(self, invoke):
+        invoke.return_value = CapabilityResult(
+            "v1", "ws-run", "call-1", "SUCCEEDED", {"items": [{"content": "命中"}]}
+        )
+        result = execute_tool_call(
+            "search_workspace", '{"query":"检索内容","topK":5}',
+            context=self.context(), call_id="call-1",
+            user_confirmation=lambda _tool, _message: "allow",
+        )
+        self.assertEqual("success", result.status)
+        invoke.assert_called_once_with(
+            "ws-run", "call-1", "search_workspace", {"query": "检索内容", "topK": 5}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

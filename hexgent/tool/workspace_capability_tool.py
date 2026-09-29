@@ -29,3 +29,15 @@ def invoke_workspace_capability(
     if result.status == "DENIED":
         return ToolHandlerResult.failed("permission_denied", result.error_message or "Capability 被拒绝", phase="permission")
     return ToolHandlerResult.failed("external_dependency_failed", result.error_message or "Capability 执行失败", retryable=True)
+
+
+def invoke_search_workspace(
+    query: str,
+    topK: int | None,
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
+    """通过既有 Capability 管线检索当前授权 Workspace。"""
+    arguments: dict[str, Any] = {"query": query}
+    if topK is not None:
+        arguments["topK"] = topK
+    return invoke_workspace_capability("search_workspace", arguments, context)
