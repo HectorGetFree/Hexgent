@@ -202,6 +202,7 @@ class AgentEngine:
             state = self._build_run_state(normalized_request, effective_config)
             if workspace_run_id is not None and conversation_id is not None:
                 self.session.bind_runtime_run(workspace_run_id, conversation_id)
+                self.tool_context.integration_metadata["workspace_run_id"] = workspace_run_id
             self._apply_pending_steering_intents()
 
             # 4. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。

@@ -66,6 +66,18 @@ def _model_call_error(message: str, error: Any) -> ModelCallError:
     return ModelCallError(message, reason)
 
 
+def _is_retryable_empty_stream_error(error: Any) -> bool:
+    """仅识别尚未产生输出时可安全重试的传输层断流。"""
+    details = _error_details(error).lower()
+    return any(marker in details for marker in (
+        "incomplete chunked read",
+        "peer closed connection",
+        "server disconnected",
+        "connection reset",
+        "connection aborted",
+    ))
+
+
 def call_model(
     client: Any,
     interrupt_controller: InterruptController | None = None,
@@ -121,6 +133,9 @@ def call_model(
         except Exception as error:
             if interrupt_controller is not None and interrupt_controller.interrupted:
                 raise ModelCallInterrupted() from error
+            # 尚未产生文本或工具调用时，连接中断不会造成重复副作用；允许一次完整重试。
+            if attempt == 0 and not emitted_text and _is_retryable_empty_stream_error(error):
+                continue
             raise _model_call_error(f"模型流式响应错误：{error}", error) from error
         finally:
             if remove_interrupt_callback is not None:

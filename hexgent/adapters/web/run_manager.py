@@ -436,6 +436,7 @@ class RunManager:
         request = (RunRequest.continue_run()
                    if handle.request_intent == "continue"
                    else RunRequest.submit(handle.query))
+        lifecycle_started_published = False
         for event in session.engine.run(
             request,
             user_confirmation=confirmation,
@@ -448,6 +449,12 @@ class RunManager:
                 loop,
             )
             future.result()
+            if not lifecycle_started_published and session.engine.session.store is not None:
+                records = session.engine.session.store.read_transcript()
+                if any(record.get("type") == "agent_run_started" for record in records):
+                    if self._lifecycle_callback is not None:
+                        self._lifecycle_callback(session.session_id, records)
+                    lifecycle_started_published = True
 
     def _build_confirmation(
         self,

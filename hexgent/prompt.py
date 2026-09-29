@@ -24,6 +24,30 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 TOOLS = [
     {
         "type": "function",
+        "name": "workspace_capability",
+        "description": "调用 Workspace 提供的受控 Capability。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "capability": {"type": "string"},
+                "arguments": {
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string"},
+                        "userId": {"type": "string"},
+                        "workspaceId": {"type": "string"},
+                    },
+                    "required": ["message", "userId", "workspaceId"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["capability", "arguments"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "bash",
         "description": "运行 Shell 命令并返回输出。",
         "parameters": {

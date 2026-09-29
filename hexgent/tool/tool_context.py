@@ -81,6 +81,9 @@ class ToolExecutionContext:
     # 当前 Agent Run 中每个工具调用指纹已经命中的重复次数。
     tool_call_duplicate_counts: dict[str, int] = field(default_factory=dict)
 
+    # Integration 层注入的 Workspace Run 与当前 Tool Call 身份。
+    integration_metadata: dict[str, str] = field(default_factory=dict)
+
     # 保护并行只读工具共享的缓存字典，不覆盖实际文件 I/O。
     cache_lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 

@@ -31,6 +31,25 @@ class CallModelTest(unittest.TestCase):
         self.assertIs(actual, response)
         self.assertEqual(streams, [])
 
+    def test_retries_connection_failure_before_any_output(self):
+        """空流连接异常时允许一次重试，避免上游短暂断流直接终止 Run。"""
+        response = SimpleNamespace(output_text="完成")
+
+        def first_stream(**_kwargs):
+            raise RuntimeError("incomplete chunked read")
+
+        streams = [first_stream, lambda **_kwargs: iter([
+            SimpleNamespace(type="response.completed", response=response),
+        ])]
+        client = SimpleNamespace(
+            responses=SimpleNamespace(create=lambda **kwargs: streams.pop(0)(**kwargs))
+        )
+
+        actual = _drain(call_model(client, model="test", input=[]))
+
+        self.assertIs(actual, response)
+        self.assertEqual(streams, [])
+
 
 if __name__ == "__main__":
     unittest.main()

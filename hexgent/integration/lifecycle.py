@@ -138,6 +138,8 @@ class LifecycleProjector:
     def _failure_code(payload: dict[str, Any]) -> str | None:
         status = payload.get("status")
         reason = payload.get("stop_reason")
+        if status in {None, "completed"} and reason is None:
+            return None
         if status == "blocked" or reason == "plan_blocked":
             return "PLAN_BLOCKED"
         if status == "limit_reached" or reason == "limit_reached":
