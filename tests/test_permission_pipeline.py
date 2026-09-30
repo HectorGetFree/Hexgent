@@ -95,6 +95,16 @@ class PermissionPipelineTest(unittest.TestCase):
         self.assertEqual(outside.behavior, "deny")
         self.assertEqual(outside.rule_id, "outside_workspace_access")
 
+    def test_auto_approve_allows_ask_but_not_hard_deny(self) -> None:
+        """本地调试自动批准只跳过 ask，不得绕过硬拒绝规则。"""
+        write = self._evaluate("write_file", {"path": "a.txt"}, "auto_approve")
+        blocked = self._evaluate("bash", {"command": "sudo reboot"}, "auto_approve")
+
+        self.assertEqual(write.behavior, "allow")
+        self.assertEqual(write.source, "auto_approve_mode")
+        self.assertEqual(blocked.behavior, "deny")
+        self.assertEqual(blocked.rule_id, "critical_bash_command")
+
     def test_hard_deny_overrides_permission_mode(self) -> None:
         """硬拒绝规则不能被任何自动批准模式绕过。"""
         decision = self._evaluate(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -443,4 +444,6 @@ class RuntimeCommandAdapter:
     @staticmethod
     def _permission_mode(payload: dict[str, Any]) -> PermissionMode:
         mode = payload.get("permissionMode", "default")
+        if mode == "auto_approve" and os.environ.get("HEXGENT_ENABLE_AUTO_APPROVE") == "true":
+            return "auto_approve"
         return mode if mode in {"default", "accept_edits", "plan", "dont_ask"} else "default"

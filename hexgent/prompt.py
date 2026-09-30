@@ -24,6 +24,29 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 TOOLS = [
     {
         "type": "function",
+        "name": "update_document",
+        "description": (
+            "修改已有 Document，并基于精确的 expectedVersionId 创建新版本。"
+            "expectedVersionId 必须来自 get_document 或 list_folder；版本过期时会返回 VERSION_CONFLICT，"
+            "不会自动覆盖或合并最新版本。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "documentId": {"type": "integer", "description": "目标文档 ID。"},
+                "expectedVersionId": {
+                    "type": "integer",
+                    "description": "本次修改基于的精确 DocumentVersion ID。",
+                },
+                "content": {"type": "string", "description": "完整的新 Markdown 文本。"},
+            },
+            "required": ["documentId", "expectedVersionId", "content"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "list_folder",
         "description": (
             "List the direct children of a Workspace folder. Omit folderId to list the Workspace root. "

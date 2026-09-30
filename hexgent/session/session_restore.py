@@ -26,6 +26,7 @@ VALID_PERMISSION_MODES: set[str] = {
     "accept_edits",
     "plan",
     "dont_ask",
+    "auto_approve",
 }
 VALID_PLAN_STATUSES = {"pending", "in_progress", "completed", "blocked"}
 VALID_PLAN_STEP_STATUSES = {"pending", "in_progress", "completed"}

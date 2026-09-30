@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 
 
 PermissionBehavior = Literal["allow", "ask", "deny"]
-PermissionMode = Literal["default", "accept_edits", "plan", "dont_ask"]
+PermissionMode = Literal[
+    "default",
+    "accept_edits",
+    "plan",
+    "dont_ask",
+    "auto_approve",
+]
 UserConfirmationResult = Literal[
     "allow",  # 用户明确允许本次工具调用。
     "deny",  # 用户明确拒绝本次工具调用。
@@ -27,6 +33,7 @@ PermissionDecisionSource = Literal[
     "allow_rule",  # 命中明确预批准的具体操作规则。
     "default_fallback",  # 所有策略均未决，回退为请求用户批准。
     "dont_ask_fallback",  # 无交互模式下，未预批准操作直接拒绝。
+    "auto_approve_mode",  # 本地调试模式自动批准非硬拒绝操作。
 ]
 
 
@@ -298,6 +305,14 @@ def evaluate_permission(
     # 2. 显式 ask 规则强制保留人工审批边界。
     ask_rule = _match_rule(ASK_RULES, tool_name, args, context)
     if ask_rule is not None:
+        if mode == "auto_approve":
+            return PermissionEvaluation(
+                "allow",
+                mode,
+                "auto_approve_mode",
+                ask_rule.rule_id,
+                "本地调试模式自动批准原本需要确认的操作",
+            )
         if mode == "dont_ask":
             return PermissionEvaluation(
                 "deny",
@@ -318,7 +333,16 @@ def evaluate_permission(
     if allow_rule is not None:
         return _from_rule(allow_rule, mode, args, context)
 
-    # 5. 未预批准操作在 dont_ask 下拒绝，其余模式回退为请求用户批准。
+    # 5. 本地调试模式只跳过人工确认；硬拒绝已在前面执行，业务授权仍由 WS 校验。
+    if mode == "auto_approve":
+        return PermissionEvaluation(
+            "allow",
+            mode,
+            "auto_approve_mode",
+            message="本地调试模式自动批准未预批准的工具调用",
+        )
+
+    # 6. 未预批准操作在 dont_ask 下拒绝，其余模式回退为请求用户批准。
     if mode == "dont_ask":
         return PermissionEvaluation(
             "deny",

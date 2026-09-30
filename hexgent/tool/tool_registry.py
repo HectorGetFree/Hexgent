@@ -32,6 +32,7 @@ from .workspace_capability_tool import (
     invoke_list_folder,
     invoke_search_workspace,
     invoke_workspace_capability,
+    invoke_update_document,
 )
 from .tool_result import (
     ToolHandlerResult,
@@ -275,6 +276,12 @@ CREATE_SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
+    "update_document": RegisteredTool(
+        invoke_update_document,
+        requires_context=True,
+        display_argument="documentId",
+        permission_capability="workspace_write",
+    ),
     "list_folder": RegisteredTool(
         invoke_list_folder,
         requires_context=True,

@@ -92,3 +92,21 @@ def invoke_get_document(
     if lineCount is not None:
         arguments["lineCount"] = lineCount
     return invoke_workspace_capability("get_document", arguments, context)
+
+
+def invoke_update_document(
+    documentId: int,
+    expectedVersionId: int,
+    content: str,
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
+    """通过统一 Workspace Capability 管线创建文档新版本。"""
+    return invoke_workspace_capability(
+        "update_document",
+        {
+            "documentId": documentId,
+            "expectedVersionId": expectedVersionId,
+            "content": content,
+        },
+        context,
+    )
