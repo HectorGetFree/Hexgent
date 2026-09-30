@@ -29,6 +29,7 @@ from .builtin_tools import (
 )
 from .workspace_capability_tool import (
     invoke_get_document,
+    invoke_list_folder,
     invoke_search_workspace,
     invoke_workspace_capability,
 )
@@ -274,6 +275,12 @@ CREATE_SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
+    "list_folder": RegisteredTool(
+        invoke_list_folder,
+        requires_context=True,
+        display_argument="folderId",
+        permission_capability="workspace_read",
+    ),
     "get_document": RegisteredTool(
         invoke_get_document,
         requires_context=True,

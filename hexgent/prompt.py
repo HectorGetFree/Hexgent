@@ -24,6 +24,25 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 TOOLS = [
     {
         "type": "function",
+        "name": "list_folder",
+        "description": (
+            "List the direct children of a Workspace folder. Omit folderId to list the Workspace root. "
+            "Use a returned folder id to browse that folder, or use a returned documentId and versionId "
+            "with get_document. This tool is not recursive."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "folderId": {"type": ["integer", "null"], "description": "目录 ID；省略表示 Workspace 根目录。"},
+                "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 200, "description": "最多返回数量。"},
+            },
+            "required": ["folderId", "limit"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "get_document",
         "description": (
             "Use this tool when you already know the exact documentId and versionId "

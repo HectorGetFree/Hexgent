@@ -96,6 +96,21 @@ class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
             {"documentId": 11, "versionId": 3, "startLine": 2, "lineCount": 20},
         )
 
+    @patch("hexgent.tool.workspace_capability_tool.WorkspaceCapabilityClient.invoke")
+    def test_list_folder_uses_root_and_preserves_identity(self, invoke):
+        invoke.return_value = CapabilityResult(
+            "v1", "ws-run", "call-1", "SUCCEEDED", {"items": []}
+        )
+        result = execute_tool_call(
+            "list_folder", '{"folderId":null,"limit":100}',
+            context=self.context(), call_id="call-1",
+            user_confirmation=lambda _tool, _message: "allow",
+        )
+        self.assertEqual("success", result.status)
+        invoke.assert_called_once_with(
+            "ws-run", "call-1", "list_folder", {"limit": 100}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

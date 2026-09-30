@@ -61,6 +61,20 @@ def invoke_search_workspace(
     return invoke_workspace_capability("search_workspace", arguments, context)
 
 
+def invoke_list_folder(
+    folderId: int | None,
+    limit: int | None,
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
+    """通过统一 Workspace Capability 管道读取目录的直属资源。"""
+    arguments: dict[str, Any] = {}
+    if folderId is not None:
+        arguments["folderId"] = folderId
+    if limit is not None:
+        arguments["limit"] = limit
+    return invoke_workspace_capability("list_folder", arguments, context)
+
+
 def invoke_get_document(
     documentId: int,
     versionId: int,
