@@ -37,8 +37,8 @@ class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
             context=self.context(), call_id="call-1",
             user_confirmation=lambda _tool, _message: "allow",
         )
-        self.assertEqual("error", denied.status)
-        self.assertEqual("permission_denied", denied.failure.code)
+        self.assertEqual("denied", denied.status)
+        self.assertEqual("CAPABILITY_NOT_ALLOWED", denied.failure.code)
         invoke.return_value = CapabilityResult("v1", "ws-run", "call-1", "FAILED",
                                                error_code="HANDLER_ERROR", error_message="failed")
         failed = execute_tool_call(
@@ -47,6 +47,21 @@ class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
             user_confirmation=lambda _tool, _message: "allow",
         )
         self.assertEqual("error", failed.status)
+        self.assertEqual("HANDLER_ERROR", failed.failure.code)
+        self.assertTrue(failed.failure.retryable)
+
+        invoke.return_value = CapabilityResult(
+            "v1", "ws-run", "call-1", "FAILED",
+            error_code="D404", error_message="文档不存在"
+        )
+        not_found = execute_tool_call(
+            "workspace_capability", '{"capability":"get_document","arguments":{}}',
+            context=self.context(), call_id="call-1",
+            user_confirmation=lambda _tool, _message: "allow",
+        )
+        self.assertEqual("error", not_found.status)
+        self.assertEqual("D404", not_found.failure.code)
+        self.assertFalse(not_found.failure.retryable)
 
     @patch("hexgent.tool.workspace_capability_tool.WorkspaceCapabilityClient.invoke")
     def test_search_workspace_uses_existing_capability_pipeline(self, invoke):
@@ -61,6 +76,24 @@ class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
         self.assertEqual("success", result.status)
         invoke.assert_called_once_with(
             "ws-run", "call-1", "search_workspace", {"query": "检索内容", "topK": 5}
+        )
+
+    @patch("hexgent.tool.workspace_capability_tool.WorkspaceCapabilityClient.invoke")
+    def test_get_document_uses_exact_identity_and_range(self, invoke):
+        invoke.return_value = CapabilityResult(
+            "v1", "ws-run", "call-1", "SUCCEEDED", {"content": "指定版本内容"}
+        )
+        result = execute_tool_call(
+            "get_document",
+            '{"documentId":11,"versionId":3,"startLine":2,"lineCount":20}',
+            context=self.context(),
+            call_id="call-1",
+            user_confirmation=lambda _tool, _message: "allow",
+        )
+        self.assertEqual("success", result.status)
+        invoke.assert_called_once_with(
+            "ws-run", "call-1", "get_document",
+            {"documentId": 11, "versionId": 3, "startLine": 2, "lineCount": 20},
         )
 
 

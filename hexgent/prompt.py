@@ -24,6 +24,35 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 TOOLS = [
     {
         "type": "function",
+        "name": "get_document",
+        "description": (
+            "Use this tool when you already know the exact documentId and versionId "
+            "and need to read more of that specific document version."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "documentId": {"type": "integer", "description": "文档 ID。"},
+                "versionId": {"type": "integer", "description": "精确的文档版本号。"},
+                "startLine": {
+                    "type": ["integer", "null"],
+                    "minimum": 1,
+                    "description": "1-based 起始行号。",
+                },
+                "lineCount": {
+                    "type": ["integer", "null"],
+                    "minimum": 1,
+                    "maximum": 500,
+                    "description": "读取行数。",
+                },
+            },
+            "required": ["documentId", "versionId", "startLine", "lineCount"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "search_workspace",
         "description": "Search the current authorized Workspace knowledge base for information relevant to a query.",
         "parameters": {

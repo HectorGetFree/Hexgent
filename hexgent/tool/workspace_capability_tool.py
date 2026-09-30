@@ -27,8 +27,26 @@ def invoke_workspace_capability(
             result.data if isinstance(result.data, dict) else None,
         )
     if result.status == "DENIED":
-        return ToolHandlerResult.failed("permission_denied", result.error_message or "Capability 被拒绝", phase="permission")
-    return ToolHandlerResult.failed("external_dependency_failed", result.error_message or "Capability 执行失败", retryable=True)
+        return ToolHandlerResult.failed(
+            result.error_code or "permission_denied",
+            result.error_message or "Capability 被拒绝",
+            phase="permission",
+            execution_status="denied",
+        )
+    retryable = result.error_code not in {
+        "D400",
+        "D403",
+        "D404",
+        "R400",
+        "R403",
+        "R404",
+    }
+    return ToolHandlerResult.failed(
+        result.error_code or "external_dependency_failed",
+        result.error_message or "Capability 执行失败",
+        retryable=retryable,
+        execution_status="error",
+    )
 
 
 def invoke_search_workspace(
@@ -41,3 +59,22 @@ def invoke_search_workspace(
     if topK is not None:
         arguments["topK"] = topK
     return invoke_workspace_capability("search_workspace", arguments, context)
+
+
+def invoke_get_document(
+    documentId: int,
+    versionId: int,
+    startLine: int | None,
+    lineCount: int | None,
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
+    """通过统一 Workspace Capability 管道读取指定文档版本。"""
+    arguments: dict[str, Any] = {
+        "documentId": documentId,
+        "versionId": versionId,
+    }
+    if startLine is not None:
+        arguments["startLine"] = startLine
+    if lineCount is not None:
+        arguments["lineCount"] = lineCount
+    return invoke_workspace_capability("get_document", arguments, context)

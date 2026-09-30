@@ -20,23 +20,7 @@ ToolFailurePhase = Literal[
     "persistence",  # 外置工具结果或记录持久化。
     "runtime",  # 进程或运行环境异常中断。
 ]
-ToolFailureCode = Literal[
-    "unknown_tool",  # 模型请求了注册表中不存在的工具。
-    "invalid_arguments",  # 工具参数无法解析或不满足输入约束。
-    "permission_denied",  # 系统权限策略直接拒绝调用。
-    "user_denied",  # 用户明确拒绝本次审批。
-    "confirmation_unavailable",  # 当前入口无法完成需要的用户审批。
-    "tool_timeout",  # 工具或并行批次超过执行时间限制。
-    "tool_internal_error",  # 工具实现抛出未预期的内部异常。
-    "resource_not_found",  # 请求的本地文件或其他指定资源不存在。
-    "external_dependency_failed",  # 文件系统、进程或外部服务调用失败。
-    "rate_limited",  # 外部依赖触发限流，可按服务端建议时间重试。
-    "invalid_tool_output",  # 工具返回值不符合处理器输出协议。
-    "business_failure",  # 工具技术执行完成，但业务操作没有成功。
-    "duplicate_call_limit",  # 相同工具调用超过当前 Run 的复用次数限制。
-    "output_persistence_failed",  # 工具成功后，其完整结果无法可靠持久化。
-    "execution_interrupted",  # 当前 Run 被中断，工具尚未开始或未能继续执行。
-]
+ToolFailureCode = str
 SideEffectState = Literal[
     "none",  # 当前工具不产生外部副作用。
     "not_started",  # 副作用工具尚未开始执行。
@@ -135,6 +119,9 @@ class ToolHandlerResult:
     # 按工具输出 Schema 校验的轻量 JSON 数据；不得重复保存大正文。
     data: dict[str, Any] | None = None
 
+    # 处理器需要保留的最终工具状态；未设置时由统一执行器按失败语义推导。
+    execution_status: ToolExecutionStatus | None = None
+
     @classmethod
     def success(
         cls,
@@ -142,7 +129,7 @@ class ToolHandlerResult:
         data: dict[str, Any] | None = None,
     ) -> "ToolHandlerResult":
         """构造业务成功结果。"""
-        return cls(True, output, None, data)
+        return cls(True, output, None, data, "success")
 
     @classmethod
     def failed(
@@ -154,20 +141,12 @@ class ToolHandlerResult:
         retryable: bool = False,
         side_effect_state: SideEffectState = "none",
         retry_after_seconds: float | None = None,
+        execution_status: ToolExecutionStatus | None = None,
     ) -> "ToolHandlerResult":
         """构造带有稳定失败元数据的业务失败结果。"""
-        return cls(
-            False,
-            f"错误：{message}",
-            ToolFailure(
-                code,
-                phase,
-                message,
-                retryable,
-                side_effect_state,
-                retry_after_seconds,
-            ),
-        )
+        return cls(False, f"错误：{message}", ToolFailure(
+            code, phase, message, retryable, side_effect_state, retry_after_seconds
+        ), None, execution_status)
 
 
 def validate_json_output(data: Any, schema: dict[str, Any]) -> str | None:

@@ -309,7 +309,7 @@ def _execute_prepared_tool_call(
                 "工具失败结果缺少结构化 failure",
             )
         return ToolExecutionResult(
-            "error",
+            handler_result.execution_status or "error",
             handler_result.output,
             True,
             failure=handler_result.failure,
