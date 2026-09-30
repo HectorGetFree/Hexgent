@@ -24,6 +24,26 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 TOOLS = [
     {
         "type": "function",
+        "name": "create_document",
+        "description": (
+            "在当前授权 Workspace 的指定文件夹中创建 Markdown 文档。"
+            "成功时会返回正式创建的 documentId 和精确 versionId。"
+            "不要传入 userId、workspaceId、runId、callId 或其他内部身份字段。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "parentFolderId": {"type": "integer", "description": "父文件夹 ID。"},
+                "title": {"type": "string", "description": "文档标题。"},
+                "content": {"type": "string", "description": "完整的 Markdown 文本。"},
+            },
+            "required": ["parentFolderId", "title", "content"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "update_document",
         "description": (
             "修改已有 Document，并基于精确的 expectedVersionId 创建新版本。"

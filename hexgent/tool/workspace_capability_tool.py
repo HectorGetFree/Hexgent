@@ -110,3 +110,21 @@ def invoke_update_document(
         },
         context,
     )
+
+
+def invoke_create_document(
+    parentFolderId: int,
+    title: str,
+    content: str,
+    context: ToolExecutionContext,
+) -> ToolHandlerResult:
+    """通过统一 Workspace Capability 管线创建正式文档。"""
+    return invoke_workspace_capability(
+        "create_document",
+        {
+            "parentFolderId": parentFolderId,
+            "title": title,
+            "content": content,
+        },
+        context,
+    )

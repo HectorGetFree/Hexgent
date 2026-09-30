@@ -28,6 +28,7 @@ from .builtin_tools import (
     write_file,
 )
 from .workspace_capability_tool import (
+    invoke_create_document,
     invoke_get_document,
     invoke_list_folder,
     invoke_search_workspace,
@@ -276,6 +277,12 @@ CREATE_SKILL_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
+    "create_document": RegisteredTool(
+        invoke_create_document,
+        requires_context=True,
+        display_argument="title",
+        permission_capability="workspace_write",
+    ),
     "update_document": RegisteredTool(
         invoke_update_document,
         requires_context=True,
