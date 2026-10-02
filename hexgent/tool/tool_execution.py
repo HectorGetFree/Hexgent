@@ -230,7 +230,20 @@ def _prepare_tool_call(
     if isinstance(parsed, ToolExecutionResult):
         return parsed
 
-    # 3. 权限判断和用户确认始终在调度主线程串行完成。
+    # 3. Workspace capability eligibility 必须先于 Permission，避免无意义人工审批。
+    if (
+        tool.execution_domain == "workspace_capability"
+        and tool_name not in context.workspace_capability_scope
+    ):
+        return _failure_result(
+            "denied",
+            "CAPABILITY_NOT_ALLOWED",
+            "eligibility",
+            "Capability is outside the run boundary",
+            side_effect_state="not_started",
+        )
+
+    # 4. 权限判断和用户确认始终在调度主线程串行完成。
     permission_result = _resolve_permission(
         tool_name,
         evaluate_permission(
@@ -247,7 +260,7 @@ def _prepare_tool_call(
     if permission_result is not None:
         return permission_result
 
-    # 4. 精确去重检查此前已经完成并进入缓存的调用。
+    # 5. 精确去重检查此前已经完成并进入缓存的调用。
     fingerprint: str | None = None
     if tool.deduplication_policy == "exact" and call_id is not None:
         fingerprint = _build_tool_call_fingerprint(tool_name, parsed)

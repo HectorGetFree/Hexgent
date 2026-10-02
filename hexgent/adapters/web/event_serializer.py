@@ -163,6 +163,7 @@ def build_web_event(
 ) -> dict[str, Any]:
     """构造 Adapter 自身产生的稳定网络事件。"""
     return {
+        "event_id": f"{stream_id}:{sequence}",
         "sequence": sequence,
         "type": event_type,
         "created_at": datetime.now(BEIJING_TIMEZONE).isoformat(),

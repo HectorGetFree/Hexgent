@@ -48,10 +48,24 @@ class RuntimeCommandEffectReconciliationPhase4Test(unittest.TestCase):
             command = RuntimeCommand("cancel-crash", "CancelRun", "R1", "C1", "2026-01-01T00:01:00Z", {})
             adapter._persist_decision(session_id, command, CommandDecision("cancel-crash", "R1", "ACCEPTED"))
             del adapter, manager
-            manager_b = RunManager(HexgentConfig(), root, engine_factory=_ProbeEngineFactory())
+            callbacks = []
+            manager_b = RunManager(
+                HexgentConfig(), root,
+                engine_factory=_ProbeEngineFactory(),
+                lifecycle_callback=lambda callback_session_id, records: callbacks.append(
+                    (callback_session_id, records)
+                ),
+            )
             adapter_b = RuntimeCommandAdapter(manager_b)
             result = asyncio.run(adapter_b.reconcile_command_effect("cancel-crash"))
             self.assertEqual("APPLIED", result["effect"])
+            self.assertTrue(callbacks)
+            self.assertEqual(session_id, callbacks[-1][0])
+            events = LifecycleProjector().project(session_id, callbacks[-1][1])
+            self.assertEqual(
+                ["AgentRunCancelled"],
+                [event.type for event in events if event.caused_by_command_id == "cancel-crash"],
+            )
             restored = manager_b._require_session(session_id)
             self.assertFalse(restored.engine.has_continuable_run)
             for command_type in ("ContinueRun", "ResumeRun"):
@@ -300,6 +314,25 @@ class RuntimeCommandEffectReconciliationPhase4Test(unittest.TestCase):
         ]
         events = LifecycleProjector().project("S1", records)
         self.assertEqual(["AgentRunCancelled"], [event.type for event in events])
+
+    def test_multiple_cancel_commands_project_one_terminal_event(self):
+        """WS 状态滞后触发多次 Cancel 时，Runtime 只暴露一个 CANCELLED 终态。"""
+        records = [
+            {"sequence": 1, "type": "agent_run_started", "created_at": "2026-01-01T00:00:00Z",
+             "payload": {"run_id": "A", "workspace_run_id": "R1", "conversation_id": "C1"}},
+            {"sequence": 2, "type": "runtime_control_effect", "created_at": "2026-01-01T00:00:01Z",
+             "payload": {"command_id": "cancel-1", "effect": "cancelled",
+                         "workspace_run_id": "R1", "conversation_id": "C1"}},
+            {"sequence": 3, "type": "runtime_control_effect", "created_at": "2026-01-01T00:00:02Z",
+             "payload": {"command_id": "cancel-2", "effect": "cancelled",
+                         "workspace_run_id": "R1", "conversation_id": "C1"}},
+        ]
+
+        events = LifecycleProjector().project("S1", records)
+
+        self.assertEqual(["AgentRunStarted", "AgentRunCancelled"], [event.type for event in events])
+        self.assertEqual([1, 2], [event.sequence for event in events])
+        self.assertEqual("cancel-1", events[-1].caused_by_command_id)
 
     def test_steering_context_mutation_without_applied_marker_is_not_repeated_after_restart(self):
         """Context 已带 commandId 但 marker 丢失时，重启恢复不得二次注入。"""

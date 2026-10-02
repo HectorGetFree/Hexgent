@@ -119,6 +119,7 @@ class RunManager:
         *,
         engine_factory: Callable[[HexgentConfig, Path], AgentEngine] = AgentEngine,
         lifecycle_callback: Callable[[str, list[dict[str, Any]]], None] | None = None,
+        permission_callback: Callable[[str, str, str, str, str], None] | None = None,
     ) -> None:
         # 所有 Web Session 共享服务启动配置，但各自拥有独立 AgentEngine。
         self.config = config
@@ -128,6 +129,15 @@ class RunManager:
         self._runs: dict[str, RunHandle] = {}
         self._registry_lock = asyncio.Lock()
         self._lifecycle_callback = lifecycle_callback
+        self._permission_callback = permission_callback
+
+    def publish_lifecycle(self, session_id: str) -> None:
+        """把指定 Session 的最新 durable facts 交给统一 Lifecycle callback。"""
+        session = self._require_session(session_id)
+        if self._lifecycle_callback is None or session.engine.session.store is None:
+            return
+        records = session.engine.session.store.read_transcript()
+        self._lifecycle_callback(session.session_id, records)
 
     async def create_session(
         self,
@@ -319,15 +329,36 @@ class RunManager:
         self._resolve_pending_permissions(handle, "unavailable")
         return self._run_response(handle)
 
-    async def cancel(self, run_id: str) -> RunResponse:
+    async def cancel(
+        self,
+        run_id: str,
+        *,
+        command_id: str | None = None,
+        workspace_run_id: str | None = None,
+        conversation_id: str | None = None,
+    ) -> RunResponse:
         """请求 Core 安全取消当前 Run。"""
         handle = self._require_run(run_id)
         if handle.status == "paused":
-            # 暂停 Run 已经结束；等待 Worker 完全释放 Engine 后终结旧 Plan。
+            # 1. 暂停 Run 已经结束；等待 Worker 完全释放 Engine 后终结旧 Plan。
             if handle.task is not None:
                 await asyncio.shield(handle.task)
             session = self._require_session(handle.session_id)
             await asyncio.to_thread(session.engine.cancel_pending_task)
+
+            # 2. Integration Cancel 必须形成 durable tombstone，不能依赖已消失的 execution。
+            if command_id and workspace_run_id and conversation_id:
+                session.engine.session.record_runtime_control_effect(
+                    command_id,
+                    "cancelled",
+                    {
+                        "workspace_run_id": workspace_run_id,
+                        "conversation_id": conversation_id,
+                        "internal_run_id": handle.run_id,
+                    },
+                )
+                handle.status = "cancelled"
+                self.publish_lifecycle(session.session_id)
             return self._run_response(handle)
         if self._is_terminal(handle):
             raise WebAdapterError(409, "run_not_active", "Agent Run 已经结束")
@@ -514,6 +545,12 @@ class RunManager:
                 "status": "PENDING",
             },
         )
+        if self._permission_callback is not None and handle.workspace_run_id is not None:
+            await asyncio.to_thread(
+                self._permission_callback,
+                handle.workspace_run_id, request_id, tool_name, message,
+                datetime.now(BEIJING_TIMEZONE).isoformat(),
+            )
         return pending
 
     async def _publish_agent_event(

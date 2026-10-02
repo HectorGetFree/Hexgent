@@ -15,6 +15,7 @@ from ..session import Session
 from ..skill import SkillDefinition
 from ..utils.retrieval_text import is_context_reference_query
 from ..tool.tool_execution import UserConfirmation
+from ..tool.tool_registry import get_tool
 from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
 from hexgent.context.context_builder import build_context_details
@@ -610,12 +611,23 @@ def run_turn(
 
 
 def _available_tools_for_state(state: LoopState) -> list[dict[str, Any]]:
-    """根据已激活 Skill 的白名单收紧模型可见工具，不改变权限管线。"""
+    """按 WS capability scope 与 Skill 白名单共同收紧模型可见工具。"""
+    scoped_tools = []
+    for definition in TOOLS:
+        registered = get_tool(definition["name"])
+        if registered is None:
+            continue
+        if (
+            registered.execution_domain == "workspace_capability"
+            and definition["name"] not in state.tool_context.workspace_capability_scope
+        ):
+            continue
+        scoped_tools.append(definition)
     skill = state.active_skill
     if skill is None or not skill.allowed_tools:
-        return TOOLS
+        return scoped_tools
     allowed = set(skill.allowed_tools) | {"activate_skill"}
-    return [tool for tool in TOOLS if tool["name"] in allowed]
+    return [tool for tool in scoped_tools if tool["name"] in allowed]
 
 
 def _activated_skill(

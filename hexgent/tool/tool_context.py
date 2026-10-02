@@ -84,6 +84,9 @@ class ToolExecutionContext:
     # Integration 层注入的 Workspace Run 与当前 Tool Call 身份。
     integration_metadata: dict[str, str] = field(default_factory=dict)
 
+    # WS 在 AgentRun 创建时冻结的 Workspace Capability eligibility snapshot。
+    workspace_capability_scope: frozenset[str] = field(default_factory=frozenset)
+
     # 保护并行只读工具共享的缓存字典，不覆盖实际文件 I/O。
     cache_lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
@@ -119,6 +122,10 @@ class ToolExecutionContext:
         """在活动上下文失效时清空全部模型可见工具缓存。"""
         self.clear_read_file_cache()
         self.clear_tool_call_cache()
+
+    def set_workspace_capability_scope(self, allowed_tools: frozenset[str]) -> None:
+        """由 Integration 在 execution 开始前注入 WS 冻结的能力范围。"""
+        object.__setattr__(self, "workspace_capability_scope", allowed_tools)
 
 
 def build_tool_call_fingerprint(

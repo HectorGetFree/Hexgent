@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from ...config import load_config
 from ...integration.lifecycle import LifecycleProjector
 from ...integration.lifecycle_client import WorkspaceLifecycleClient
+from ...integration.permission_client import WorkspacePermissionClient
 from ...workspace import find_workspace_root
 from .errors import WebAdapterError
 from ..integration.routes import router as integration_router
@@ -42,6 +43,12 @@ def create_app(
             if lifecycle_url and lifecycle_token
             else None
         )
+        permission_url = environ.get("HEXGENT_WORKSPACE_PERMISSION_URL")
+        permission_token = environ.get("HEXGENT_WORKSPACE_LIFECYCLE_TOKEN")
+        permission_client = (
+            WorkspacePermissionClient(permission_url, permission_token)
+            if permission_url and permission_token else None
+        )
 
         def deliver_lifecycle(session_id: str, records: list[dict]) -> None:
             if lifecycle_client is None:
@@ -49,10 +56,15 @@ def create_app(
             for event in projector.project(session_id, records):
                 lifecycle_client.publish(event)
 
+        def deliver_permission(run_id: str, request_id: str, tool_name: str, description: str, created_at: str) -> None:
+            if permission_client is not None:
+                permission_client.publish(run_id=run_id, request_id=request_id, tool_name=tool_name, description=description, created_at=created_at)
+
         run_manager = RunManager(
             load_config(resolved_workdir, config_path),
             resolved_workdir,
             lifecycle_callback=deliver_lifecycle,
+            permission_callback=deliver_permission,
         )
 
     # 2. Adapter 生命周期只负责收束自身启动的后台 Run。

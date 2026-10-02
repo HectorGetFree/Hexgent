@@ -1,6 +1,7 @@
 """会话 Transcript 和大工具结果持久化测试。"""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from hashlib import sha256
 from importlib import import_module
@@ -40,6 +41,31 @@ def drain_generator(generator):
 
 class SessionStoreTest(unittest.TestCase):
     """验证会话事实和大结果可以从磁盘恢复。"""
+
+    def test_concurrent_transcript_appends_keep_unique_contiguous_sequences(self) -> None:
+        """控制线程与工具线程并发追加时不得分配重复 Transcript sequence。"""
+        with TemporaryDirectory() as directory:
+            store = SessionStore(Path(directory), session_id="concurrent-session")
+            store.start_named_session("concurrent-session", "并发写入测试")
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [
+                    executor.submit(
+                        store.append_transcript,
+                        "concurrent_fact",
+                        {"index": index},
+                    )
+                    for index in range(100)
+                ]
+                for future in futures:
+                    future.result()
+
+            records = store.read_transcript()
+
+        self.assertEqual(list(range(1, 102)), [record["sequence"] for record in records])
+        self.assertEqual(100, len([
+            record for record in records if record["type"] == "concurrent_fact"
+        ]))
 
     def test_lists_only_current_protocol_sessions_for_restore(self) -> None:
         """恢复列表应过滤旧协议、损坏文件和普通目录。"""

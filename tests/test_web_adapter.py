@@ -13,7 +13,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from hexgent.adapters.web.app import create_app
-from hexgent.adapters.web.event_serializer import agent_event_payload
+from hexgent.adapters.web.event_serializer import agent_event_payload, serialize_agent_event
 from hexgent.adapters.web.run_manager import RunManager
 from hexgent.adapters.web.session_projection import transcript_messages
 from hexgent.adapters.web.settings import WebSettings
@@ -120,6 +120,25 @@ class WebAdapterTest(unittest.TestCase):
             time.sleep(0.01)
         self.fail("测试 Run 未在期限内结束")
 
+    def test_text_events_preserve_true_deltas_and_stable_event_identity(self) -> None:
+        """Browser contract 不把文本快照伪装成 delta，且每个事件可幂等识别。"""
+        events = [
+            serialize_agent_event(
+                TextDeltaEvent(delta),
+                run_id="run-001",
+                stream_id="stream-001",
+                sequence=index,
+                response_id="response-001",
+            )
+            for index, delta in enumerate(["你", "好", "！"], start=1)
+        ]
+
+        self.assertEqual([event["payload"]["delta"] for event in events if event], ["你", "好", "！"])
+        self.assertEqual(
+            [event["event_id"] for event in events if event],
+            ["stream-001:1", "stream-001:2", "stream-001:3"],
+        )
+
     def test_run_events_are_replayed_in_order_and_sse_closes_on_terminal(self) -> None:
         """SSE 只回放 Phase 3 允许的非权威事件，并在终态后关闭。"""
         session_id = self._create_session()
@@ -137,6 +156,7 @@ class WebAdapterTest(unittest.TestCase):
         self.assertIn("event: text_delta", response.text)
         self.assertIn("id: 1", response.text)
         self.assertIn('"stream_id":"stream_', response.text)
+        self.assertIn('"event_id":"stream_', response.text)
         self.assertIn('"responseId":"response_', response.text)
         self.assertNotIn("run_finished", response.text)
 
@@ -224,6 +244,40 @@ class WebAdapterTest(unittest.TestCase):
         self.assertEqual(duplicate.status_code, 202)
         self.assertEqual(self._wait_for_terminal(run_id)["status"], "completed")
         self.assertEqual(engine.permission_result, "allow")
+
+    def test_permission_resolution_rejects_conflicting_or_lost_pending_request(self) -> None:
+        """同一决定可幂等；冲突决定与已丢失的 PendingPermission 必须拒绝。"""
+        session_id = self._create_session()
+        engine = self.factory.engines[0]
+        engine.request_permission = True
+        started = self.client.post(f"/api/sessions/{session_id}/runs", json={"query": "写文件"})
+        run_id = started.json()["run_id"]
+
+        deadline = time.monotonic() + 2
+        request_id = None
+        while time.monotonic() < deadline and request_id is None:
+            for event in self.client.app.state.run_manager._runs[run_id].events:
+                if event["type"] == "permission_requested":
+                    request_id = event["payload"]["request_id"]
+                    break
+            time.sleep(0.01)
+        self.assertIsNotNone(request_id)
+        accepted = self.client.post(
+            f"/api/runs/{run_id}/permissions/{request_id}",
+            json={"decision": "deny", "response_id": "response-deny-1"},
+        )
+        self.assertEqual(accepted.status_code, 202)
+        conflict = self.client.post(
+            f"/api/runs/{run_id}/permissions/{request_id}",
+            json={"decision": "allow", "response_id": "response-deny-1"},
+        )
+        self.assertEqual(conflict.status_code, 409)
+        missing = self.client.post(
+            f"/api/runs/{run_id}/permissions/missing-request",
+            json={"decision": "deny", "response_id": "response-missing"},
+        )
+        self.assertEqual(missing.status_code, 404)
+        self._wait_for_terminal(run_id)
 
     def test_steering_is_forwarded_to_core_run_control_fifo(self) -> None:
         """Web Steering 不应自行改写 Context，而应进入 Core FIFO。"""

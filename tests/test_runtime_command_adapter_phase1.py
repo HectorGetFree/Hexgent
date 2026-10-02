@@ -91,9 +91,17 @@ def _command(
     command_type: str,
     run_id: str = "R1",
     conversation_id: str = "C1",
+    allowed_tools: list[str] | None = None,
 ) -> RuntimeCommand:
     """构造最小 Runtime Command。"""
-    payload = {"instruction": "继续处理文档"} if command_type == "StartRun" else {}
+    payload = (
+        {
+            "instruction": "继续处理文档",
+            **({"allowedTools": allowed_tools} if allowed_tools is not None else {}),
+        }
+        if command_type == "StartRun"
+        else {}
+    )
     return RuntimeCommand(
         command_id,
         command_type,  # type: ignore[arg-type]
@@ -107,6 +115,118 @@ def _command(
 class RuntimeCommandAdapterPhase1Test(unittest.IsolatedAsyncioTestCase):
     """覆盖 durable decision 与 WS logical run 的重启后续跑语义。"""
 
+    async def test_reads_messages_from_durable_transcript_after_restart(self) -> None:
+        """Browser history 只读投影来自 Transcript，不依赖旧 RunHandle。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager_a = RunManager(HexgentConfig(), root, engine_factory=_ProbeEngineFactory())
+            adapter_a = RuntimeCommandAdapter(manager_a)
+
+            decision = await adapter_a.handle(_command("cmd-history", "StartRun"))
+            self.assertEqual(decision.status, "ACCEPTED")
+            handle = manager_a._runs[adapter_a._manager_run_ids["R1"]]
+            await asyncio.wait_for(handle.task, timeout=1)
+
+            messages_before = adapter_a.get_run_messages("R1")
+            self.assertIsNotNone(messages_before)
+            self.assertEqual([message["role"] for message in messages_before], ["user", "assistant"])
+            self.assertEqual(messages_before[0]["content"], "继续处理文档")
+            self.assertEqual(messages_before[1]["content"], "暂停")
+
+            # 进程重启后仍从相同 durable facts 重建相同 Browser-safe 历史。
+            manager_b = RunManager(HexgentConfig(), root, engine_factory=_ProbeEngineFactory())
+            adapter_b = RuntimeCommandAdapter(manager_b)
+            self.assertEqual(adapter_b.get_run_messages("R1"), messages_before)
+
+    async def test_live_start_registers_workspace_run_for_control_commands(self) -> None:
+        """Start Ack 后，同进程控制命令必须能由 WS runId 定位 internal run。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = RunManager(HexgentConfig(), root, engine_factory=_ProbeEngineFactory())
+            adapter = RuntimeCommandAdapter(manager)
+
+            start = await adapter.handle(_command("cmd-start-live", "StartRun"))
+            self.assertEqual("ACCEPTED", start.status)
+            internal_run_id = adapter._manager_run_ids["R1"]
+            self.assertEqual(
+                internal_run_id,
+                adapter._run_associations["R1"].latest_internal_run_id,
+            )
+
+            pause = await adapter.handle(_command("cmd-pause-live", "PauseRun"))
+            self.assertEqual("ACCEPTED", pause.status)
+            self.assertEqual("pause", manager._runs[internal_run_id].run_control.terminal_action)
+
+            # Cancel 的优先级高于已经登记的 Pause，且仍命中同一个 internal run。
+            cancel = await adapter.handle(_command("cmd-cancel-live", "CancelRun"))
+            self.assertEqual("ACCEPTED", cancel.status)
+            self.assertEqual("cancel", manager._runs[internal_run_id].run_control.terminal_action)
+            await asyncio.wait_for(manager._runs[internal_run_id].task, timeout=1)
+
+    async def test_live_start_registers_workspace_run_for_steering(self) -> None:
+        """Steer 使用 WS runId 找到当前 RunControl，不把它当 internal run_id。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = RunManager(HexgentConfig(), root, engine_factory=_ProbeEngineFactory())
+            adapter = RuntimeCommandAdapter(manager)
+
+            await adapter.handle(_command("cmd-start-steer", "StartRun"))
+            internal_run_id = adapter._manager_run_ids["R1"]
+            steer = RuntimeCommand(
+                "cmd-steer-live",
+                "SteerRun",
+                "R1",
+                "C1",
+                "2026-09-28T00:00:01+08:00",
+                {"instruction": "重点关注权限设计"},
+            )
+
+            decision = await adapter.handle(steer)
+
+            self.assertEqual("ACCEPTED", decision.status)
+            pending = manager._runs[internal_run_id].run_control.steering_mailbox.drain()
+            self.assertEqual(["重点关注权限设计"], [query.content for query in pending])
+
+    async def test_cancel_paused_run_commits_durable_effect_and_lifecycle(self) -> None:
+        """暂停 execution 已结束后，Cancel 仍以 durable effect 收敛为 CANCELLED。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            callbacks: list[list[dict[str, object]]] = []
+            manager = RunManager(
+                HexgentConfig(),
+                root,
+                engine_factory=_ProbeEngineFactory(),
+                lifecycle_callback=lambda _session_id, records: callbacks.append(records),
+            )
+            adapter = RuntimeCommandAdapter(manager)
+
+            await adapter.handle(_command("cmd-start-paused-cancel", "StartRun"))
+            internal_run_id = adapter._manager_run_ids["R1"]
+            await adapter.handle(_command("cmd-pause-before-cancel", "PauseRun"))
+            await asyncio.wait_for(manager._runs[internal_run_id].task, timeout=1)
+            self.assertEqual("paused", manager._runs[internal_run_id].status)
+
+            decision = await adapter.handle(
+                _command("cmd-cancel-paused", "CancelRun")
+            )
+
+            self.assertEqual("ACCEPTED", decision.status)
+            self.assertEqual("cancelled", manager._runs[internal_run_id].status)
+            session_id = adapter._run_associations["R1"].session_id
+            records = manager._require_session(session_id).engine.session.store.read_transcript()
+            effects = [
+                record.get("payload", {})
+                for record in records
+                if record.get("type") == "runtime_control_effect"
+            ]
+            self.assertTrue(any(
+                effect.get("command_id") == "cmd-cancel-paused"
+                and effect.get("effect") == "cancelled"
+                for effect in effects
+            ))
+            self.assertTrue(callbacks)
+            await asyncio.wait_for(manager._runs[internal_run_id].task, timeout=1)
+
     async def test_reload_hydrates_session_and_creates_new_internal_runs(self) -> None:
         """同一 WS Run 在重启后以新 internal run 继续，而不恢复旧 Handle。"""
         with TemporaryDirectory() as directory:
@@ -115,7 +235,9 @@ class RuntimeCommandAdapterPhase1Test(unittest.IsolatedAsyncioTestCase):
             manager_a = RunManager(HexgentConfig(), root, engine_factory=factory_a)
             adapter_a = RuntimeCommandAdapter(manager_a)
 
-            start = await adapter_a.handle(_command("cmd-start", "StartRun"))
+            start = await adapter_a.handle(
+                _command("cmd-start", "StartRun", allowed_tools=["search_workspace"])
+            )
             self.assertEqual(start.status, "ACCEPTED")
             first_handle = manager_a._runs[adapter_a._manager_run_ids["R1"]]
             await asyncio.wait_for(first_handle.task, timeout=1)
@@ -131,7 +253,9 @@ class RuntimeCommandAdapterPhase1Test(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(manager_b._runs, {})
 
             # 2. 相同 commandId 恢复原 Decision，且不会新建 internal run。
-            duplicate = await adapter_b.handle(_command("cmd-start", "StartRun"))
+            duplicate = await adapter_b.handle(
+                _command("cmd-start", "StartRun", allowed_tools=["search_workspace"])
+            )
             self.assertEqual(duplicate, start)
             self.assertEqual(self._internal_run_ids(root, session_id), [internal_a])
 
@@ -141,6 +265,10 @@ class RuntimeCommandAdapterPhase1Test(unittest.IsolatedAsyncioTestCase):
             second_handle = manager_b._runs[adapter_b._manager_run_ids["R1"]]
             await asyncio.wait_for(second_handle.task, timeout=1)
             self.assertEqual(factory_b.restored_engines[-1].requests[-1].intent, "continue")
+            self.assertEqual(
+                factory_b.restored_engines[-1].tool_context.workspace_capability_scope,
+                frozenset({"search_workspace"}),
+            )
             internal_b = self._internal_run_ids(root, session_id)[-1]
             self.assertNotEqual(internal_a, internal_b)
 
@@ -156,6 +284,10 @@ class RuntimeCommandAdapterPhase1Test(unittest.IsolatedAsyncioTestCase):
             internal_c = self._internal_run_ids(root, session_id)[-1]
             self.assertNotEqual(internal_b, internal_c)
             self.assertEqual(factory_c.restored_engines[-1].requests[-1].intent, "continue")
+            self.assertEqual(
+                factory_c.restored_engines[-1].tool_context.workspace_capability_scope,
+                frozenset({"search_workspace"}),
+            )
             self.assertEqual(self._workspace_runs(root, session_id), ["R1", "R1", "R1"])
 
             wrong_conversation = await adapter_c.handle(

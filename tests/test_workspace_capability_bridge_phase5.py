@@ -15,6 +15,9 @@ class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
     def context(self):
         context = ToolExecutionContext(_PlanStore(), __import__("pathlib").Path("/tmp"))
         context.integration_metadata.update({"workspace_run_id": "ws-run", "tool_call_id": "call-1"})
+        context.set_workspace_capability_scope(frozenset({
+            "workspace_capability", "search_workspace", "get_document", "list_folder",
+        }))
         return context
 
     @patch("hexgent.tool.workspace_capability_tool.WorkspaceCapabilityClient.invoke")

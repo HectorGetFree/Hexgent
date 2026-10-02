@@ -21,6 +21,7 @@ class CreateDocumentWorkspaceCapabilityTest(unittest.TestCase):
         context.integration_metadata.update(
             {"workspace_run_id": "workspace-run-42", "tool_call_id": "model-call-7"}
         )
+        context.set_workspace_capability_scope(frozenset({"create_document"}))
         return context
 
     def arguments(self):

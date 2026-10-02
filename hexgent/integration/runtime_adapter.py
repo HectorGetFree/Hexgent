@@ -12,6 +12,7 @@ from ..adapters.web.run_manager import RunManager
 from ..tool.tool_permission_pipeline import PermissionMode
 from .lifecycle import LifecycleProjector
 from .protocol import CommandDecision, RuntimeCommand
+from ..adapters.web.session_projection import transcript_messages
 
 
 @dataclass
@@ -136,6 +137,27 @@ class RuntimeCommandAdapter:
             if matching:
                 return matching
         return []
+
+    def get_run_messages(self, workspace_run_id: str) -> list[dict[str, Any]] | None:
+        """从关联 Session 的 durable Transcript 返回 Browser 安全消息投影。"""
+        for _, records in self._all_session_records():
+            belongs_to_run = any(
+                record.get("type") == "runtime_command_decided"
+                and (record.get("payload") or {}).get("workspace_run_id") == workspace_run_id
+                for record in records
+            )
+            if not belongs_to_run:
+                continue
+            return [
+                {
+                    "sequence": message["sequence"],
+                    "role": message["role"],
+                    "content": message["content"],
+                    "createdAt": message["created_at"],
+                }
+                for message in transcript_messages(records)
+            ]
+        return None
 
     def _all_session_records(self) -> list[tuple[str, list[dict[str, Any]]]]:
         """读取当前工作目录下所有可解析 Transcript；它是只读恢复索引，不是新状态库。"""
@@ -284,6 +306,10 @@ class RuntimeCommandAdapter:
 
     async def _apply_accepted_command(self, command: RuntimeCommand, session_id: str) -> None:
         """只复用既有 Manager/Core 入口，不把恢复逻辑放进 Agent Loop。"""
+        session = self.manager._require_session(session_id)
+        session.engine.tool_context.set_workspace_capability_scope(
+            self._workspace_capability_scope(command)
+        )
         if command.command_type == "StartRun":
             response = await self.manager.start_run(
                 session_id,
@@ -291,14 +317,14 @@ class RuntimeCommandAdapter:
                 workspace_run_id=command.run_id,
                 conversation_id=command.conversation_id,
             )
-            self._manager_run_ids[command.run_id] = response.run_id
+            self._register_active_run(command, session_id, response.run_id)
         elif command.command_type in {"ContinueRun", "ResumeRun"}:
             response = await self.manager.continue_session(
                 session_id,
                 workspace_run_id=command.run_id,
                 conversation_id=command.conversation_id,
             )
-            self._manager_run_ids[command.run_id] = response.run_id
+            self._register_active_run(command, session_id, response.run_id)
         elif command.command_type == "PauseRun":
             internal_run_id = self._manager_run_ids.get(command.run_id)
             if internal_run_id is not None:
@@ -312,10 +338,16 @@ class RuntimeCommandAdapter:
                             "conversation_id": command.conversation_id,
                         },
                     )
+                    self.manager.publish_lifecycle(session_id)
         elif command.command_type == "CancelRun":
             internal_run_id = self._manager_run_ids.get(command.run_id)
             if internal_run_id is not None:
-                await self.manager.cancel(internal_run_id)
+                await self.manager.cancel(
+                    internal_run_id,
+                    command_id=command.command_id,
+                    workspace_run_id=command.run_id,
+                    conversation_id=command.conversation_id,
+                )
             else:
                 self.manager._require_session(session_id).engine.session.record_runtime_control_effect(
                     command.command_id, "cancelled", {
@@ -323,6 +355,7 @@ class RuntimeCommandAdapter:
                         "conversation_id": command.conversation_id,
                     },
                 )
+                self.manager.publish_lifecycle(session_id)
         elif command.command_type == "SteerRun":
             internal_run_id = self._manager_run_ids.get(command.run_id)
             if internal_run_id is not None:
@@ -338,6 +371,45 @@ class RuntimeCommandAdapter:
                         "instruction": str(command.payload.get("instruction", "")),
                     },
                 )
+
+    def _workspace_capability_scope(self, command: RuntimeCommand) -> frozenset[str]:
+        """从 StartRun durable payload 恢复 WS 冻结 scope；旧事实缺失时安全拒绝。"""
+        payload = command.payload
+        if command.command_type != "StartRun":
+            starts = [
+                record
+                for record in self._command_records.values()
+                if record.get("workspace_run_id") == command.run_id
+                and record.get("command_type") == "StartRun"
+                and record.get("decision") == "ACCEPTED"
+            ]
+            if starts:
+                payload = min(starts, key=lambda item: item.get("sequence", 0)).get("payload") or {}
+            else:
+                payload = {}
+        allowed_tools = payload.get("allowedTools")
+        if not isinstance(allowed_tools, list):
+            return frozenset()
+        return frozenset(
+            item for item in allowed_tools
+            if isinstance(item, str) and item
+        )
+
+    def _register_active_run(
+        self,
+        command: RuntimeCommand,
+        session_id: str,
+        internal_run_id: str,
+    ) -> None:
+        """在 Start/Continue/Resume 返回前同步登记 WS run 与当前 execution。"""
+        self._manager_run_ids[command.run_id] = internal_run_id
+        self._run_associations[command.run_id] = _WorkspaceRunAssociation(
+            command.run_id,
+            command.conversation_id,
+            session_id,
+            internal_run_id,
+            continuable=False,
+        )
 
     def _is_superseded(self, command: RuntimeCommand) -> bool:
         """只对尚未产生 effect 的控制命令执行 durable sequence 仲裁。"""

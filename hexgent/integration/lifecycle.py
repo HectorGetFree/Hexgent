@@ -30,6 +30,7 @@ class LifecycleProjector:
         result: list[LifecycleEvent] = []
         counters: dict[str, int] = {}
         latest_command: dict[str, dict[str, Any]] = {}
+        cancelled_effect_runs: set[str] = set()
         cancelled_runs: set[str] = {
             (record.get("payload") or {}).get("workspace_run_id")
             for record in records
@@ -55,6 +56,10 @@ class LifecycleProjector:
                 )
                 if event_type == "AgentRunPaused" and workspace_run_id in cancelled_runs:
                     continue
+                if event_type == "AgentRunCancelled":
+                    if workspace_run_id in cancelled_effect_runs:
+                        continue
+                    cancelled_effect_runs.add(workspace_run_id)
                 if workspace_run_id and conversation_id and event_type:
                     counters[workspace_run_id] = counters.get(workspace_run_id, 0) + 1
                     event_id = hashlib.sha256(

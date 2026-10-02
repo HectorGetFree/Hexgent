@@ -58,6 +58,10 @@ ToolPermissionCapability = Literal[
     "memory_state",  # 维护工作区级 Markdown Memory。
     "skill_state",  # 激活当前 Run 使用的项目级 Skill。
 ]
+ToolExecutionDomain = Literal[
+    "internal_runtime",  # 由 Hexgent Runtime 自己提供并授权的工具。
+    "workspace_capability",  # 必须属于 WS AgentRun 冻结 capability scope 的工具。
+]
 ToolInterruptBehavior = Literal[
     "cancel",  # 工具只读且可安全请求终止，不产生需要保留的副作用。
     "block",  # 工具一旦开始必须等待明确结果，默认保留已经发生的副作用。
@@ -103,6 +107,9 @@ class RegisteredTool:
 
     # Permission Mode 用来判断工具默认行为的稳定能力分类。
     permission_capability: ToolPermissionCapability = "shell"
+
+    # 执行归属与 Permission category 正交，决定是否受 WS capability scope 约束。
+    execution_domain: ToolExecutionDomain = "internal_runtime"
 
     # 当前工具已经开始后收到 Pause 或 Cancel 时采用的保守处理策略。
     interrupt_behavior: ToolInterruptBehavior = "block"
@@ -282,36 +289,42 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         requires_context=True,
         display_argument="title",
         permission_capability="workspace_write",
+        execution_domain="workspace_capability",
     ),
     "update_document": RegisteredTool(
         invoke_update_document,
         requires_context=True,
         display_argument="documentId",
         permission_capability="workspace_write",
+        execution_domain="workspace_capability",
     ),
     "list_folder": RegisteredTool(
         invoke_list_folder,
         requires_context=True,
         display_argument="folderId",
         permission_capability="workspace_read",
+        execution_domain="workspace_capability",
     ),
     "get_document": RegisteredTool(
         invoke_get_document,
         requires_context=True,
         display_argument="documentId",
         permission_capability="workspace_read",
+        execution_domain="workspace_capability",
     ),
     "search_workspace": RegisteredTool(
         invoke_search_workspace,
         requires_context=True,
         display_argument="query",
         permission_capability="workspace_read",
+        execution_domain="workspace_capability",
     ),
     "workspace_capability": RegisteredTool(
         invoke_workspace_capability,
         requires_context=True,
         display_argument="capability",
         permission_capability="workspace_read",
+        execution_domain="workspace_capability",
     ),
     "bash": RegisteredTool(
         bash,

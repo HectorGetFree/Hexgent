@@ -100,6 +100,16 @@ async def get_lifecycle_events(
     }
 
 
+@router.get("/runs/{workspace_run_id}/messages")
+async def get_run_messages(workspace_run_id: str, request: Request) -> dict:
+    """以 service token 向 Workspace 返回 durable Transcript 的最小消息投影。"""
+    _require_integration_token(request)
+    messages = _adapter(request).get_run_messages(workspace_run_id)
+    if messages is None:
+        raise HTTPException(status_code=404, detail="RUN_NOT_FOUND")
+    return {"integrationRunId": workspace_run_id, "messages": messages}
+
+
 def _external_event(event: dict, integration_run_id: str) -> dict:
     """将 Web Adapter 事件转换为 Integration Stream envelope。"""
     payload = event.get("payload", {})
@@ -123,6 +133,7 @@ def _external_event(event: dict, integration_run_id: str) -> dict:
             "delta": payload.get("delta", ""),
         }
     return {
+        "eventId": event.get("event_id") or f"{event.get('stream_id')}:{event.get('sequence')}",
         "integrationRunId": integration_run_id,
         "streamId": event.get("stream_id"),
         "sequence": event.get("sequence"),

@@ -13,6 +13,7 @@ ToolOutputValidator = Callable[[dict[str, Any]], str | None]
 ToolFailurePhase = Literal[
     "lookup",  # 注册表中查找工具。
     "validation",  # 解析和校验工具输入参数。
+    "eligibility",  # Workspace Capability 不属于当前 Run 的冻结范围。
     "permission",  # 权限规则判断或用户审批。
     "scheduling",  # 批次预算、排队和并行调度。
     "execution",  # 实际调用工具处理器。

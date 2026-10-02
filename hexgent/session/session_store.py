@@ -6,6 +6,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
+from threading import RLock
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -93,6 +94,9 @@ class SessionStore:
 
         # Transcript 中下一条记录使用的单调递增序号。
         self._next_sequence = 1
+
+        # Runtime 控制线程和 Agent 工具线程可能并发追加事实；序号分配与写入必须原子。
+        self._transcript_lock = RLock()
 
         # 标记是否已经写入会话开始事件。
         self._session_started = False
@@ -277,33 +281,35 @@ class SessionStore:
 
     def append_transcript(self, record_type: str, payload: Any) -> None:
         """把一条不可变会话事实追加写入 JSONL Transcript。"""
-        if self.session_id is None:
-            self._pending_records.append((record_type, payload))
-            return
-        self._ensure_session_dir()
-        record = {
-            "schema_version": TRANSCRIPT_SCHEMA_VERSION,
-            "sequence": self._next_sequence,
-            "type": record_type,
-            "created_at": _beijing_now().isoformat(),
-            "payload": payload,
-        }
-        with self.transcript_path.open("a", encoding="utf-8") as transcript:
-            transcript.write(
-                json.dumps(
-                    record,
-                    ensure_ascii=False,
-                    default=_json_default,
-                    separators=(",", ":"),
+        with self._transcript_lock:
+            if self.session_id is None:
+                self._pending_records.append((record_type, payload))
+                return
+            self._ensure_session_dir()
+            record = {
+                "schema_version": TRANSCRIPT_SCHEMA_VERSION,
+                "sequence": self._next_sequence,
+                "type": record_type,
+                "created_at": _beijing_now().isoformat(),
+                "payload": payload,
+            }
+            with self.transcript_path.open("a", encoding="utf-8") as transcript:
+                transcript.write(
+                    json.dumps(
+                        record,
+                        ensure_ascii=False,
+                        default=_json_default,
+                        separators=(",", ":"),
+                    )
                 )
-            )
-            transcript.write("\n")
-        self._next_sequence += 1
+                transcript.write("\n")
+            self._next_sequence += 1
 
     @property
     def next_sequence(self) -> int:
         """返回下一条 Transcript 记录将使用的序号。"""
-        return self._next_sequence
+        with self._transcript_lock:
+            return self._next_sequence
 
     def next_run_id(self) -> str:
         """根据现有 Report 文件分配 Session 内下一个运行编号。"""
