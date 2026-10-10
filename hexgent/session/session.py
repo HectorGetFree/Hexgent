@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..context.context_manager import UserQuery
+from ..utils.retrieval_text import is_context_reference_query
 from ..memory import (
     ContextRecordInput,
     ContextRecordMutation,
@@ -464,6 +465,25 @@ class Session:
         if self.store is not None:
             self.store.persist_context_records(self.context_records.to_dict())
         return mutations
+
+    def reselect_context_records(
+        self,
+        query: UserQuery,
+        limits: ContextRetrievalLimits,
+        cached: tuple[RetrievedContextRecord, ...],
+    ) -> tuple[RetrievedContextRecord, ...]:
+        """按当前有效记录重新选择；缓存不是权威，不加载历史文件。"""
+        fallback = is_context_reference_query(query.content)
+        selected = ContextRecordRetriever(limits).retrieve(
+            query.content, self.context_records.active_records,
+            allow_recent_fallback=fallback,
+        )
+        if selected == cached:
+            return selected
+        return self.retrieve_context_records(
+            query.content, (query.sequence,), limits,
+            allow_recent_fallback=fallback,
+        )
 
     def retrieve_context_records(
         self,

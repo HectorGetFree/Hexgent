@@ -1,6 +1,6 @@
 """模型流式调用的协议处理。"""
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from hashlib import sha256
@@ -88,6 +88,7 @@ def call_model(
     observation_request_type: str = "MAIN_AGENT",
     observation_memory_receipt: tuple[dict[str, str], ...] | None = None,
     memory_store: Any = None,
+    prepare_request: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     **request: Any,
 ) -> Generator[AgentEvent, None, Any]:
     """调用模型、发送文本增量，并返回协议完整的响应。"""
@@ -107,7 +108,9 @@ def call_model(
             if interrupt_controller is not None and interrupt_controller.interrupted:
                 raise ModelCallInterrupted()
             # 2. 每次实际请求（包括重试）复核权威状态，提交撤销与启动请求互斥。
-            guard = memory_store.request_guard(request) if memory_store is not None else nullcontext((request, observation_memory_receipt))
+            # 2. 空流重试也必须从当前 Session 状态重新组装 Record 区块。
+            prepared_request = prepare_request(request) if prepare_request is not None else request
+            guard = memory_store.request_guard(prepared_request) if memory_store is not None else nullcontext((prepared_request, observation_memory_receipt))
             with guard as (current_request, current_receipt):
                 if observed[0] is not None and current_receipt is not None:
                     observed[0].emit(

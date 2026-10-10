@@ -334,7 +334,14 @@ class AgentEngine:
             context_manager=self.context_manager,
             tool_context=self.tool_context,
         )
-        return replace(restored_state, relevant_memory=self.memory_store.revalidate(restored_state.relevant_memory))
+        queries = self.context_manager.user_queries
+        relevant_context = self.session.reselect_context_records(
+            queries[-1], config.context_retrieval, restored_state.relevant_context,
+        ) if queries else ()
+        return replace(
+            restored_state, relevant_context=relevant_context,
+            relevant_memory=self.memory_store.revalidate(restored_state.relevant_memory),
+        )
 
     @property
     def has_continuable_run(self) -> bool:

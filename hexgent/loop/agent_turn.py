@@ -305,6 +305,11 @@ def run_turn(
     # 4. 根据工作或收尾模式准备本轮模型请求。
     model = get_model()
     active_context_limits = config.context
+    if session is not None and state.context_manager.user_queries:
+        state = replace(state, relevant_context=session.reselect_context_records(
+            state.context_manager.user_queries[-1], config.context_retrieval,
+            state.relevant_context,
+        ))
     built_context = build_context_details(
         state.tool_context, state.relevant_context, state.relevant_memory,
         state.active_skill, active_context_limits.runtime_injection_tokens,
@@ -378,12 +383,31 @@ def run_turn(
         request["max_output_tokens"] = limits.finalization_output_tokens
 
     # 7. 模型调用必须产生完整响应；上下文过长只允许应急压缩后重试一次。
+    def prepare_current_request(original_request: dict[str, Any]) -> dict[str, Any]:
+        """每次实际发送（含重试）复核记录并复用现有预算组装，不改历史。"""
+        nonlocal state
+        if session is None:
+            return original_request
+        queries = state.context_manager.user_queries
+        records = session.reselect_context_records(
+            queries[-1], config.context_retrieval, state.relevant_context,
+        ) if queries else ()
+        state = replace(state, relevant_context=records)
+        current = build_context_details(
+            state.tool_context, records, state.relevant_memory,
+            state.active_skill, active_context_limits.runtime_injection_tokens,
+            plan_warning_tokens=active_context_limits.plan_warning_tokens,
+            active_skill_warning_tokens=active_context_limits.active_skill_warning_tokens,
+        )
+        return {**original_request, "instructions": current.instructions}
+
     try:
         response = yield from call_model(
             client,
             interrupt_controller=controller,
             observation_memory_receipt=built_context.memory_receipt,
             memory_store=state.tool_context.memory_store,
+            prepare_request=prepare_current_request,
             **request,
         )
     except ModelCallInterrupted as interrupted:
