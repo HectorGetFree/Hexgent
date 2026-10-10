@@ -29,6 +29,8 @@ class MemoryReceiptTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             memory = RetrievedMemory("mem-test", "项目约定", "project", 1.0, ())
             context = ToolExecutionContext(InMemoryPlanStore(), Path(directory))
+            item = context.memory_store.upsert(memory.content, "project", source="explicit").item
+            memory = RetrievedMemory(item.memory_id, item.content, item.category, 1.0, ())
             built = build_context_details(context, relevant_memory=(memory,))
             self.assertIn(memory.content, built.instructions)
             self.assertEqual(built.memory_receipt[0]["content_sha256"], sha256(memory.content.encode()).hexdigest())

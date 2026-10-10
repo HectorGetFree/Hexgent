@@ -383,6 +383,7 @@ def run_turn(
             client,
             interrupt_controller=controller,
             observation_memory_receipt=built_context.memory_receipt,
+            memory_store=state.tool_context.memory_store,
             **request,
         )
     except ModelCallInterrupted as interrupted:

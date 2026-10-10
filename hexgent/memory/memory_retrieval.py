@@ -97,6 +97,8 @@ class MemoryRetriever:
         query_text = _normalize_text(query)
         candidates: list[RetrievedMemory] = []
         for item in items:
+            if item.status != "ACTIVE":
+                continue
             item_text = f"{item.content} {' '.join(item.keywords)}"
             item_tokens = _tokenize(item_text)
             shared = query_tokens & item_tokens

@@ -266,6 +266,9 @@ def _prepare_tool_call(
         fingerprint = _build_tool_call_fingerprint(tool_name, parsed)
         with context.cache_lock:
             cached = context.tool_call_cache.get(fingerprint)
+        if cached is not None and tool_name == "remember":
+            if not context.memory_store.is_active_content(parsed["content"], parsed["category"]):
+                cached = None
         if cached is not None:
             return _deduplicated_result(fingerprint, cached, context)
 

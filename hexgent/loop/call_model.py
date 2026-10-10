@@ -4,6 +4,7 @@ from collections.abc import Generator
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from hashlib import sha256
+from contextlib import nullcontext
 
 from hexgent.events import AgentEvent, TextDeltaEvent
 from hexgent.run_control import InterruptController
@@ -86,6 +87,7 @@ def call_model(
     interrupt_controller: InterruptController | None = None,
     observation_request_type: str = "MAIN_AGENT",
     observation_memory_receipt: tuple[dict[str, str], ...] | None = None,
+    memory_store: Any = None,
     **request: Any,
 ) -> Generator[AgentEvent, None, Any]:
     """调用模型、发送文本增量，并返回协议完整的响应。"""
@@ -104,17 +106,17 @@ def call_model(
         try:
             if interrupt_controller is not None and interrupt_controller.interrupted:
                 raise ModelCallInterrupted()
-            # 2. 紧贴实际请求边界记录最终注入凭证，不向 Provider 透传观测参数。
-            if observed[0] is not None and observation_memory_receipt is not None:
-                observed[0].emit(
-                    "memory_injected", span_id=observed[2],
-                    request_type=observation_request_type,
-                    memories=list(observation_memory_receipt),
-                    instructions_sha256=sha256(
-                        str(request.get("instructions", "")).encode("utf-8")
-                    ).hexdigest(),
-                )
-            stream = client.responses.create(**request, stream=True)
+            # 2. 每次实际请求（包括重试）复核权威状态，提交撤销与启动请求互斥。
+            guard = memory_store.request_guard(request) if memory_store is not None else nullcontext((request, observation_memory_receipt))
+            with guard as (current_request, current_receipt):
+                if observed[0] is not None and current_receipt is not None:
+                    observed[0].emit(
+                        "memory_injected", span_id=observed[2],
+                        request_type=observation_request_type,
+                        memories=list(current_receipt),
+                        instructions_sha256=sha256(str(current_request.get("instructions", "")).encode()).hexdigest(),
+                    )
+                stream = client.responses.create(**current_request, stream=True)
             close = getattr(stream, "close", None)
             if interrupt_controller is not None and callable(close):
                 remove_interrupt_callback = interrupt_controller.add_callback(close)

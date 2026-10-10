@@ -93,6 +93,8 @@ class AgentEngine:
             SessionSettings(config.permission.default_mode),
         )
         if tool_context is not None:
+            if memory_store is not None and memory_store.directory != tool_context.memory_store.directory:
+                raise ValueError("Engine 检索与工具写入必须绑定同一 Memory Scope")
             self.tool_context = tool_context
             self.memory_store = memory_store or tool_context.memory_store
         else:
@@ -327,11 +329,12 @@ class AgentEngine:
         if self._pending_run_state is None:
             raise RuntimeError("当前 Session 没有可继续的 Agent Run")
         snapshot = self._pending_run_state
-        return LoopState.from_snapshot(
+        restored_state = LoopState.from_snapshot(
             snapshot,
             context_manager=self.context_manager,
             tool_context=self.tool_context,
         )
+        return replace(restored_state, relevant_memory=self.memory_store.revalidate(restored_state.relevant_memory))
 
     @property
     def has_continuable_run(self) -> bool:

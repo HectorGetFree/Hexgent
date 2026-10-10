@@ -64,7 +64,7 @@ def build_context_details(
     plan_context = format_plan_context(context.plan_store.get_plan())
     # Session Record 优先于同内容的工作区 Memory，避免同一事实重复占用请求预算。
     deduplicated_memory = _without_context_duplicates(
-        relevant_context, relevant_memory,
+        relevant_context, context.memory_store.revalidate(relevant_memory),
     )
     sections = [SYSTEM_PROMPT]
     fixed_tokens = {"system_prompt": estimate_value_tokens(SYSTEM_PROMPT)}

@@ -425,6 +425,32 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "supersede_memory",
+        "description": "仅在用户明确更正长期事实时，指定旧 Memory ID 并替代；不能自动推断冲突。",
+        "parameters": {"type": "object", "properties": {
+            "old_memory_id": {"type": "string", "pattern": "^mem-[a-f0-9]{12}$"},
+            "content": {"type": "string"},
+            "category": {"type": "string", "enum": ["preference", "constraint", "project", "decision"]},
+            "keywords": {"type": "array", "items": {"type": "string"}}
+        }, "required": ["old_memory_id", "content", "category", "keywords"], "additionalProperties": False},
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "invalidate_memory",
+        "description": "用户明确撤销指定长期记忆；保留正文但不再作为长期 Memory 注入。",
+        "parameters": {"type": "object", "properties": {"memory_id": {"type": "string", "pattern": "^mem-[a-f0-9]{12}$"}}, "required": ["memory_id"], "additionalProperties": False},
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "delete_memory",
+        "description": "用户明确要求删除指定长期记忆正文；不能删除旧 Transcript 或撤回已发送的内容。",
+        "parameters": {"type": "object", "properties": {"memory_id": {"type": "string", "pattern": "^mem-[a-f0-9]{12}$"}}, "required": ["memory_id"], "additionalProperties": False},
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "activate_skill",
         "description": "激活一个项目级 Skill，使后续轮次遵守其工作流和工具限制。",
         "parameters": {

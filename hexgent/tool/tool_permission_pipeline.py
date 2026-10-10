@@ -167,6 +167,10 @@ DENY_RULES: tuple[PermissionRule, ...] = (
     ),
 )
 ASK_RULES: tuple[PermissionRule, ...] = (
+    PermissionRule("memory_lifecycle_change", "ask",
+                   ("supersede_memory", "invalidate_memory", "delete_memory"),
+                   lambda args, context: True,
+                   lambda args, context: "修改或撤销当前工作区长期记忆需要确认"),
     PermissionRule(
         "outside_workspace_access",
         "ask",

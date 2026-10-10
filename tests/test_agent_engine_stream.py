@@ -3,6 +3,8 @@
 from importlib import import_module
 from contextlib import nullcontext
 from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -57,6 +59,11 @@ class CliAdapterStreamTest(unittest.TestCase):
         )
         persistent.start()
         self.addCleanup(persistent.stop)
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        workspace = patch.object(cli_module, "find_workspace_root", return_value=Path(directory.name))
+        workspace.start()
+        self.addCleanup(workspace.stop)
 
     def test_final_text_is_not_printed_again_on_run_finished(self) -> None:
         """最终事件只应展示耗时，不应再次输出完整回答。"""

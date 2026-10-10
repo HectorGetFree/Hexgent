@@ -12,7 +12,10 @@ from .plan_tools import (
     validate_create_plan,
     validate_update_plan,
 )
-from hexgent.tool.memory_tools import remember, validate_remember
+from hexgent.tool.memory_tools import (
+    remember, validate_remember, validate_lifecycle,
+    supersede_memory, invalidate_memory, delete_memory,
+)
 from hexgent.tool.skill_tools import (
     activate_skill,
     create_skill,
@@ -418,12 +421,25 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         output_schema=PLAN_OUTPUT_SCHEMA,
         permission_capability="plan_state",
     ),
+    "supersede_memory": RegisteredTool(
+        supersede_memory, requires_context=True, validator=validate_lifecycle,
+        permission_capability="memory_state", invalidates_tool_call_cache=True,
+    ),
+    "invalidate_memory": RegisteredTool(
+        invalidate_memory, requires_context=True, validator=validate_lifecycle,
+        permission_capability="memory_state", invalidates_tool_call_cache=True,
+    ),
+    "delete_memory": RegisteredTool(
+        delete_memory, requires_context=True, validator=validate_lifecycle,
+        permission_capability="memory_state", invalidates_tool_call_cache=True,
+    ),
     "remember": RegisteredTool(
         remember,
         requires_context=True,
         validator=validate_remember,
         display_argument="content",
         deduplication_policy="exact",
+        invalidates_tool_call_cache=True,
         output_schema={
             "type": "object",
             "properties": {
