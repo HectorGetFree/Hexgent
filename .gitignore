@@ -22,6 +22,9 @@ __pycache__/
 htmlcov/
 .hexgent/
 
+# Eval 历史运行产物仅保留在本地；源码、Fixture 与 Specification 仍可跟踪。
+/eval/**/runs/
+
 # Build and package artifacts
 build/
 dist/

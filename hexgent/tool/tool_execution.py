@@ -277,11 +277,14 @@ def _execute_prepared_tool_call(
     *,
     context: ToolExecutionContext,
     call_id: str | None,
+    observation_attempt: int = 1,
 ) -> ToolExecutionResult:
     """只执行已经允许的工具函数，并提交工具级缓存副作用。"""
     # 1. 真正执行工具，并把基础设施异常转换为结构化失败。
     try:
-        handler_result = prepared.tool.execute(prepared.arguments, context)
+        from hexgent.observation import observed_handler
+        handler_result = observed_handler(prepared.tool.execute, prepared.arguments, context,
+                                          call_id, observation_attempt, prepared.tool.function.__name__)
     except FileNotFoundError as error:
         return _failure_result(
             "error",
@@ -408,6 +411,7 @@ def execute_tool_call(
             prepared,
             context=context,
             call_id=call_id,
+            observation_attempt=attempt_count,
         )
         result = ToolExecutionResult(
             result.status,

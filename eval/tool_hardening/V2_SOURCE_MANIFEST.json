@@ -1,0 +1,2134 @@
+{
+  "status": "PENDING_HUMAN_REVIEW",
+  "benchmark_executed": false,
+  "planning_mode": "PRECOMPUTED_FROZEN_PLAN",
+  "tasks": [
+    {
+      "task_name": "tool_pipeline",
+      "total_tool_calls": 26,
+      "total_batches": 4,
+      "calls_per_batch": [
+        4,
+        4,
+        12,
+        6
+      ],
+      "total_files_read": 22,
+      "total_source_bytes": 197783,
+      "total_test_bytes": 72312,
+      "total_read_bytes": 270095,
+      "unique_files_covered": [
+        "hexgent/config.py",
+        "hexgent/events.py",
+        "hexgent/loop/agent_turn.py",
+        "hexgent/prompt.py",
+        "hexgent/run_control.py",
+        "hexgent/session/session_store.py",
+        "hexgent/tool/builtin_tools.py",
+        "hexgent/tool/tool_context.py",
+        "hexgent/tool/tool_execution.py",
+        "hexgent/tool/tool_permission_pipeline.py",
+        "hexgent/tool/tool_registry.py",
+        "hexgent/tool/tool_result.py",
+        "hexgent/tool/tool_retry.py",
+        "hexgent/tool/tool_scheduler.py",
+        "hexgent/tool/tool_validation.py",
+        "hexgent/utils/token_estimator.py",
+        "tests/test_permission_pipeline.py",
+        "tests/test_session_store.py",
+        "tests/test_tool_deduplication.py",
+        "tests/test_tool_failure_boundaries.py",
+        "tests/test_tool_parallel_execution.py",
+        "tests/test_tool_permission.py"
+      ],
+      "duplicate_reads": 0,
+      "tool_type_distribution": {
+        "glob": 4,
+        "read_file": 22
+      },
+      "dependency_barriers": [
+        "discovery → core：验证计划入口存在",
+        "core → dependencies：实现职责确定后追踪调用方和数据契约",
+        "dependencies → tests：按已识别边界核对测试；仅读取，不执行测试"
+      ],
+      "in_batch_independence": "计划在准备阶段已冻结；每批只读不同文件，无写入、输出参数传递或顺序依赖；dependencies 包含逻辑互相引用文件，但读取行为独立",
+      "source_coverage_manifest": [
+        {
+          "path": "hexgent/tool/tool_registry.py",
+          "role": "core",
+          "purpose": "工具声明、真实函数、并发/重试/去重/权限能力元数据",
+          "bytes": 15688,
+          "lines": 450,
+          "sha256": "8f9d69f4cdb16f56f01dfe9dffccc3e0aac8b8a20d06a270c0de2ba2be8612be",
+          "top_level_symbols": [
+            "RegisteredTool",
+            "_describe_read_file",
+            "get_tool"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_scheduler.py",
+          "role": "core",
+          "purpose": "分组屏障、线程池、顺序提交、超时和输出预算",
+          "bytes": 29720,
+          "lines": 760,
+          "sha256": "f80c7924a0504232efda1c0956010bd6d9825fc0d08c1c36b78d952d1dccb3bd",
+          "top_level_symbols": [
+            "ToolParallelLimits",
+            "ToolBatchResult",
+            "CompletedToolCall",
+            "ToolCallGroup",
+            "ScheduledToolCall",
+            "partition_tool_calls",
+            "_budget_tool_result",
+            "_interrupted_tool_result",
+            "_truncate_to_token_budget",
+            "_apply_batch_result_budget",
+            "_run_scheduled_call",
+            "_execute_scheduled_group",
+            "_status_counts",
+            "execute_tool_batch"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_execution.py",
+          "role": "core",
+          "purpose": "prepare/dispatch/handler、权限事实、失败转换与重试",
+          "bytes": 16000,
+          "lines": 478,
+          "sha256": "0af2f41435322847295e542d9a70c4949cd173e168319fdf0e6d8de854940a0a",
+          "top_level_symbols": [
+            "PreparedToolCall",
+            "unavailable_user_confirmation",
+            "_resolve_permission",
+            "_build_tool_call_fingerprint",
+            "_deduplicated_result",
+            "_prepare_tool_call",
+            "_execute_prepared_tool_call",
+            "execute_tool_call",
+            "execute_tool_batch",
+            "_partition_tool_calls"
+          ]
+        },
+        {
+          "path": "hexgent/tool/builtin_tools.py",
+          "role": "core",
+          "purpose": "read_file/glob 实际 I/O、内容缓存及文件读写语义",
+          "bytes": 10897,
+          "lines": 319,
+          "sha256": "14dc4a5b2bc703cc35288baadb3361aae23f8e96fdd886d02c25470daef475f1",
+          "top_level_symbols": [
+            "bash",
+            "_resolve_path",
+            "validate_read_file",
+            "read_file",
+            "_unchanged_file_result",
+            "_read_file_metadata",
+            "write_file",
+            "edit_file",
+            "glob"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_context.py",
+          "role": "dependencies",
+          "purpose": "缓存、锁、指纹、工具运行上下文",
+          "bytes": 5899,
+          "lines": 167,
+          "sha256": "9aeef5d6a1743b08c286a17f7481374d41d8f89a95a07ab1bb1dd218dbd73a4d",
+          "top_level_symbols": [
+            "ReadFileCacheKey",
+            "ReadFileCacheEntry",
+            "ToolCallCacheEntry",
+            "ToolExecutionContext",
+            "build_tool_call_fingerprint",
+            "build_deduplicated_output"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_permission_pipeline.py",
+          "role": "dependencies",
+          "purpose": "PermissionConfig、mode、规则优先级与工作区边界",
+          "bytes": 11613,
+          "lines": 358,
+          "sha256": "b93dd6bb17dc2dd6cdd1438f92e650003c8e473467d2d1c24590c894071b2265",
+          "top_level_symbols": [
+            "PermissionConfig",
+            "PermissionContext",
+            "PermissionRule",
+            "PermissionEvaluation",
+            "_resolve_path",
+            "_is_outside_workspace",
+            "_outside_workspace_message",
+            "_glob_escapes_workspace",
+            "_contains_command_keyword",
+            "_match_rule",
+            "_from_rule",
+            "_evaluate_mode",
+            "evaluate_permission"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_validation.py",
+          "role": "dependencies",
+          "purpose": "参数解析、Schema 与工具专属校验",
+          "bytes": 4517,
+          "lines": 123,
+          "sha256": "e256bd1ad79b1e54b10c8141ccb64b128c6423308157b4f1efa24282cd59e335",
+          "top_level_symbols": [
+            "_invalid",
+            "_parse_arguments",
+            "_matches_json_type",
+            "_allows_null",
+            "_validate_arguments",
+            "parse_and_validate_tool_arguments"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_result.py",
+          "role": "dependencies",
+          "purpose": "Handler/Execution Result、failure、输出验证",
+          "bytes": 7909,
+          "lines": 215,
+          "sha256": "83281c4cdf296ecc05279a9ce26747b2ded073c95faa37f6e7c0334b7c3730c2",
+          "top_level_symbols": [
+            "ToolFailure",
+            "ToolExecutionResult",
+            "build_tool_failure_result",
+            "ToolHandlerResult",
+            "validate_json_output",
+            "_validate_json_value",
+            "_matches_json_output_type"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_retry.py",
+          "role": "dependencies",
+          "purpose": "安全重试条件与退避预算",
+          "bytes": 1877,
+          "lines": 62,
+          "sha256": "ac88abc3282c7f149ca6f8000bcd76035fb9318acbb77e009d89d14542665ceb",
+          "top_level_symbols": [
+            "ToolRetryLimits",
+            "should_retry_tool_failure",
+            "retry_backoff_seconds"
+          ]
+        },
+        {
+          "path": "hexgent/loop/agent_turn.py",
+          "role": "dependencies",
+          "purpose": "主要调用方：Tool Batch 与下一轮 Context 提交",
+          "bytes": 24247,
+          "lines": 646,
+          "sha256": "8e65ec9eeb3bad077291856e94736d7527f5794d2af35901b233ab2e97c678b5",
+          "top_level_symbols": [
+            "_finalization_message",
+            "_continue_with_finalization",
+            "_failure_stop",
+            "_apply_plan_exit",
+            "_control_stop",
+            "_continue_with_steering",
+            "run_turn",
+            "_available_tools_for_state",
+            "_activated_skill"
+          ]
+        },
+        {
+          "path": "hexgent/session/session_store.py",
+          "role": "dependencies",
+          "purpose": "调用事实持久化、大结果外置与引用",
+          "bytes": 23303,
+          "lines": 571,
+          "sha256": "4252861988bb8f1723dd41ff0dec43f5c058ce0aa9f0d1bf3fcfc35252752223",
+          "top_level_symbols": [
+            "ToolResultLimits",
+            "PersistedToolResult",
+            "SessionStore",
+            "_build_display_name",
+            "_build_tool_result_filename",
+            "_extract_readable_argument",
+            "_beijing_now",
+            "_json_default",
+            "_write_json_atomically",
+            "build_persisted_output_message"
+          ]
+        },
+        {
+          "path": "hexgent/config.py",
+          "role": "dependencies",
+          "purpose": "并发、重试、Permission、结果预算加载与覆盖",
+          "bytes": 11474,
+          "lines": 312,
+          "sha256": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112",
+          "top_level_symbols": [
+            "ConfigError",
+            "HexgentConfig",
+            "RunOptions",
+            "load_config",
+            "validate_config",
+            "_load_section",
+            "_validate_field",
+            "_validate_relationships"
+          ]
+        },
+        {
+          "path": "hexgent/run_control.py",
+          "role": "dependencies",
+          "purpose": "中断控制与调度器取消边界",
+          "bytes": 7034,
+          "lines": 190,
+          "sha256": "7a4ae8fe0ab31746821db1aaf26b1034fe7ef1f953df750da087ce54b19e5549",
+          "top_level_symbols": [
+            "InterruptController",
+            "SteeringQuery",
+            "SteeringMailbox",
+            "RunControl"
+          ]
+        },
+        {
+          "path": "hexgent/events.py",
+          "role": "dependencies",
+          "purpose": "开始、执行完成、顺序提交及批次事件的数据契约",
+          "bytes": 6874,
+          "lines": 240,
+          "sha256": "55f1a921731c0c1fc14b1d506f4b6197e7c94b681d1e6d7f15833174cbfe5bd4",
+          "top_level_symbols": [
+            "AgentLoopResult",
+            "TextDeltaEvent",
+            "ToolStartedEvent",
+            "ToolExecutionCompletedEvent",
+            "ToolFinishedEvent",
+            "ToolBatchStartedEvent",
+            "ToolBatchFinishedEvent",
+            "PlanCreatedEvent",
+            "PlanUpdatedEvent",
+            "LoopLimitReachedEvent",
+            "LoopTransitionEvent",
+            "CheckpointCommittedEvent",
+            "ContextCompactionStartedEvent",
+            "ContextCompactionFinishedEvent",
+            "ContextCompactionFailedEvent",
+            "RunFinishedEvent"
+          ]
+        },
+        {
+          "path": "hexgent/prompt.py",
+          "role": "dependencies",
+          "purpose": "正式工具参数 Schema 来源",
+          "bytes": 19406,
+          "lines": 456,
+          "sha256": "9747801be52eebacb45ea35163eb9288f075c6df840ef25cafc3fed021255bfc",
+          "top_level_symbols": []
+        },
+        {
+          "path": "hexgent/utils/token_estimator.py",
+          "role": "dependencies",
+          "purpose": "批次结果预算依赖的估算器",
+          "bytes": 1325,
+          "lines": 45,
+          "sha256": "cbfdfc3157d9168bdb8126a5e03fc0d53c5f587b7d94d6b7852511410f5a5c07",
+          "top_level_symbols": [
+            "_serializable",
+            "estimate_value_tokens",
+            "estimate_request_tokens"
+          ]
+        },
+        {
+          "path": "tests/test_tool_parallel_execution.py",
+          "role": "tests",
+          "purpose": "并发、屏障分组、完成/输出顺序、超时、取消",
+          "bytes": 13322,
+          "lines": 350,
+          "sha256": "a4cc0ce87970c07adb8c8c5bc76793a1053e95f53cac88628364c5b881b1fa20",
+          "top_level_symbols": [
+            "drain_generator",
+            "make_call",
+            "ToolParallelExecutionTest"
+          ]
+        },
+        {
+          "path": "tests/test_tool_failure_boundaries.py",
+          "role": "tests",
+          "purpose": "参数/输出失败、安全重试与未知副作用",
+          "bytes": 13374,
+          "lines": 349,
+          "sha256": "7b09e6c3f4b336a4d5bb84f8851e086bbca2ba6d574f8f77e45e5cf06dcdd26a",
+          "top_level_symbols": [
+            "ToolFailureBoundariesTest"
+          ]
+        },
+        {
+          "path": "tests/test_tool_deduplication.py",
+          "role": "tests",
+          "purpose": "只读去重、写入失效与调用配对",
+          "bytes": 6174,
+          "lines": 161,
+          "sha256": "65f2352a1bd51573e4173ff57f51896d2f53a4e2d1ac5b45771ce3ea6831053e",
+          "top_level_symbols": [
+            "drain_generator",
+            "make_call",
+            "ToolDeduplicationTest"
+          ]
+        },
+        {
+          "path": "tests/test_permission_pipeline.py",
+          "role": "tests",
+          "purpose": "权限模式、拒绝优先级与 durable decision",
+          "bytes": 6968,
+          "lines": 173,
+          "sha256": "ca14da49f2932bc13faadf6ff7061fbf8086a230edd69ceaaf98dfbf58c6d63b",
+          "top_level_symbols": [
+            "PermissionPipelineTest"
+          ]
+        },
+        {
+          "path": "tests/test_tool_permission.py",
+          "role": "tests",
+          "purpose": "本地路径与具体工具的权限边界",
+          "bytes": 2824,
+          "lines": 79,
+          "sha256": "8c27f19c844ac76c39d3d86d24481eb5eae3f48ff8759106fde6eb2c7e57bc3b",
+          "top_level_symbols": [
+            "ToolPermissionTest"
+          ]
+        },
+        {
+          "path": "tests/test_session_store.py",
+          "role": "tests",
+          "purpose": "大结果 Artifact、并发 Transcript 与持久化引用",
+          "bytes": 29650,
+          "lines": 728,
+          "sha256": "aba6d1806d237dd7c9e2d7c8ee4af724029397f559fc27dedd1eda62ad521c03",
+          "top_level_symbols": [
+            "drain_generator",
+            "SessionStoreTest"
+          ]
+        }
+      ],
+      "batches": [
+        {
+          "stage": "discovery",
+          "depends_on": [],
+          "calls": [
+            {
+              "call_id": "tool_pipeline-discovery-0",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "hexgent/tool/*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "hexgent/tool/__init__.py",
+                "hexgent/tool/builtin_tools.py",
+                "hexgent/tool/memory_tools.py",
+                "hexgent/tool/plan_tools.py",
+                "hexgent/tool/skill_tools.py",
+                "hexgent/tool/tool_context.py",
+                "hexgent/tool/tool_execution.py",
+                "hexgent/tool/tool_permission_pipeline.py",
+                "hexgent/tool/tool_registry.py",
+                "hexgent/tool/tool_result.py",
+                "hexgent/tool/tool_retry.py",
+                "hexgent/tool/tool_scheduler.py",
+                "hexgent/tool/tool_validation.py",
+                "hexgent/tool/workspace_capability_tool.py"
+              ]
+            },
+            {
+              "call_id": "tool_pipeline-discovery-1",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "hexgent/loop/*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "hexgent/loop/__init__.py",
+                "hexgent/loop/agent_loop.py",
+                "hexgent/loop/agent_turn.py",
+                "hexgent/loop/call_model.py",
+                "hexgent/loop/extract_context_records.py",
+                "hexgent/loop/limits.py",
+                "hexgent/loop/loop_state.py",
+                "hexgent/loop/transitions.py"
+              ]
+            },
+            {
+              "call_id": "tool_pipeline-discovery-2",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "tests/test_tool*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "tests/test_tool_deduplication.py",
+                "tests/test_tool_failure_boundaries.py",
+                "tests/test_tool_parallel_execution.py",
+                "tests/test_tool_permission.py"
+              ]
+            },
+            {
+              "call_id": "tool_pipeline-discovery-3",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "tests/test_permission*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "tests/test_permission_pipeline.py"
+              ]
+            }
+          ]
+        },
+        {
+          "stage": "core",
+          "depends_on": [
+            "discovery"
+          ],
+          "calls": [
+            {
+              "call_id": "tool_pipeline-core-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_registry.py"
+              },
+              "purpose": "工具声明、真实函数、并发/重试/去重/权限能力元数据",
+              "expected_sha256": "8f9d69f4cdb16f56f01dfe9dffccc3e0aac8b8a20d06a270c0de2ba2be8612be"
+            },
+            {
+              "call_id": "tool_pipeline-core-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_scheduler.py"
+              },
+              "purpose": "分组屏障、线程池、顺序提交、超时和输出预算",
+              "expected_sha256": "f80c7924a0504232efda1c0956010bd6d9825fc0d08c1c36b78d952d1dccb3bd"
+            },
+            {
+              "call_id": "tool_pipeline-core-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_execution.py"
+              },
+              "purpose": "prepare/dispatch/handler、权限事实、失败转换与重试",
+              "expected_sha256": "0af2f41435322847295e542d9a70c4949cd173e168319fdf0e6d8de854940a0a"
+            },
+            {
+              "call_id": "tool_pipeline-core-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/builtin_tools.py"
+              },
+              "purpose": "read_file/glob 实际 I/O、内容缓存及文件读写语义",
+              "expected_sha256": "14dc4a5b2bc703cc35288baadb3361aae23f8e96fdd886d02c25470daef475f1"
+            }
+          ]
+        },
+        {
+          "stage": "dependencies",
+          "depends_on": [
+            "core"
+          ],
+          "calls": [
+            {
+              "call_id": "tool_pipeline-dependencies-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_context.py"
+              },
+              "purpose": "缓存、锁、指纹、工具运行上下文",
+              "expected_sha256": "9aeef5d6a1743b08c286a17f7481374d41d8f89a95a07ab1bb1dd218dbd73a4d"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_permission_pipeline.py"
+              },
+              "purpose": "PermissionConfig、mode、规则优先级与工作区边界",
+              "expected_sha256": "b93dd6bb17dc2dd6cdd1438f92e650003c8e473467d2d1c24590c894071b2265"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_validation.py"
+              },
+              "purpose": "参数解析、Schema 与工具专属校验",
+              "expected_sha256": "e256bd1ad79b1e54b10c8141ccb64b128c6423308157b4f1efa24282cd59e335"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_result.py"
+              },
+              "purpose": "Handler/Execution Result、failure、输出验证",
+              "expected_sha256": "83281c4cdf296ecc05279a9ce26747b2ded073c95faa37f6e7c0334b7c3730c2"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_retry.py"
+              },
+              "purpose": "安全重试条件与退避预算",
+              "expected_sha256": "ac88abc3282c7f149ca6f8000bcd76035fb9318acbb77e009d89d14542665ceb"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-5",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/loop/agent_turn.py"
+              },
+              "purpose": "主要调用方：Tool Batch 与下一轮 Context 提交",
+              "expected_sha256": "8e65ec9eeb3bad077291856e94736d7527f5794d2af35901b233ab2e97c678b5"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-6",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/session_store.py"
+              },
+              "purpose": "调用事实持久化、大结果外置与引用",
+              "expected_sha256": "4252861988bb8f1723dd41ff0dec43f5c058ce0aa9f0d1bf3fcfc35252752223"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-7",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/config.py"
+              },
+              "purpose": "并发、重试、Permission、结果预算加载与覆盖",
+              "expected_sha256": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-8",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/run_control.py"
+              },
+              "purpose": "中断控制与调度器取消边界",
+              "expected_sha256": "7a4ae8fe0ab31746821db1aaf26b1034fe7ef1f953df750da087ce54b19e5549"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-9",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/events.py"
+              },
+              "purpose": "开始、执行完成、顺序提交及批次事件的数据契约",
+              "expected_sha256": "55f1a921731c0c1fc14b1d506f4b6197e7c94b681d1e6d7f15833174cbfe5bd4"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-10",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/prompt.py"
+              },
+              "purpose": "正式工具参数 Schema 来源",
+              "expected_sha256": "9747801be52eebacb45ea35163eb9288f075c6df840ef25cafc3fed021255bfc"
+            },
+            {
+              "call_id": "tool_pipeline-dependencies-11",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/utils/token_estimator.py"
+              },
+              "purpose": "批次结果预算依赖的估算器",
+              "expected_sha256": "cbfdfc3157d9168bdb8126a5e03fc0d53c5f587b7d94d6b7852511410f5a5c07"
+            }
+          ]
+        },
+        {
+          "stage": "tests",
+          "depends_on": [
+            "dependencies"
+          ],
+          "calls": [
+            {
+              "call_id": "tool_pipeline-tests-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_tool_parallel_execution.py"
+              },
+              "purpose": "并发、屏障分组、完成/输出顺序、超时、取消",
+              "expected_sha256": "a4cc0ce87970c07adb8c8c5bc76793a1053e95f53cac88628364c5b881b1fa20"
+            },
+            {
+              "call_id": "tool_pipeline-tests-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_tool_failure_boundaries.py"
+              },
+              "purpose": "参数/输出失败、安全重试与未知副作用",
+              "expected_sha256": "7b09e6c3f4b336a4d5bb84f8851e086bbca2ba6d574f8f77e45e5cf06dcdd26a"
+            },
+            {
+              "call_id": "tool_pipeline-tests-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_tool_deduplication.py"
+              },
+              "purpose": "只读去重、写入失效与调用配对",
+              "expected_sha256": "65f2352a1bd51573e4173ff57f51896d2f53a4e2d1ac5b45771ce3ea6831053e"
+            },
+            {
+              "call_id": "tool_pipeline-tests-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_permission_pipeline.py"
+              },
+              "purpose": "权限模式、拒绝优先级与 durable decision",
+              "expected_sha256": "ca14da49f2932bc13faadf6ff7061fbf8086a230edd69ceaaf98dfbf58c6d63b"
+            },
+            {
+              "call_id": "tool_pipeline-tests-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_tool_permission.py"
+              },
+              "purpose": "本地路径与具体工具的权限边界",
+              "expected_sha256": "8c27f19c844ac76c39d3d86d24481eb5eae3f48ff8759106fde6eb2c7e57bc3b"
+            },
+            {
+              "call_id": "tool_pipeline-tests-5",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_session_store.py"
+              },
+              "purpose": "大结果 Artifact、并发 Transcript 与持久化引用",
+              "expected_sha256": "aba6d1806d237dd7c9e2d7c8ee4af724029397f559fc27dedd1eda62ad521c03"
+            }
+          ]
+        }
+      ],
+      "excluded_scope": "不追踪每个 Workspace capability/Skill/Plan 的业务 Handler；本题覆盖通用工具管线与内置本地工具，不声称覆盖全部工具业务。"
+    },
+    {
+      "task_name": "recovery_checkpoint",
+      "total_tool_calls": 25,
+      "total_batches": 4,
+      "calls_per_batch": [
+        4,
+        5,
+        11,
+        5
+      ],
+      "total_files_read": 21,
+      "total_source_bytes": 249847,
+      "total_test_bytes": 95500,
+      "total_read_bytes": 345347,
+      "unique_files_covered": [
+        "hexgent/adapters/web/run_manager.py",
+        "hexgent/agent_engine.py",
+        "hexgent/config.py",
+        "hexgent/context/context_manager.py",
+        "hexgent/integration/runtime_adapter.py",
+        "hexgent/loop/agent_loop.py",
+        "hexgent/loop/agent_turn.py",
+        "hexgent/loop/loop_state.py",
+        "hexgent/plan/plan_model.py",
+        "hexgent/run_control.py",
+        "hexgent/session/checkpoint.py",
+        "hexgent/session/session.py",
+        "hexgent/session/session_restore.py",
+        "hexgent/session/session_store.py",
+        "hexgent/session/tool_call_recovery.py",
+        "hexgent/tool/tool_scheduler.py",
+        "tests/test_agent_engine_stream.py",
+        "tests/test_loop_interrupt.py",
+        "tests/test_runtime_command_effect_reconciliation_phase4.py",
+        "tests/test_session_recovery.py",
+        "tests/test_session_store.py"
+      ],
+      "duplicate_reads": 0,
+      "tool_type_distribution": {
+        "glob": 4,
+        "read_file": 21
+      },
+      "dependency_barriers": [
+        "discovery → core：验证计划入口存在",
+        "core → dependencies：实现职责确定后追踪调用方和数据契约",
+        "dependencies → tests：按已识别边界核对测试；仅读取，不执行测试"
+      ],
+      "in_batch_independence": "计划在准备阶段已冻结；每批只读不同文件，无写入、输出参数传递或顺序依赖；dependencies 包含逻辑互相引用文件，但读取行为独立",
+      "source_coverage_manifest": [
+        {
+          "path": "hexgent/session/session_restore.py",
+          "role": "core",
+          "purpose": "checkpoint 选择、Transcript replay、结果补回和恢复状态",
+          "bytes": 20598,
+          "lines": 514,
+          "sha256": "dc33e0cc33bf84e4f584801b55257a23e69c06c2a4dfbf55eae0b1b81156be18",
+          "top_level_symbols": [
+            "RestoredSession",
+            "SessionRestorer",
+            "_permission_mode",
+            "_committed_checkpoints",
+            "_pending_run_state",
+            "_plan_from_payload",
+            "_build_interrupted_tool_outputs",
+            "_build_finished_tool_outputs",
+            "_tool_call_ids",
+            "_finished_model_output",
+            "_persisted_artifact_id",
+            "_read_persisted_tool_output",
+            "_required_string",
+            "_optional_string",
+            "_required_int"
+          ]
+        },
+        {
+          "path": "hexgent/session/checkpoint.py",
+          "role": "core",
+          "purpose": "Checkpoint 数据结构、checksum、原子文件与安全快照",
+          "bytes": 9702,
+          "lines": 231,
+          "sha256": "47881bff5fa87f93bdd0f4ba61d1101ab89c33ece0daa50f81d3a92ee64d4106",
+          "top_level_symbols": [
+            "Checkpoint",
+            "CheckpointStore",
+            "_context_snapshot",
+            "_json_value",
+            "_checksum"
+          ]
+        },
+        {
+          "path": "hexgent/session/tool_call_recovery.py",
+          "role": "core",
+          "purpose": "未闭合调用分类与未知副作用保守结果",
+          "bytes": 3347,
+          "lines": 86,
+          "sha256": "8291c60d679e4fee8448b24a2a557120ac6b846f1f39977ddcdc573b80e53e10",
+          "top_level_symbols": [
+            "UnclosedToolCall",
+            "find_unclosed_tool_calls",
+            "build_recovery_tool_output"
+          ]
+        },
+        {
+          "path": "hexgent/session/session_store.py",
+          "role": "core",
+          "purpose": "Transcript 序号、锁、原子写与外置工件",
+          "bytes": 23303,
+          "lines": 571,
+          "sha256": "4252861988bb8f1723dd41ff0dec43f5c058ce0aa9f0d1bf3fcfc35252752223",
+          "top_level_symbols": [
+            "ToolResultLimits",
+            "PersistedToolResult",
+            "SessionStore",
+            "_build_display_name",
+            "_build_tool_result_filename",
+            "_extract_readable_argument",
+            "_beijing_now",
+            "_json_default",
+            "_write_json_atomically",
+            "build_persisted_output_message"
+          ]
+        },
+        {
+          "path": "hexgent/session/session.py",
+          "role": "core",
+          "purpose": "run 生命周期、checkpoint 提交与 durable Context facts",
+          "bytes": 21220,
+          "lines": 522,
+          "sha256": "6d3ba0fe7d7783f5e276f9cfd6290fa91f4db10d3dc747524415774626401c99",
+          "top_level_symbols": [
+            "SessionSettings",
+            "Session"
+          ]
+        },
+        {
+          "path": "hexgent/agent_engine.py",
+          "role": "dependencies",
+          "purpose": "主要调用方：restore、continue 与新 Engine 重建",
+          "bytes": 14780,
+          "lines": 358,
+          "sha256": "b6862cd032114b30f992bc6b50325aaed84963b845487334270d2fc2315acb93",
+          "top_level_symbols": [
+            "RunRequest",
+            "AgentEngine"
+          ]
+        },
+        {
+          "path": "hexgent/loop/loop_state.py",
+          "role": "dependencies",
+          "purpose": "RunStateSnapshot 与可恢复执行状态",
+          "bytes": 11041,
+          "lines": 275,
+          "sha256": "6aadd9db83be2f274101385ec25c8e49084eacf24d6417a50c8fdab8d38f0cf9",
+          "top_level_symbols": [
+            "RunStateSnapshot",
+            "LoopState",
+            "_snapshot_int"
+          ]
+        },
+        {
+          "path": "hexgent/loop/agent_loop.py",
+          "role": "dependencies",
+          "purpose": "Run 开始、恢复后 Loop 入口与终态",
+          "bytes": 5713,
+          "lines": 144,
+          "sha256": "13e4cff303d3dff2641bc98defe97fd081e6254765dd5a6149cbd753980c2420",
+          "top_level_symbols": [
+            "agent_loop"
+          ]
+        },
+        {
+          "path": "hexgent/loop/agent_turn.py",
+          "role": "dependencies",
+          "purpose": "安全批次边界、Context output 与 checkpoint 的先后关系",
+          "bytes": 24247,
+          "lines": 646,
+          "sha256": "8e65ec9eeb3bad077291856e94736d7527f5794d2af35901b233ab2e97c678b5",
+          "top_level_symbols": [
+            "_finalization_message",
+            "_continue_with_finalization",
+            "_failure_stop",
+            "_apply_plan_exit",
+            "_control_stop",
+            "_continue_with_steering",
+            "run_turn",
+            "_available_tools_for_state",
+            "_activated_skill"
+          ]
+        },
+        {
+          "path": "hexgent/tool/tool_scheduler.py",
+          "role": "dependencies",
+          "purpose": "started/dispatched/finished durable 顺序",
+          "bytes": 29720,
+          "lines": 760,
+          "sha256": "f80c7924a0504232efda1c0956010bd6d9825fc0d08c1c36b78d952d1dccb3bd",
+          "top_level_symbols": [
+            "ToolParallelLimits",
+            "ToolBatchResult",
+            "CompletedToolCall",
+            "ToolCallGroup",
+            "ScheduledToolCall",
+            "partition_tool_calls",
+            "_budget_tool_result",
+            "_interrupted_tool_result",
+            "_truncate_to_token_budget",
+            "_apply_batch_result_budget",
+            "_run_scheduled_call",
+            "_execute_scheduled_group",
+            "_status_counts",
+            "execute_tool_batch"
+          ]
+        },
+        {
+          "path": "hexgent/context/context_manager.py",
+          "role": "dependencies",
+          "purpose": "被恢复的 query/messages/summary 状态",
+          "bytes": 11541,
+          "lines": 283,
+          "sha256": "146aace143afbc6476bd9be4723f0e9465e6bf276876140dcc2b3c3266862246",
+          "top_level_symbols": [
+            "UserQuery",
+            "ContextManager",
+            "_is_user_message"
+          ]
+        },
+        {
+          "path": "hexgent/plan/plan_model.py",
+          "role": "dependencies",
+          "purpose": "checkpoint 中 Plan/Step 数据结构",
+          "bytes": 3836,
+          "lines": 122,
+          "sha256": "b5786a0a7ce43170af65532f12eecc576190d140067d040fc3dad029d46a8a67",
+          "top_level_symbols": [
+            "PlanStep",
+            "Plan",
+            "PlanStore",
+            "InMemoryPlanStore",
+            "plan_needs_continuation",
+            "format_plan_context"
+          ]
+        },
+        {
+          "path": "hexgent/config.py",
+          "role": "dependencies",
+          "purpose": "恢复时运行配置与覆盖契约",
+          "bytes": 11474,
+          "lines": 312,
+          "sha256": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112",
+          "top_level_symbols": [
+            "ConfigError",
+            "HexgentConfig",
+            "RunOptions",
+            "load_config",
+            "validate_config",
+            "_load_section",
+            "_validate_field",
+            "_validate_relationships"
+          ]
+        },
+        {
+          "path": "hexgent/adapters/web/run_manager.py",
+          "role": "dependencies",
+          "purpose": "外部恢复调用方、PendingPermission 与 RunHandle 生命周期",
+          "bytes": 28160,
+          "lines": 700,
+          "sha256": "a0f66cffb8b679e08702be63602016532213850c45349edc7239753a3667fc6f",
+          "top_level_symbols": [
+            "PendingPermission",
+            "SessionHandle",
+            "RunHandle",
+            "RunManager"
+          ]
+        },
+        {
+          "path": "hexgent/integration/runtime_adapter.py",
+          "role": "dependencies",
+          "purpose": "durable command reconcile 的恢复入口",
+          "bytes": 24131,
+          "lines": 521,
+          "sha256": "34df7b16ad8578c82edf6024298c80e0a8941f65f1bc1605b62f3b6271a9bf84",
+          "top_level_symbols": [
+            "_WorkspaceRunAssociation",
+            "RuntimeCommandAdapter"
+          ]
+        },
+        {
+          "path": "hexgent/run_control.py",
+          "role": "dependencies",
+          "purpose": "恢复后执行中断状态的边界",
+          "bytes": 7034,
+          "lines": 190,
+          "sha256": "7a4ae8fe0ab31746821db1aaf26b1034fe7ef1f953df750da087ce54b19e5549",
+          "top_level_symbols": [
+            "InterruptController",
+            "SteeringQuery",
+            "SteeringMailbox",
+            "RunControl"
+          ]
+        },
+        {
+          "path": "tests/test_session_recovery.py",
+          "role": "tests",
+          "purpose": "损坏快照 fallback、未派发/未知副作用分类、finished 补回",
+          "bytes": 17167,
+          "lines": 405,
+          "sha256": "e71422eaa8665533a1ad8986d202220698d8499fa7ce0bea842bb7c275729c17",
+          "top_level_symbols": [
+            "SessionRecoveryTest"
+          ]
+        },
+        {
+          "path": "tests/test_session_store.py",
+          "role": "tests",
+          "purpose": "持久化事实、序号、外置结果恢复",
+          "bytes": 29650,
+          "lines": 728,
+          "sha256": "aba6d1806d237dd7c9e2d7c8ee4af724029397f559fc27dedd1eda62ad521c03",
+          "top_level_symbols": [
+            "drain_generator",
+            "SessionStoreTest"
+          ]
+        },
+        {
+          "path": "tests/test_loop_interrupt.py",
+          "role": "tests",
+          "purpose": "执行中断与安全边界",
+          "bytes": 14313,
+          "lines": 380,
+          "sha256": "f993ff84b2c5867e02250ac4b5f4527edea74bb28d8f3f9921c26b07417f6dfb",
+          "top_level_symbols": [
+            "FakeResponses",
+            "FakeClient",
+            "make_response",
+            "make_tool_call",
+            "finished_result",
+            "run_loop",
+            "LoopInterruptTest"
+          ]
+        },
+        {
+          "path": "tests/test_runtime_command_effect_reconciliation_phase4.py",
+          "role": "tests",
+          "purpose": "真实命令持久化与重启 reconcile",
+          "bytes": 20967,
+          "lines": 360,
+          "sha256": "dcf9985249df6015371066f7a33d78a2ea103db29259b16bcfff3ef7e523b37d",
+          "top_level_symbols": [
+            "RuntimeCommandEffectReconciliationPhase4Test"
+          ]
+        },
+        {
+          "path": "tests/test_agent_engine_stream.py",
+          "role": "tests",
+          "purpose": "Engine 执行及工具结果流转",
+          "bytes": 13403,
+          "lines": 376,
+          "sha256": "b13aa83d27293a3d243ce20c8e35c64ad971dc5cc645d9d186f9983d02616164",
+          "top_level_symbols": [
+            "FakeTerminalIO",
+            "CliAdapterStreamTest"
+          ]
+        }
+      ],
+      "batches": [
+        {
+          "stage": "discovery",
+          "depends_on": [],
+          "calls": [
+            {
+              "call_id": "recovery_checkpoint-discovery-0",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "hexgent/session/*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "hexgent/session/__init__.py",
+                "hexgent/session/checkpoint.py",
+                "hexgent/session/run_report.py",
+                "hexgent/session/session.py",
+                "hexgent/session/session_restore.py",
+                "hexgent/session/session_store.py",
+                "hexgent/session/tool_call_recovery.py"
+              ]
+            },
+            {
+              "call_id": "recovery_checkpoint-discovery-1",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "hexgent/loop/*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "hexgent/loop/__init__.py",
+                "hexgent/loop/agent_loop.py",
+                "hexgent/loop/agent_turn.py",
+                "hexgent/loop/call_model.py",
+                "hexgent/loop/extract_context_records.py",
+                "hexgent/loop/limits.py",
+                "hexgent/loop/loop_state.py",
+                "hexgent/loop/transitions.py"
+              ]
+            },
+            {
+              "call_id": "recovery_checkpoint-discovery-2",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "tests/test_session*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "tests/test_session_recovery.py",
+                "tests/test_session_store.py"
+              ]
+            },
+            {
+              "call_id": "recovery_checkpoint-discovery-3",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "tests/test_runtime_command*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "tests/test_runtime_command_adapter_phase1.py",
+                "tests/test_runtime_command_effect_reconciliation_phase4.py"
+              ]
+            }
+          ]
+        },
+        {
+          "stage": "core",
+          "depends_on": [
+            "discovery"
+          ],
+          "calls": [
+            {
+              "call_id": "recovery_checkpoint-core-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/session_restore.py"
+              },
+              "purpose": "checkpoint 选择、Transcript replay、结果补回和恢复状态",
+              "expected_sha256": "dc33e0cc33bf84e4f584801b55257a23e69c06c2a4dfbf55eae0b1b81156be18"
+            },
+            {
+              "call_id": "recovery_checkpoint-core-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/checkpoint.py"
+              },
+              "purpose": "Checkpoint 数据结构、checksum、原子文件与安全快照",
+              "expected_sha256": "47881bff5fa87f93bdd0f4ba61d1101ab89c33ece0daa50f81d3a92ee64d4106"
+            },
+            {
+              "call_id": "recovery_checkpoint-core-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/tool_call_recovery.py"
+              },
+              "purpose": "未闭合调用分类与未知副作用保守结果",
+              "expected_sha256": "8291c60d679e4fee8448b24a2a557120ac6b846f1f39977ddcdc573b80e53e10"
+            },
+            {
+              "call_id": "recovery_checkpoint-core-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/session_store.py"
+              },
+              "purpose": "Transcript 序号、锁、原子写与外置工件",
+              "expected_sha256": "4252861988bb8f1723dd41ff0dec43f5c058ce0aa9f0d1bf3fcfc35252752223"
+            },
+            {
+              "call_id": "recovery_checkpoint-core-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/session.py"
+              },
+              "purpose": "run 生命周期、checkpoint 提交与 durable Context facts",
+              "expected_sha256": "6d3ba0fe7d7783f5e276f9cfd6290fa91f4db10d3dc747524415774626401c99"
+            }
+          ]
+        },
+        {
+          "stage": "dependencies",
+          "depends_on": [
+            "core"
+          ],
+          "calls": [
+            {
+              "call_id": "recovery_checkpoint-dependencies-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/agent_engine.py"
+              },
+              "purpose": "主要调用方：restore、continue 与新 Engine 重建",
+              "expected_sha256": "b6862cd032114b30f992bc6b50325aaed84963b845487334270d2fc2315acb93"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/loop/loop_state.py"
+              },
+              "purpose": "RunStateSnapshot 与可恢复执行状态",
+              "expected_sha256": "6aadd9db83be2f274101385ec25c8e49084eacf24d6417a50c8fdab8d38f0cf9"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/loop/agent_loop.py"
+              },
+              "purpose": "Run 开始、恢复后 Loop 入口与终态",
+              "expected_sha256": "13e4cff303d3dff2641bc98defe97fd081e6254765dd5a6149cbd753980c2420"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/loop/agent_turn.py"
+              },
+              "purpose": "安全批次边界、Context output 与 checkpoint 的先后关系",
+              "expected_sha256": "8e65ec9eeb3bad077291856e94736d7527f5794d2af35901b233ab2e97c678b5"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/tool_scheduler.py"
+              },
+              "purpose": "started/dispatched/finished durable 顺序",
+              "expected_sha256": "f80c7924a0504232efda1c0956010bd6d9825fc0d08c1c36b78d952d1dccb3bd"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-5",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/context/context_manager.py"
+              },
+              "purpose": "被恢复的 query/messages/summary 状态",
+              "expected_sha256": "146aace143afbc6476bd9be4723f0e9465e6bf276876140dcc2b3c3266862246"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-6",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/plan/plan_model.py"
+              },
+              "purpose": "checkpoint 中 Plan/Step 数据结构",
+              "expected_sha256": "b5786a0a7ce43170af65532f12eecc576190d140067d040fc3dad029d46a8a67"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-7",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/config.py"
+              },
+              "purpose": "恢复时运行配置与覆盖契约",
+              "expected_sha256": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-8",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/adapters/web/run_manager.py"
+              },
+              "purpose": "外部恢复调用方、PendingPermission 与 RunHandle 生命周期",
+              "expected_sha256": "a0f66cffb8b679e08702be63602016532213850c45349edc7239753a3667fc6f"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-9",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/integration/runtime_adapter.py"
+              },
+              "purpose": "durable command reconcile 的恢复入口",
+              "expected_sha256": "34df7b16ad8578c82edf6024298c80e0a8941f65f1bc1605b62f3b6271a9bf84"
+            },
+            {
+              "call_id": "recovery_checkpoint-dependencies-10",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/run_control.py"
+              },
+              "purpose": "恢复后执行中断状态的边界",
+              "expected_sha256": "7a4ae8fe0ab31746821db1aaf26b1034fe7ef1f953df750da087ce54b19e5549"
+            }
+          ]
+        },
+        {
+          "stage": "tests",
+          "depends_on": [
+            "dependencies"
+          ],
+          "calls": [
+            {
+              "call_id": "recovery_checkpoint-tests-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_session_recovery.py"
+              },
+              "purpose": "损坏快照 fallback、未派发/未知副作用分类、finished 补回",
+              "expected_sha256": "e71422eaa8665533a1ad8986d202220698d8499fa7ce0bea842bb7c275729c17"
+            },
+            {
+              "call_id": "recovery_checkpoint-tests-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_session_store.py"
+              },
+              "purpose": "持久化事实、序号、外置结果恢复",
+              "expected_sha256": "aba6d1806d237dd7c9e2d7c8ee4af724029397f559fc27dedd1eda62ad521c03"
+            },
+            {
+              "call_id": "recovery_checkpoint-tests-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_loop_interrupt.py"
+              },
+              "purpose": "执行中断与安全边界",
+              "expected_sha256": "f993ff84b2c5867e02250ac4b5f4527edea74bb28d8f3f9921c26b07417f6dfb"
+            },
+            {
+              "call_id": "recovery_checkpoint-tests-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_runtime_command_effect_reconciliation_phase4.py"
+              },
+              "purpose": "真实命令持久化与重启 reconcile",
+              "expected_sha256": "dcf9985249df6015371066f7a33d78a2ea103db29259b16bcfff3ef7e523b37d"
+            },
+            {
+              "call_id": "recovery_checkpoint-tests-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_agent_engine_stream.py"
+              },
+              "purpose": "Engine 执行及工具结果流转",
+              "expected_sha256": "b13aa83d27293a3d243ce20c8e35c64ad971dc5cc645d9d186f9983d02616164"
+            }
+          ]
+        }
+      ],
+      "excluded_scope": "不执行 crash 注入，不重新评测 Recovery 能力；不展开 HTTP 路由、CLI 展示和全部 Lifecycle 投影业务。"
+    },
+    {
+      "task_name": "memory_context",
+      "total_tool_calls": 31,
+      "total_batches": 4,
+      "calls_per_batch": [
+        4,
+        6,
+        14,
+        7
+      ],
+      "total_files_read": 27,
+      "total_source_bytes": 184401,
+      "total_test_bytes": 93691,
+      "total_read_bytes": 278092,
+      "unique_files_covered": [
+        "hexgent/agent_engine.py",
+        "hexgent/config.py",
+        "hexgent/context/context_budget.py",
+        "hexgent/context/context_builder.py",
+        "hexgent/context/context_compaction.py",
+        "hexgent/context/context_manager.py",
+        "hexgent/loop/agent_turn.py",
+        "hexgent/loop/extract_context_records.py",
+        "hexgent/memory/context_record_extraction.py",
+        "hexgent/memory/context_records.py",
+        "hexgent/memory/context_retrieval.py",
+        "hexgent/memory/memory_auto_extraction.py",
+        "hexgent/memory/memory_prompts.py",
+        "hexgent/memory/memory_retrieval.py",
+        "hexgent/memory/memory_store.py",
+        "hexgent/session/session.py",
+        "hexgent/session/session_restore.py",
+        "hexgent/tool/memory_tools.py",
+        "hexgent/utils/retrieval_text.py",
+        "hexgent/utils/token_estimator.py",
+        "tests/test_agent_loop_limits.py",
+        "tests/test_context_compaction.py",
+        "tests/test_context_record_extraction.py",
+        "tests/test_context_records.py",
+        "tests/test_context_retrieval.py",
+        "tests/test_memory.py",
+        "tests/test_session_recovery.py"
+      ],
+      "duplicate_reads": 0,
+      "tool_type_distribution": {
+        "glob": 4,
+        "read_file": 27
+      },
+      "dependency_barriers": [
+        "discovery → core：验证计划入口存在",
+        "core → dependencies：实现职责确定后追踪调用方和数据契约",
+        "dependencies → tests：按已识别边界核对测试；仅读取，不执行测试"
+      ],
+      "in_batch_independence": "计划在准备阶段已冻结；每批只读不同文件，无写入、输出参数传递或顺序依赖；dependencies 包含逻辑互相引用文件，但读取行为独立",
+      "source_coverage_manifest": [
+        {
+          "path": "hexgent/memory/memory_store.py",
+          "role": "core",
+          "purpose": "Workspace Memory 的身份、存储、显式写入和迁移",
+          "bytes": 12226,
+          "lines": 281,
+          "sha256": "0e733cb2cf070b4a09d8dffbda4414a1985e8d674bb7eb29d04917e802346b64",
+          "top_level_symbols": [
+            "MemoryItem",
+            "MemoryMutation",
+            "MemoryStore",
+            "_format_item",
+            "_parse_item",
+            "_format_index",
+            "_looks_like_legacy_memory",
+            "_load_legacy_memory",
+            "_write_text_atomically",
+            "_normalize_content",
+            "_normalize_keywords",
+            "_normalize_record_ids",
+            "_build_memory_id",
+            "_beijing_now"
+          ]
+        },
+        {
+          "path": "hexgent/memory/memory_retrieval.py",
+          "role": "core",
+          "purpose": "Workspace 召回、排序与注入预算",
+          "bytes": 6393,
+          "lines": 157,
+          "sha256": "972c136f8a18e9761524bde41189cf5a5e0809a7823b87df007e61ccf7df5dbf",
+          "top_level_symbols": [
+            "MemoryRetrievalLimits",
+            "RetrievedMemory",
+            "MemoryRetriever",
+            "format_retrieved_memory"
+          ]
+        },
+        {
+          "path": "hexgent/memory/context_records.py",
+          "role": "core",
+          "purpose": "ContextRecord/Mutation、active/superseded 与 durable 来源",
+          "bytes": 10147,
+          "lines": 254,
+          "sha256": "02238007c96e4a281a2699f5f2ba9b3e007832a6b8b48259d9fea71e08a41b35",
+          "top_level_symbols": [
+            "ContextRecordInput",
+            "ContextRecord",
+            "ContextRecordMutation",
+            "ContextRecordStore",
+            "_normalize_input",
+            "_normalize_record",
+            "_record_from_payload",
+            "_normalize_sequences",
+            "_build_record_id"
+          ]
+        },
+        {
+          "path": "hexgent/memory/context_retrieval.py",
+          "role": "core",
+          "purpose": "Session record 检索、相关性与 fallback",
+          "bytes": 9025,
+          "lines": 237,
+          "sha256": "3b1f8441507534ac3630461b19c08438dbb586b978d2a85292df4277f8aa4654",
+          "top_level_symbols": [
+            "ContextRetrievalLimits",
+            "RetrievedContextRecord",
+            "ContextRecordRetriever",
+            "format_retrieved_context",
+            "_score_record"
+          ]
+        },
+        {
+          "path": "hexgent/context/context_manager.py",
+          "role": "core",
+          "purpose": "query/messages、完整轮次与摘要边界",
+          "bytes": 11541,
+          "lines": 283,
+          "sha256": "146aace143afbc6476bd9be4723f0e9465e6bf276876140dcc2b3c3266862246",
+          "top_level_symbols": [
+            "UserQuery",
+            "ContextManager",
+            "_is_user_message"
+          ]
+        },
+        {
+          "path": "hexgent/context/context_builder.py",
+          "role": "core",
+          "purpose": "模型请求组装、记录/Memory 注入与裁剪",
+          "bytes": 6738,
+          "lines": 177,
+          "sha256": "e2b2288306286e90bfd8f642684448a2987d10c598cb4c20c0cb4fbe19931e27",
+          "top_level_symbols": [
+            "BuiltContext",
+            "build_context",
+            "build_context_details",
+            "_without_context_duplicates",
+            "_normalize_recalled_content",
+            "_fit_retrieval_budget",
+            "_retrieval_tokens"
+          ]
+        },
+        {
+          "path": "hexgent/memory/context_record_extraction.py",
+          "role": "dependencies",
+          "purpose": "候选抽取、source quote 校验、进度与失败",
+          "bytes": 6716,
+          "lines": 141,
+          "sha256": "8a8097d4f945569fb1536235ff78c8db768281610a5ea6cef2d3779f57ebdcb7",
+          "top_level_symbols": [
+            "ContextExtractionLimits",
+            "ExtractionBatch",
+            "prepare_extraction",
+            "parse_candidates"
+          ]
+        },
+        {
+          "path": "hexgent/memory/memory_auto_extraction.py",
+          "role": "dependencies",
+          "purpose": "自动 Memory 模块实际实现边界，不假定已接入 Loop",
+          "bytes": 3546,
+          "lines": 79,
+          "sha256": "dcb2b390b71e06d591beeacd3ca16b35fbcb0963797eba1b81f9b58d3471bc4a",
+          "top_level_symbols": [
+            "MemoryAutoExtractionLimits",
+            "build_auto_memory_input",
+            "commit_auto_memories"
+          ]
+        },
+        {
+          "path": "hexgent/memory/memory_prompts.py",
+          "role": "dependencies",
+          "purpose": "Memory 提取的正式提示契约",
+          "bytes": 2143,
+          "lines": 20,
+          "sha256": "b4278e370a451328acdb810f0214fb874ddecb36d5dfe88f38fbed722e90fbe1",
+          "top_level_symbols": []
+        },
+        {
+          "path": "hexgent/context/context_compaction.py",
+          "role": "dependencies",
+          "purpose": "摘要请求、安全完整轮次与无效摘要处理",
+          "bytes": 12024,
+          "lines": 327,
+          "sha256": "06e764bf6cec282bab3ef465f8d90636ccb968a7bb15dd3808238f1b7321a6d3",
+          "top_level_symbols": [
+            "CompactionOutcome",
+            "_usage_values",
+            "_select_cut_index",
+            "_extract_summary",
+            "_has_meaningful_savings",
+            "_read_completed_response",
+            "compact_context_if_needed"
+          ]
+        },
+        {
+          "path": "hexgent/context/context_budget.py",
+          "role": "dependencies",
+          "purpose": "固定/检索上下文预算与裁剪优先级",
+          "bytes": 2602,
+          "lines": 65,
+          "sha256": "39f07136660082f392fbef0e32bbfb6426c498eaa769edaf602d1ede22dfca68",
+          "top_level_symbols": [
+            "ContextLimits"
+          ]
+        },
+        {
+          "path": "hexgent/tool/memory_tools.py",
+          "role": "dependencies",
+          "purpose": "remember 显式工具入口",
+          "bytes": 1406,
+          "lines": 37,
+          "sha256": "46100fd14c99a5dc2346f477ef19dd60d3435c4401fd5002e1e5a65e1198a3f4",
+          "top_level_symbols": [
+            "validate_remember",
+            "remember"
+          ]
+        },
+        {
+          "path": "hexgent/loop/extract_context_records.py",
+          "role": "dependencies",
+          "purpose": "Production 抽取调度、提交与失败抑制",
+          "bytes": 4095,
+          "lines": 95,
+          "sha256": "8acc76fe53f43e505b65d38ab7f8e7db19cbf70d61024f27e9c34502f85c5d6d",
+          "top_level_symbols": [
+            "extract_context_records"
+          ]
+        },
+        {
+          "path": "hexgent/loop/agent_turn.py",
+          "role": "dependencies",
+          "purpose": "turn 内压缩、召回与抽取的主要调用方",
+          "bytes": 24247,
+          "lines": 646,
+          "sha256": "8e65ec9eeb3bad077291856e94736d7527f5794d2af35901b233ab2e97c678b5",
+          "top_level_symbols": [
+            "_finalization_message",
+            "_continue_with_finalization",
+            "_failure_stop",
+            "_apply_plan_exit",
+            "_control_stop",
+            "_continue_with_steering",
+            "run_turn",
+            "_available_tools_for_state",
+            "_activated_skill"
+          ]
+        },
+        {
+          "path": "hexgent/agent_engine.py",
+          "role": "dependencies",
+          "purpose": "新 Query 的跨 Session Memory 召回与引擎入口",
+          "bytes": 14780,
+          "lines": 358,
+          "sha256": "b6862cd032114b30f992bc6b50325aaed84963b845487334270d2fc2315acb93",
+          "top_level_symbols": [
+            "RunRequest",
+            "AgentEngine"
+          ]
+        },
+        {
+          "path": "hexgent/session/session.py",
+          "role": "dependencies",
+          "purpose": "ContextRecord 来源验证、存储及检索提交",
+          "bytes": 21220,
+          "lines": 522,
+          "sha256": "6d3ba0fe7d7783f5e276f9cfd6290fa91f4db10d3dc747524415774626401c99",
+          "top_level_symbols": [
+            "SessionSettings",
+            "Session"
+          ]
+        },
+        {
+          "path": "hexgent/session/session_restore.py",
+          "role": "dependencies",
+          "purpose": "record 与 Context durable replay",
+          "bytes": 20598,
+          "lines": 514,
+          "sha256": "dc33e0cc33bf84e4f584801b55257a23e69c06c2a4dfbf55eae0b1b81156be18",
+          "top_level_symbols": [
+            "RestoredSession",
+            "SessionRestorer",
+            "_permission_mode",
+            "_committed_checkpoints",
+            "_pending_run_state",
+            "_plan_from_payload",
+            "_build_interrupted_tool_outputs",
+            "_build_finished_tool_outputs",
+            "_tool_call_ids",
+            "_finished_model_output",
+            "_persisted_artifact_id",
+            "_read_persisted_tool_output",
+            "_required_string",
+            "_optional_string",
+            "_required_int"
+          ]
+        },
+        {
+          "path": "hexgent/config.py",
+          "role": "dependencies",
+          "purpose": "检索、提取、压缩配置及 Run override",
+          "bytes": 11474,
+          "lines": 312,
+          "sha256": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112",
+          "top_level_symbols": [
+            "ConfigError",
+            "HexgentConfig",
+            "RunOptions",
+            "load_config",
+            "validate_config",
+            "_load_section",
+            "_validate_field",
+            "_validate_relationships"
+          ]
+        },
+        {
+          "path": "hexgent/utils/retrieval_text.py",
+          "role": "dependencies",
+          "purpose": "共享分词和词项相关性依赖",
+          "bytes": 2155,
+          "lines": 57,
+          "sha256": "24e91f0febc21fa760c69f255aaf8b4b255620c9fb86b83fdb64060aabc3c82f",
+          "top_level_symbols": [
+            "normalize_retrieval_text",
+            "tokenize_retrieval_text",
+            "retrieval_token_weight",
+            "is_context_reference_query"
+          ]
+        },
+        {
+          "path": "hexgent/utils/token_estimator.py",
+          "role": "dependencies",
+          "purpose": "请求与注入预算估算",
+          "bytes": 1325,
+          "lines": 45,
+          "sha256": "cbfdfc3157d9168bdb8126a5e03fc0d53c5f587b7d94d6b7852511410f5a5c07",
+          "top_level_symbols": [
+            "_serializable",
+            "estimate_value_tokens",
+            "estimate_request_tokens"
+          ]
+        },
+        {
+          "path": "tests/test_memory.py",
+          "role": "tests",
+          "purpose": "显式写入、跨 Query 注入、去重、预算与迁移",
+          "bytes": 6842,
+          "lines": 154,
+          "sha256": "ea814603ed652ade6d8f8a3f5bae8bd4ddae61c41d71a333a23476ee0ffdd0cf",
+          "top_level_symbols": [
+            "MemoryTest"
+          ]
+        },
+        {
+          "path": "tests/test_context_records.py",
+          "role": "tests",
+          "purpose": "durable 来源与 record replay",
+          "bytes": 4436,
+          "lines": 110,
+          "sha256": "27a0f94ded13a300b7e436c9b485748e40c06dbb82cd9803b7a9959b3d55a996",
+          "top_level_symbols": [
+            "ContextRecordTest"
+          ]
+        },
+        {
+          "path": "tests/test_context_retrieval.py",
+          "role": "tests",
+          "purpose": "active/相关性/数量预算与实际请求注入",
+          "bytes": 5297,
+          "lines": 140,
+          "sha256": "1da139c26f5be725c5b15a000d1aeb930d972bb3cd2278f8647e2ff342ca72f6",
+          "top_level_symbols": [
+            "ContextRetrievalTest"
+          ]
+        },
+        {
+          "path": "tests/test_context_record_extraction.py",
+          "role": "tests",
+          "purpose": "quote 验证、提交失败、进度与恢复",
+          "bytes": 9970,
+          "lines": 200,
+          "sha256": "3d895081bd0862ee72f2c9cfd8b8de8f245470060abd3e3f42745f3f7e63d01a",
+          "top_level_symbols": [
+            "ContextRecordExtractionTest"
+          ]
+        },
+        {
+          "path": "tests/test_context_compaction.py",
+          "role": "tests",
+          "purpose": "完整轮次、关键请求部分、安全失败与摘要",
+          "bytes": 13028,
+          "lines": 335,
+          "sha256": "4b466d203095723545f550246397ce781c04987dc66a3673bce9d0f5abf498f4",
+          "top_level_symbols": [
+            "FakeResponses",
+            "FakeClient",
+            "drain_generator",
+            "ContextCompactionTest"
+          ]
+        },
+        {
+          "path": "tests/test_session_recovery.py",
+          "role": "tests",
+          "purpose": "压缩/记录与恢复状态的连接",
+          "bytes": 17167,
+          "lines": 405,
+          "sha256": "e71422eaa8665533a1ad8986d202220698d8499fa7ce0bea842bb7c275729c17",
+          "top_level_symbols": [
+            "SessionRecoveryTest"
+          ]
+        },
+        {
+          "path": "tests/test_agent_loop_limits.py",
+          "role": "tests",
+          "purpose": "上下文容量与 Loop 限制边界",
+          "bytes": 36951,
+          "lines": 936,
+          "sha256": "af505b0a8b07322e3a8786a50885586ca29cafd2e40fcd1426568b40988cb9c0",
+          "top_level_symbols": [
+            "FakeResponses",
+            "FakeClient",
+            "make_response",
+            "make_tool_call",
+            "drain_generator",
+            "build_config",
+            "run_agent",
+            "AgentLoopLimitsTest"
+          ]
+        }
+      ],
+      "batches": [
+        {
+          "stage": "discovery",
+          "depends_on": [],
+          "calls": [
+            {
+              "call_id": "memory_context-discovery-0",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "hexgent/memory/*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "hexgent/memory/__init__.py",
+                "hexgent/memory/context_record_extraction.py",
+                "hexgent/memory/context_records.py",
+                "hexgent/memory/context_retrieval.py",
+                "hexgent/memory/memory_auto_extraction.py",
+                "hexgent/memory/memory_prompts.py",
+                "hexgent/memory/memory_retrieval.py",
+                "hexgent/memory/memory_store.py"
+              ]
+            },
+            {
+              "call_id": "memory_context-discovery-1",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "hexgent/context/*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "hexgent/context/__init__.py",
+                "hexgent/context/context_budget.py",
+                "hexgent/context/context_builder.py",
+                "hexgent/context/context_compaction.py",
+                "hexgent/context/context_manager.py"
+              ]
+            },
+            {
+              "call_id": "memory_context-discovery-2",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "tests/test_memory*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "tests/test_memory.py"
+              ]
+            },
+            {
+              "call_id": "memory_context-discovery-3",
+              "tool_name": "glob",
+              "arguments": {
+                "pattern": "tests/test_context*.py"
+              },
+              "purpose": "确认相关实现与测试目录存在，不据此动态扩大计划",
+              "expected_paths": [
+                "tests/test_context_compaction.py",
+                "tests/test_context_record_extraction.py",
+                "tests/test_context_records.py",
+                "tests/test_context_retrieval.py"
+              ]
+            }
+          ]
+        },
+        {
+          "stage": "core",
+          "depends_on": [
+            "discovery"
+          ],
+          "calls": [
+            {
+              "call_id": "memory_context-core-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/memory_store.py"
+              },
+              "purpose": "Workspace Memory 的身份、存储、显式写入和迁移",
+              "expected_sha256": "0e733cb2cf070b4a09d8dffbda4414a1985e8d674bb7eb29d04917e802346b64"
+            },
+            {
+              "call_id": "memory_context-core-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/memory_retrieval.py"
+              },
+              "purpose": "Workspace 召回、排序与注入预算",
+              "expected_sha256": "972c136f8a18e9761524bde41189cf5a5e0809a7823b87df007e61ccf7df5dbf"
+            },
+            {
+              "call_id": "memory_context-core-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/context_records.py"
+              },
+              "purpose": "ContextRecord/Mutation、active/superseded 与 durable 来源",
+              "expected_sha256": "02238007c96e4a281a2699f5f2ba9b3e007832a6b8b48259d9fea71e08a41b35"
+            },
+            {
+              "call_id": "memory_context-core-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/context_retrieval.py"
+              },
+              "purpose": "Session record 检索、相关性与 fallback",
+              "expected_sha256": "3b1f8441507534ac3630461b19c08438dbb586b978d2a85292df4277f8aa4654"
+            },
+            {
+              "call_id": "memory_context-core-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/context/context_manager.py"
+              },
+              "purpose": "query/messages、完整轮次与摘要边界",
+              "expected_sha256": "146aace143afbc6476bd9be4723f0e9465e6bf276876140dcc2b3c3266862246"
+            },
+            {
+              "call_id": "memory_context-core-5",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/context/context_builder.py"
+              },
+              "purpose": "模型请求组装、记录/Memory 注入与裁剪",
+              "expected_sha256": "e2b2288306286e90bfd8f642684448a2987d10c598cb4c20c0cb4fbe19931e27"
+            }
+          ]
+        },
+        {
+          "stage": "dependencies",
+          "depends_on": [
+            "core"
+          ],
+          "calls": [
+            {
+              "call_id": "memory_context-dependencies-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/context_record_extraction.py"
+              },
+              "purpose": "候选抽取、source quote 校验、进度与失败",
+              "expected_sha256": "8a8097d4f945569fb1536235ff78c8db768281610a5ea6cef2d3779f57ebdcb7"
+            },
+            {
+              "call_id": "memory_context-dependencies-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/memory_auto_extraction.py"
+              },
+              "purpose": "自动 Memory 模块实际实现边界，不假定已接入 Loop",
+              "expected_sha256": "dcb2b390b71e06d591beeacd3ca16b35fbcb0963797eba1b81f9b58d3471bc4a"
+            },
+            {
+              "call_id": "memory_context-dependencies-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/memory/memory_prompts.py"
+              },
+              "purpose": "Memory 提取的正式提示契约",
+              "expected_sha256": "b4278e370a451328acdb810f0214fb874ddecb36d5dfe88f38fbed722e90fbe1"
+            },
+            {
+              "call_id": "memory_context-dependencies-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/context/context_compaction.py"
+              },
+              "purpose": "摘要请求、安全完整轮次与无效摘要处理",
+              "expected_sha256": "06e764bf6cec282bab3ef465f8d90636ccb968a7bb15dd3808238f1b7321a6d3"
+            },
+            {
+              "call_id": "memory_context-dependencies-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/context/context_budget.py"
+              },
+              "purpose": "固定/检索上下文预算与裁剪优先级",
+              "expected_sha256": "39f07136660082f392fbef0e32bbfb6426c498eaa769edaf602d1ede22dfca68"
+            },
+            {
+              "call_id": "memory_context-dependencies-5",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/tool/memory_tools.py"
+              },
+              "purpose": "remember 显式工具入口",
+              "expected_sha256": "46100fd14c99a5dc2346f477ef19dd60d3435c4401fd5002e1e5a65e1198a3f4"
+            },
+            {
+              "call_id": "memory_context-dependencies-6",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/loop/extract_context_records.py"
+              },
+              "purpose": "Production 抽取调度、提交与失败抑制",
+              "expected_sha256": "8acc76fe53f43e505b65d38ab7f8e7db19cbf70d61024f27e9c34502f85c5d6d"
+            },
+            {
+              "call_id": "memory_context-dependencies-7",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/loop/agent_turn.py"
+              },
+              "purpose": "turn 内压缩、召回与抽取的主要调用方",
+              "expected_sha256": "8e65ec9eeb3bad077291856e94736d7527f5794d2af35901b233ab2e97c678b5"
+            },
+            {
+              "call_id": "memory_context-dependencies-8",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/agent_engine.py"
+              },
+              "purpose": "新 Query 的跨 Session Memory 召回与引擎入口",
+              "expected_sha256": "b6862cd032114b30f992bc6b50325aaed84963b845487334270d2fc2315acb93"
+            },
+            {
+              "call_id": "memory_context-dependencies-9",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/session.py"
+              },
+              "purpose": "ContextRecord 来源验证、存储及检索提交",
+              "expected_sha256": "6d3ba0fe7d7783f5e276f9cfd6290fa91f4db10d3dc747524415774626401c99"
+            },
+            {
+              "call_id": "memory_context-dependencies-10",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/session/session_restore.py"
+              },
+              "purpose": "record 与 Context durable replay",
+              "expected_sha256": "dc33e0cc33bf84e4f584801b55257a23e69c06c2a4dfbf55eae0b1b81156be18"
+            },
+            {
+              "call_id": "memory_context-dependencies-11",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/config.py"
+              },
+              "purpose": "检索、提取、压缩配置及 Run override",
+              "expected_sha256": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112"
+            },
+            {
+              "call_id": "memory_context-dependencies-12",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/utils/retrieval_text.py"
+              },
+              "purpose": "共享分词和词项相关性依赖",
+              "expected_sha256": "24e91f0febc21fa760c69f255aaf8b4b255620c9fb86b83fdb64060aabc3c82f"
+            },
+            {
+              "call_id": "memory_context-dependencies-13",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "hexgent/utils/token_estimator.py"
+              },
+              "purpose": "请求与注入预算估算",
+              "expected_sha256": "cbfdfc3157d9168bdb8126a5e03fc0d53c5f587b7d94d6b7852511410f5a5c07"
+            }
+          ]
+        },
+        {
+          "stage": "tests",
+          "depends_on": [
+            "dependencies"
+          ],
+          "calls": [
+            {
+              "call_id": "memory_context-tests-0",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_memory.py"
+              },
+              "purpose": "显式写入、跨 Query 注入、去重、预算与迁移",
+              "expected_sha256": "ea814603ed652ade6d8f8a3f5bae8bd4ddae61c41d71a333a23476ee0ffdd0cf"
+            },
+            {
+              "call_id": "memory_context-tests-1",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_context_records.py"
+              },
+              "purpose": "durable 来源与 record replay",
+              "expected_sha256": "27a0f94ded13a300b7e436c9b485748e40c06dbb82cd9803b7a9959b3d55a996"
+            },
+            {
+              "call_id": "memory_context-tests-2",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_context_retrieval.py"
+              },
+              "purpose": "active/相关性/数量预算与实际请求注入",
+              "expected_sha256": "1da139c26f5be725c5b15a000d1aeb930d972bb3cd2278f8647e2ff342ca72f6"
+            },
+            {
+              "call_id": "memory_context-tests-3",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_context_record_extraction.py"
+              },
+              "purpose": "quote 验证、提交失败、进度与恢复",
+              "expected_sha256": "3d895081bd0862ee72f2c9cfd8b8de8f245470060abd3e3f42745f3f7e63d01a"
+            },
+            {
+              "call_id": "memory_context-tests-4",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_context_compaction.py"
+              },
+              "purpose": "完整轮次、关键请求部分、安全失败与摘要",
+              "expected_sha256": "4b466d203095723545f550246397ce781c04987dc66a3673bce9d0f5abf498f4"
+            },
+            {
+              "call_id": "memory_context-tests-5",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_session_recovery.py"
+              },
+              "purpose": "压缩/记录与恢复状态的连接",
+              "expected_sha256": "e71422eaa8665533a1ad8986d202220698d8499fa7ce0bea842bb7c275729c17"
+            },
+            {
+              "call_id": "memory_context-tests-6",
+              "tool_name": "read_file",
+              "arguments": {
+                "path": "tests/test_agent_loop_limits.py"
+              },
+              "purpose": "上下文容量与 Loop 限制边界",
+              "expected_sha256": "af505b0a8b07322e3a8786a50885586ca29cafd2e40fcd1426568b40988cb9c0"
+            }
+          ]
+        }
+      ],
+      "excluded_scope": "不评测真实模型理解、记忆提取质量或跨 Session 行为收益；不展开 Skill 的独立业务能力。"
+    }
+  ]
+}

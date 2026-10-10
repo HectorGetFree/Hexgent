@@ -3,6 +3,8 @@
 from hashlib import sha256
 from pathlib import Path
 import subprocess
+import json
+import os
 
 from .tool_context import (
     ReadFileCacheEntry,
@@ -14,6 +16,44 @@ from .tool_result import ToolHandlerResult
 
 DEFAULT_READ_LINE_COUNT = 200
 MAX_READ_LINE_COUNT = 500
+
+
+def validate_list_directory(arguments: dict[str, object], _context: ToolExecutionContext) -> str | None:
+    """限制返回条目数量，避免目录列表占满上下文。"""
+    count = arguments.get("max_entries", 200)
+    if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= 1000:
+        return "参数“max_entries”必须在 1 到 1000 之间"
+    return None
+
+
+def list_directory(
+    path: str,
+    context: ToolExecutionContext,
+    max_entries: int = 200,
+    include_hidden: bool = False,
+) -> ToolHandlerResult:
+    """枚举直接子项；不递归、不跟随子项符号链接。"""
+    target = _resolve_path(path, context)
+    entries = []
+    truncated = False
+    # 只保留数量上限以内的条目，并多观察一项以判断是否截断。
+    with os.scandir(target) as children:
+        for child in children:
+            if not include_hidden and child.name.startswith("."):
+                continue
+            if len(entries) >= max_entries:
+                truncated = True
+                break
+            kind = (
+                "symlink" if child.is_symlink()
+                else "directory" if child.is_dir(follow_symlinks=False)
+                else "file" if child.is_file(follow_symlinks=False)
+                else "other"
+            )
+            entries.append({"name": child.name, "path": str(target / child.name), "kind": kind})
+    entries.sort(key=lambda entry: entry["name"])
+    data = {"path": str(target), "entries": entries, "truncated": truncated}
+    return ToolHandlerResult.success(json.dumps(data, ensure_ascii=False), data)
 
 
 def bash(command: str, context: ToolExecutionContext) -> ToolHandlerResult:

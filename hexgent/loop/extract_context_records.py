@@ -57,6 +57,7 @@ def extract_context_records(
             ) else client
             stream = call_model(
                 scoped_client, extraction_control,
+                observation_request_type="CONTEXT_RECORD_EXTRACTION",
                 model=get_model(), instructions=EXTRACTION_INSTRUCTIONS,
                 input=[{"role": "user", "content": batch.model_input()}],
                 tools=[], max_output_tokens=limits.max_output_tokens,

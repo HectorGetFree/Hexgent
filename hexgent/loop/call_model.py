@@ -2,9 +2,11 @@
 
 from collections.abc import Generator
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from hexgent.events import AgentEvent, TextDeltaEvent
 from hexgent.run_control import InterruptController
+from hexgent.observation import begin_span, end_span
 
 
 ModelCallErrorReason = Literal[
@@ -81,6 +83,7 @@ def _is_retryable_empty_stream_error(error: Any) -> bool:
 def call_model(
     client: Any,
     interrupt_controller: InterruptController | None = None,
+    observation_request_type: str = "MAIN_AGENT",
     **request: Any,
 ) -> Generator[AgentEvent, None, Any]:
     """调用模型、发送文本增量，并返回协议完整的响应。"""
@@ -91,6 +94,11 @@ def call_model(
         completed_response = None
         remove_interrupt_callback = None
         emitted_text = False
+        observed_status = "INCOMPLETE"
+        observed_error = None
+        observed = begin_span("provider", request_type=observation_request_type,
+                              model=request.get("model"), attempt=attempt + 1,
+                              provider_host=urlsplit(str(getattr(client, "base_url", ""))).hostname)
         try:
             if interrupt_controller is not None and interrupt_controller.interrupted:
                 raise ModelCallInterrupted()
@@ -106,6 +114,7 @@ def call_model(
                     yield TextDeltaEvent(event.delta)
                 elif event.type == "response.completed":
                     completed_response = event.response
+                    observed_status = "SUCCEEDED"
                 elif event.type == "response.failed":
                     response = getattr(event, "response", None)
                     error = getattr(event, "error", None) or getattr(response, "error", None)
@@ -128,16 +137,23 @@ def call_model(
                 elif event.type == "error":
                     message = getattr(event, "message", None) or "未知错误"
                     raise _model_call_error(f"模型流式响应错误：{message}", event)
-        except (ModelCallError, ModelCallInterrupted):
+        except (ModelCallError, ModelCallInterrupted) as error:
+            observed_status = "INTERRUPTED" if isinstance(error, ModelCallInterrupted) else "FAILED"
+            observed_error = getattr(error, "reason", type(error).__name__)
             raise
         except Exception as error:
+            observed_status = "FAILED"
+            observed_error = type(error).__name__
             if interrupt_controller is not None and interrupt_controller.interrupted:
+                observed_status = "INTERRUPTED"
                 raise ModelCallInterrupted() from error
             # 尚未产生文本或工具调用时，连接中断不会造成重复副作用；允许一次完整重试。
             if attempt == 0 and not emitted_text and _is_retryable_empty_stream_error(error):
                 continue
             raise _model_call_error(f"模型流式响应错误：{error}", error) from error
         finally:
+            end_span(observed, status=observed_status, response=completed_response,
+                     failure_reason=observed_error)
             if remove_interrupt_callback is not None:
                 remove_interrupt_callback()
             close = getattr(stream, "close", None)

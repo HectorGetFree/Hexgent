@@ -19,6 +19,7 @@ from .loop_state import LoopState
 from .transitions import Continue, Stop
 from .agent_turn import _control_stop, run_turn
 from .extract_context_records import extract_context_records
+from ..observation import current_observation
 
 
 CHECKPOINT_REASON_BY_TRANSITION: dict[str, CheckpointReason] = {
@@ -50,6 +51,10 @@ def agent_loop(
             limits_enabled=config.loop.enforce_run_limits,
             plan=state.tool_context.plan_store.get_plan(),
         )
+        observation = current_observation.get()
+        if observation is not None:
+            observation.emit("run_binding", run_id=session._active_run_id,
+                             session_id=session.store.session_id if session.store else None)
 
     while True:
         # 2. 每轮只产生 Continue 或 Stop，yield 事件不参与控制流判断。

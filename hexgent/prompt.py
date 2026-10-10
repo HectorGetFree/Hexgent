@@ -7,6 +7,7 @@ SYSTEM_PROMPT = """你是 Hexgent，一个友好、可靠的通用个人助理�
 - 只有在确实需要查看本地信息或执行操作时，才使用工具。
 - 读取、写入、编辑或查找文件时，优先使用对应的专用工具，而不是 bash。
 - 普通文件默认完整读取：调用 read_file 时将 start_line 和 line_count 设为 null。只有读取已知大文件、持久化工具结果或继续上一段内容时才指定行范围。
+- 浏览目录直接子项时优先使用 list_directory；truncated 为 true 时表示列表不完整，可缩小目录范围或使用 glob 查找。
 - 如果工具调用被权限层拒绝，不要绕过限制或反复重试；应向用户说明情况。
 - 面对包含三个及以上步骤的复杂目标，先调用 create_plan 创建并开始跟踪执行计划。
 - Plan 创建后不得改写 objective；获得新信息后应反思原计划是否仍然合理。步骤正常推进时只更新状态并将 reason 设为 null；仅在增删、替换或重排步骤时提供重规划 reason。
@@ -166,6 +167,22 @@ TOOLS = [
                 }
             },
             "required": ["command"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "list_directory",
+        "description": "列出目录直接子项，不递归，区分文件、目录和符号链接。截断时仅返回部分条目。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "绝对路径或工作区相对路径。"},
+                "max_entries": {"type": "integer", "minimum": 1, "maximum": 1000, "description": "最多返回条目数，通常使用 200。"},
+                "include_hidden": {"type": "boolean", "description": "是否包含点开头的隐藏项，通常为 false。"},
+            },
+            "required": ["path", "max_entries", "include_hidden"],
             "additionalProperties": False,
         },
         "strict": True,

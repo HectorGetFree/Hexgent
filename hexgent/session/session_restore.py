@@ -13,6 +13,7 @@ from ..tool.tool_permission_pipeline import PermissionMode
 from ..loop.loop_state import RunStateSnapshot
 from .session import Session, SessionSettings
 from .session_store import SessionStore, ToolResultLimits
+from .session_store import PersistedToolResult, build_persisted_output_message
 from .checkpoint import CheckpointStore
 from .tool_call_recovery import (
     UnclosedToolCall,
@@ -164,11 +165,18 @@ class SessionRestorer:
         # 4. 仅当 Checkpoint 后没有新的状态事实时，才允许继续其运行预算。
         pending_run_state = _pending_run_state(checkpoint, records)
 
-        # 5. 崩溃可能留下无配对结果的工具调用；只补充未知状态，不自动重试。
-        repair_outputs, repaired_calls = _build_interrupted_tool_outputs(
+        # 5. 崩溃可能留下两类工具协议缺口：未 finished 的调用只能保守告知未知状态；
+        #    已 finished 但 Context 未提交结果的调用，则从 durable finished fact 重建原结果。
+        interrupted_outputs, interrupted_calls = _build_interrupted_tool_outputs(
             records,
             context_manager.active_messages,
         )
+        finished_outputs, finished_calls = _build_finished_tool_outputs(
+            records,
+            context_manager.active_messages,
+            store,
+        )
+        repair_outputs = [*interrupted_outputs, *finished_outputs]
         if repair_outputs:
             context_manager.append_messages(repair_outputs, completes_round=True)
             store.append_transcript(
@@ -188,7 +196,15 @@ class SessionRestorer:
                             "tool_name": item.tool_name,
                             "recovery_action": item.recovery_action,
                         }
-                        for item in repaired_calls
+                        for item in interrupted_calls
+                    ]
+                    + [
+                        {
+                            "call_id": call_id,
+                            "tool_name": tool_name,
+                            "recovery_action": "restore_finished_output",
+                        }
+                        for call_id, tool_name in finished_calls
                     ],
                 },
             )
@@ -349,6 +365,129 @@ def _build_interrupted_tool_outputs(
             completed.add(message["call_id"])
     unresolved = find_unclosed_tool_calls(records, calls - completed)
     return [build_recovery_tool_output(item) for item in unresolved], unresolved
+
+
+def _build_finished_tool_outputs(
+    records: list[dict[str, Any]],
+    messages: list[Any],
+    store: SessionStore,
+) -> tuple[list[dict[str, str]], tuple[tuple[str, str | None], ...]]:
+    """从 durable finished fact 补回尚未提交到 Context 的工具结果。
+
+    finished 是工具真实执行已结束的权威事实；恢复只能重放其模型可见结果，
+    绝不能重新 dispatch、重新评估权限或推测新的工具输出。
+    """
+    calls, completed = _tool_call_ids(messages)
+    repaired: list[dict[str, str]] = []
+    repaired_calls: list[tuple[str, str | None]] = []
+    for record in records:
+        if record.get("type") != "tool_execution_finished":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        call_id = payload.get("call_id")
+        if (
+            not isinstance(call_id, str)
+            or call_id not in calls
+            or call_id in completed
+        ):
+            continue
+
+        # 1. 每个 call_id 在 Transcript 中最多补一次，即使损坏日志存在重复 finished。
+        if any(item["call_id"] == call_id for item in repaired):
+            continue
+        tool_name = payload.get("tool_name")
+        repaired.append(
+            {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": _finished_model_output(payload, records, store),
+            }
+        )
+        repaired_calls.append((call_id, tool_name if isinstance(tool_name, str) else None))
+    return repaired, tuple(repaired_calls)
+
+
+def _tool_call_ids(messages: list[Any]) -> tuple[set[str], set[str]]:
+    """提取活动 Context 中的 function call 及其已提交结果身份。"""
+    calls: set[str] = set()
+    completed: set[str] = set()
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        call_id = message.get("call_id")
+        if not isinstance(call_id, str):
+            continue
+        if message.get("type") == "function_call":
+            calls.add(call_id)
+        elif message.get("type") == "function_call_output":
+            completed.add(call_id)
+    return calls, completed
+
+
+def _finished_model_output(
+    finished: dict[str, Any],
+    records: list[dict[str, Any]],
+    store: SessionStore,
+) -> str:
+    """恢复正常工具路径本应写入 Context 的模型可见输出。"""
+    output = finished.get("output")
+    if isinstance(output, str):
+        return output
+
+    persisted_output = finished.get("persisted_output")
+    if isinstance(persisted_output, str):
+        return _read_persisted_tool_output(
+            persisted_output,
+            _persisted_artifact_id(records, finished.get("call_id")),
+            store,
+        )
+
+    tool_name = finished.get("tool_name")
+    label = tool_name if isinstance(tool_name, str) else "未知工具"
+    return f"错误：工具 {label} 已完成，但其结果正文无法从 durable Transcript 恢复。"
+
+
+def _persisted_artifact_id(
+    records: list[dict[str, Any]],
+    call_id: Any,
+) -> str:
+    """从同一 call_id 的持久化工件映射读取 artifact_id，仅用于重建展示消息。"""
+    if not isinstance(call_id, str):
+        return ""
+    for record in reversed(records):
+        if record.get("type") != "tool_result_persisted":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict) or payload.get("call_id") != call_id:
+            continue
+        artifact_id = payload.get("artifact_id")
+        return artifact_id if isinstance(artifact_id, str) else ""
+    return ""
+
+
+def _read_persisted_tool_output(
+    relative_path: str,
+    artifact_id: str,
+    store: SessionStore,
+) -> str:
+    """安全读取外置工件，并按正常路径重建 persisted-output 引用。"""
+    path = (store.workdir / relative_path).resolve()
+    try:
+        if not path.is_relative_to(store.workdir) or not path.is_file():
+            raise OSError("外置工具结果工件不存在")
+        output = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        return f"错误：工具已完成，但外置结果工件不可读取：{error}"
+    return build_persisted_output_message(
+        PersistedToolResult(
+            relative_path=relative_path,
+            original_characters=len(output),
+            preview=output[: store.tool_result_limits.preview_characters],
+            artifact_id=artifact_id,
+        )
+    )
 
 
 def _required_string(payload: dict[str, Any], key: str) -> str:

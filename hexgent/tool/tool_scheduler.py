@@ -27,6 +27,7 @@ from .tool_result import ToolExecutionResult, ToolFailure
 from .tool_retry import ToolRetryLimits
 from .tool_permission_pipeline import PermissionContext
 from hexgent.run_control import InterruptController
+from hexgent.observation import begin_span, end_span
 
 if TYPE_CHECKING:
     from hexgent.events import AgentEvent
@@ -548,16 +549,24 @@ def execute_tool_batch(
                         ),
                     },
                 )
-        _, elapsed_seconds = yield from _execute_scheduled_group(
-            scheduled_calls,
-            concurrency_safe=group.concurrency_safe,
-            context=context,
-            user_confirmation=user_confirmation,
-            limits=limits,
-            retry_limits=active_retry_limits,
-            permission_context=permission_context,
-            interrupt_controller=interrupt_controller,
-        )
+        observed_batch = begin_span("tool_batch", observer=context.observation,
+                                    batch_id=batch_id, parallel=is_parallel,
+                                    call_ids=[item.tool_call.call_id for item in scheduled_calls])
+        batch_status = "INTERRUPTED"
+        try:
+            _, elapsed_seconds = yield from _execute_scheduled_group(
+                scheduled_calls,
+                concurrency_safe=group.concurrency_safe,
+                context=context,
+                user_confirmation=user_confirmation,
+                limits=limits,
+                retry_limits=active_retry_limits,
+                permission_context=permission_context,
+                interrupt_controller=interrupt_controller,
+            )
+            batch_status = "RETURNED"
+        finally:
+            end_span(observed_batch, status=batch_status)
 
         # 4. 首次调用成功后生成组内重复结果；失败时重新真实执行。
         for scheduled in scheduled_calls:

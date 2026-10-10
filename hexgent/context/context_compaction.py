@@ -13,6 +13,7 @@ from hexgent.events import (
 )
 
 from hexgent.utils.token_estimator import estimate_request_tokens, estimate_value_tokens
+from hexgent.observation import begin_span, end_span
 from .context_budget import ContextLimits
 from .context_manager import ContextManager
 
@@ -227,6 +228,7 @@ def compact_context_if_needed(
             if attempt == 1
             else "\n上一次摘要格式或压缩收益不合格。必须显著缩短内容，并严格只输出 summary 区块。"
         )
+        observed = begin_span("provider", request_type="COMPACTION", model=model, attempt=attempt)
         try:
             stream = client.responses.create(
                 model=model,
@@ -239,8 +241,11 @@ def compact_context_if_needed(
             )
             response = _read_completed_response(stream)
         except Exception as error:
+            end_span(observed, status="FAILED", failure_reason=type(error).__name__)
             failure_reason = f"摘要模型调用失败：{error}"
             continue
+
+        end_span(observed, status="SUCCEEDED", response=response)
 
         response_input_tokens, response_output_tokens = _usage_values(
             getattr(response, "usage", None)

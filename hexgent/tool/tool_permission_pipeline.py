@@ -170,7 +170,7 @@ ASK_RULES: tuple[PermissionRule, ...] = (
     PermissionRule(
         "outside_workspace_access",
         "ask",
-        ("read_file", "write_file", "edit_file"),
+        ("read_file", "list_directory", "write_file", "edit_file"),
         _is_outside_workspace,
         _outside_workspace_message,
     ),
@@ -196,7 +196,7 @@ ALLOW_RULES: tuple[PermissionRule, ...] = (
     PermissionRule(
         "workspace_read",
         "allow",
-        ("read_file",),
+        ("read_file", "list_directory"),
         lambda args, context: not _is_outside_workspace(args, context),
         lambda _args, _context: "允许读取工作区内文件",
     ),

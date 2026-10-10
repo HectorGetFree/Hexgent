@@ -55,6 +55,9 @@ class ToolExecutionContext:
     # 当前会话用于读取和保存 Plan 的存储实现。
     plan_store: PlanStore
 
+    # 非权威诊断句柄；恢复状态和工具参数均不依赖它。
+    observation: Any = field(default=None, init=False, repr=False, compare=False)
+
     # 文件和命令工具默认操作的工作区根目录。
     workdir: Path
 

@@ -24,6 +24,8 @@ from .builtin_tools import (
     edit_file,
     glob,
     read_file,
+    list_directory,
+    validate_list_directory,
     validate_read_file,
     write_file,
 )
@@ -342,6 +344,16 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
             "additionalProperties": False,
         },
         permission_capability="shell",
+    ),
+    "list_directory": RegisteredTool(
+        list_directory,
+        requires_context=True,
+        validator=validate_list_directory,
+        display_argument="path",
+        concurrency_safe=True,
+        automatic_retry_safe=True,
+        permission_capability="workspace_read",
+        interrupt_behavior="cancel",
     ),
     "read_file": RegisteredTool(
         read_file,

@@ -1,0 +1,62 @@
+{
+  "source_hashes": {
+    "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-on-off-replay-20261008-r1/smoke/tool_pipeline/1/ON/artifact.json": "bfe1ed341d1e28fae2706d253a0a980398b5791d53241c3577f8d78a2df59c5b",
+    "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-on-off-replay-20261008-r1/smoke/tool_pipeline/1/ON/provider-calls.json": "5884bfea1f850b4bd6921f5e82366139b73a3a87fe4867bedbb63ddc685540af",
+    "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-on-off-replay-20261008-r1/smoke/tool_pipeline/1/ON/workspace/.hexgent/sessions/20261008-214932-6adaeaa0/transcript.jsonl": "201c4a06ced75b95b21f8114a145d125b0995760c6f6c52857cd5f81d993575d",
+    "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-manual-20261008T135408Z/tool_pipeline/pair-1/OFF/artifact.json": "512e83ff387ca1da62deda5f91a76c6415e3cae5770b5032fc82ec9140fbc55e",
+    "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-manual-20261008T135408Z/tool_pipeline/pair-1/OFF/provider-calls.json": "b8ac2feecaba56110cd690944ec9d5c0063344559d892f0a3dd1753173177316",
+    "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-manual-20261008T135408Z/tool_pipeline/pair-1/OFF/workspace/.hexgent/sessions/20261008-215414-6adaeaa0/transcript.jsonl": "9d12119d8cd671f1a34c0f48f2e058f3fca48fe91f7681a55b475848c39755fa"
+  },
+  "delta": {
+    "total_agent_ms": 416750.09283300466,
+    "main_provider_ms": 401555.5897919985,
+    "auxiliary_provider_ms": 0.11375100439181551,
+    "tool_profiled_ms": 714.8794940076186,
+    "accounting_residual_ms": 14479.509795994149
+  },
+  "main_provider_delta_share": 0.9635404927261895,
+  "evidence": [
+    {
+      "explanation": "fixed trace scheduler performance",
+      "grade": "CONFIRMED DIRECT EFFECT",
+      "references": [
+        "/Users/hector/dev/hexgent/eval/tool_hardening/runs/v3-cross-trace-20261008-r1/report.json"
+      ],
+      "value": "both traces slightly slower in parallel"
+    },
+    {
+      "explanation": "main provider request cost difference",
+      "grade": "CONFIRMED OBSERVATIONAL CONTRIBUTION",
+      "references": [
+        "ON_TIMELINE.json",
+        "OFF_TIMELINE.json"
+      ]
+    },
+    {
+      "explanation": "provider nondeterminism/route/load",
+      "grade": "PLAUSIBLE MECHANISM",
+      "references": [
+        "ROUND_ALIGNMENT.json /0"
+      ],
+      "value": "exact internal cause UNDETERMINED"
+    },
+    {
+      "explanation": "scheduler caused first choice divergence or 4.12x E2E gain",
+      "grade": "UNSUPPORTED / RULED OUT",
+      "references": [
+        "ROUND_ALIGNMENT.json /0"
+      ],
+      "value": "first divergence before dispatch"
+    },
+    {
+      "explanation": "extra compaction/new record injection",
+      "grade": "UNSUPPORTED / RULED OUT",
+      "value": "zero compaction, both extraction cancelled"
+    },
+    {
+      "explanation": "SDK retry/queue/rate limit/close delay cause",
+      "grade": "PLAUSIBLE MECHANISM",
+      "value": "no per-attempt or close span evidence: UNDETERMINED"
+    }
+  ]
+}

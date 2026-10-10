@@ -9,7 +9,12 @@ from hexgent.config import HexgentConfig
 from hexgent.context import ContextManager
 from hexgent.loop.loop_state import LoopState
 from hexgent.plan import Plan, PlanStep
-from hexgent.session import Session, SessionRestorer, SessionSettings
+from hexgent.session import (
+    Session,
+    SessionRestorer,
+    SessionSettings,
+    build_persisted_output_message,
+)
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.plan import InMemoryPlanStore
 
@@ -300,6 +305,76 @@ class SessionRecoveryTest(unittest.TestCase):
         }
         self.assertIn("可以按需重新调用", outputs["call-read"])
         self.assertIn("副作用状态未知", outputs["call-write"])
+
+    def test_restores_finished_tool_output_missing_from_context_exactly_once(self) -> None:
+        """finished 已落盘但 Context 输出遗漏时，应重放同一模型可见结果而不重跑工具。"""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = ContextManager()
+            session = Session.persistent(root)
+            session.record_user_query(context.append_user_query("恢复外置工具结果"))
+            call = {
+                "type": "function_call",
+                "name": "read_file",
+                "call_id": "call-finished",
+                "arguments": '{"path":"README.md"}',
+            }
+            context.append_messages([call], completes_round=False)
+            session.record_context_messages(
+                [call], completes_round=False, source="model_response"
+            )
+            assert session.store is not None
+            persisted = session.store.persist_tool_result(
+                "call-finished",
+                "read_file",
+                "完整结果" * 4_000,
+                force=True,
+                description="read_file(README.md)",
+            )
+            assert persisted is not None
+            session.store.append_transcript(
+                "tool_execution_started",
+                {"call_id": "call-finished", "tool_name": "read_file"},
+            )
+            session.store.append_transcript(
+                "tool_execution_dispatched",
+                {
+                    "call_id": "call-finished",
+                    "tool_name": "read_file",
+                    "recovery_action": "safe_to_retry",
+                },
+            )
+            session.store.append_transcript(
+                "tool_execution_finished",
+                {
+                    "call_id": "call-finished",
+                    "tool_name": "read_file",
+                    "status": "success",
+                    "output": None,
+                    "persisted_output": persisted.relative_path,
+                },
+            )
+
+            first = SessionRestorer(root).restore(session.store.session_id)
+            second = SessionRestorer(root).restore(session.store.session_id)
+
+        first_outputs = [
+            item
+            for item in first.context_manager.active_messages
+            if isinstance(item, dict)
+            and item.get("type") == "function_call_output"
+        ]
+        second_outputs = [
+            item
+            for item in second.context_manager.active_messages
+            if isinstance(item, dict)
+            and item.get("type") == "function_call_output"
+        ]
+        self.assertEqual(len(first_outputs), 1)
+        self.assertEqual(len(second_outputs), 1)
+        self.assertEqual(
+            first_outputs[0]["output"], build_persisted_output_message(persisted)
+        )
 
     def test_cleared_plan_is_not_restored(self) -> None:
         """最后一次 Plan 状态为空时不得恢复此前已经完成的计划。"""

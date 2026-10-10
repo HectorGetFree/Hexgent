@@ -26,6 +26,7 @@ from .session import (
 )
 from .tool.tool_context import ToolExecutionContext
 from .tool.tool_execution import UserConfirmation, unavailable_user_confirmation
+from .observation import RunObservation, current_observation, source_fingerprint
 
 
 RunIntent = Literal["submit", "continue"]
@@ -193,6 +194,8 @@ class AgentEngine:
                 raise RuntimeError("当前 AgentEngine 已有正在执行的 Agent Run")
             self._run_active = True
 
+        observation = None
+        observation_token = None
         try:
             # 2. 兼容旧的字符串入口，但统一转换为带明确意图的 RunRequest。
             normalized_request = self._normalize_request(request, options)
@@ -200,6 +203,17 @@ class AgentEngine:
 
             # 3. submit 产生新事实；continue 只重建 Checkpoint 的活动 State。
             state = self._build_run_state(normalized_request, effective_config)
+            observation = RunObservation(self.session.store)
+            observation_token = current_observation.set(observation)
+            object.__setattr__(self.tool_context, "observation", observation)
+            import os
+            observation.emit("run_configuration", config=asdict(effective_config),
+                             model=os.environ.get("MODEL_ID"), permission_mode=self.session.settings.permission_mode,
+                             intent=normalized_request.intent)
+            try:
+                observation.emit("source_snapshot", runtime_sha256=source_fingerprint())
+            except OSError:
+                observation.emit("source_snapshot_unavailable")
             if workspace_run_id is not None and conversation_id is not None:
                 self.session.bind_runtime_run(workspace_run_id, conversation_id)
                 self.tool_context.integration_metadata["workspace_run_id"] = workspace_run_id
@@ -224,6 +238,10 @@ class AgentEngine:
             elif isinstance(outcome, Stop):
                 self._pending_run_state = None
         finally:
+            if observation is not None:
+                observation.emit("run_execution_finished")
+            if observation_token is not None:
+                current_observation.reset(observation_token)
             # 6. 正常结束、异常或调用方关闭事件流时都释放 Engine 占用标记。
             with self._run_lock:
                 self._run_active = False

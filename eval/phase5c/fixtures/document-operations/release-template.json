@@ -1,0 +1,1 @@
+{"required":["service","environment","port","retry_limit"]}
