@@ -1,6 +1,7 @@
 """构建每轮模型调用所需的运行时上下文。"""
 
 from dataclasses import dataclass
+from hashlib import sha256
 
 from hexgent.plan import format_plan_context
 from hexgent.prompt import SYSTEM_PROMPT
@@ -27,6 +28,9 @@ class BuiltContext:
 
     # 不截断正文、仅供 Session 记录的超大固定区块告警。
     warnings: tuple[str, ...]
+
+    # 去重和预算筛选后的最终 Memory 凭证；不保存正文。
+    memory_receipt: tuple[dict[str, str], ...] = ()
 
 
 def build_context(
@@ -113,7 +117,12 @@ def build_context_details(
         fixed_tokens["memory"] = estimate_value_tokens(retrieved_memory)
     instructions = "\n\n".join(sections)
     fixed_tokens["instructions_total"] = estimate_value_tokens(instructions)
-    return BuiltContext(instructions, fixed_tokens, tuple(warnings))
+    receipt = tuple({
+        "memory_id": item.memory_id,
+        "category": item.category,
+        "content_sha256": sha256(item.content.encode("utf-8")).hexdigest(),
+    } for item in selected_memory)
+    return BuiltContext(instructions, fixed_tokens, tuple(warnings), receipt)
 
 
 def _without_context_duplicates(
