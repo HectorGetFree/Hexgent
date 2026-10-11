@@ -24,6 +24,7 @@ from .checkpoint import (
     CheckpointRunStatus,
     CheckpointStore,
 )
+from .ownership import session_write
 
 
 @dataclass(frozen=True)
@@ -248,6 +249,7 @@ class Session:
             self._active_run_id = None
             self._active_run_start_sequence = None
 
+    @session_write
     def create_checkpoint(
         self,
         *,

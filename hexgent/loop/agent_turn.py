@@ -19,6 +19,8 @@ from ..tool.tool_registry import get_tool
 from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
 from hexgent.context.context_builder import build_context_details
+from hexgent.session.pinned_constraints import active_constraints
+from hexgent.utils.token_estimator import estimate_request_tokens
 from hexgent.events import (
     AgentEvent,
     AgentLoopResult,
@@ -310,12 +312,22 @@ def run_turn(
             state.context_manager.user_queries[-1], config.context_retrieval,
             state.relevant_context,
         ))
-    built_context = build_context_details(
-        state.tool_context, state.relevant_context, state.relevant_memory,
-        state.active_skill, active_context_limits.runtime_injection_tokens,
-        plan_warning_tokens=active_context_limits.plan_warning_tokens,
-        active_skill_warning_tokens=active_context_limits.active_skill_warning_tokens,
-    )
+    def current_context(records):
+        return build_context_details(
+            state.tool_context, records, state.relevant_memory,
+            state.active_skill, active_context_limits.runtime_injection_tokens,
+            plan_warning_tokens=active_context_limits.plan_warning_tokens,
+            active_skill_warning_tokens=active_context_limits.active_skill_warning_tokens,
+            pinned_constraints=active_constraints(session.store) if session else (),
+            pinned_constraints_tokens=active_context_limits.pinned_constraints_tokens,
+        )
+
+    try:
+        built_context = current_context(state.relevant_context)
+    except ValueError as error:
+        if session is not None:
+            session.record_runtime_event("pinned_context_rejected", {"reason": str(error)})
+        return _failure_stop(state, str(error))
     instructions = built_context.instructions
     if session is not None:
         for message in built_context.warnings:
@@ -359,7 +371,9 @@ def run_turn(
         )
         return Continue(next_state, "context_compacted")
     if compaction.status == "blocked":
-        return _failure_stop(state, compaction.message or "上下文无法安全压缩")
+        if session is not None:
+            session.record_runtime_event("pinned_context_rejected", {"reason": "CONTEXT_BUDGET_EXCEEDED", "detail": compaction.message})
+        return _failure_stop(state, "CONTEXT_BUDGET_EXCEEDED：" + (compaction.message or "上下文无法安全压缩"))
     if controller.interrupted:
         return _control_stop(state, active_control, session, "context_preparation")
 
@@ -393,13 +407,19 @@ def run_turn(
             queries[-1], config.context_retrieval, state.relevant_context,
         ) if queries else ()
         state = replace(state, relevant_context=records)
-        current = build_context_details(
-            state.tool_context, records, state.relevant_memory,
-            state.active_skill, active_context_limits.runtime_injection_tokens,
-            plan_warning_tokens=active_context_limits.plan_warning_tokens,
-            active_skill_warning_tokens=active_context_limits.active_skill_warning_tokens,
-        )
-        return {**original_request, "instructions": current.instructions}
+        try:
+            current = current_context(records)
+        except ValueError as error:
+            session.record_runtime_event("pinned_context_rejected", {"reason": str(error)})
+            raise ModelCallError(str(error), str(error)) from error
+        prepared = {**original_request, "instructions": current.instructions}
+        estimated = estimate_request_tokens(prepared["instructions"], prepared["input"], prepared.get("tools", []))
+        total = estimated + prepared.get("max_output_tokens", 0)
+        if total + active_context_limits.safety_margin_tokens > active_context_limits.context_window_tokens:
+            session.record_runtime_event("pinned_context_rejected", {"reason": "CONTEXT_BUDGET_EXCEEDED", "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
+            raise ModelCallError("CONTEXT_BUDGET_EXCEEDED", "CONTEXT_BUDGET_EXCEEDED")
+        session.record_runtime_event("pinned_context_prepared", {"constraint_ids": [item["id"] for item in active_constraints(session.store)], "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
+        return prepared
 
     try:
         response = yield from call_model(

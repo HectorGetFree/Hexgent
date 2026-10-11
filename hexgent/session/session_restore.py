@@ -74,6 +74,11 @@ class SessionRestorer:
             session_id,
             self.tool_result_limits,
         )
+        with store.write_guard():
+            return self._restore_owned(store, checkpoint_id)
+
+    def _restore_owned(self, store, checkpoint_id):
+        session_id = store.session_id
         records = store.read_transcript()
 
         # 2. 依照领域事件顺序重建 Context、Session 设置和 Plan 当前值。

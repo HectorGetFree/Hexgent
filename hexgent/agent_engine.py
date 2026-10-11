@@ -5,6 +5,7 @@ from collections.abc import Generator
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from threading import Lock
+from contextlib import nullcontext
 from typing import Any, Literal
 
 from hexgent.events import AgentEvent
@@ -198,10 +199,17 @@ class AgentEngine:
 
         observation = None
         observation_token = None
+        ownership = None
         try:
             # 2. 兼容旧的字符串入口，但统一转换为带明确意图的 RunRequest。
             normalized_request = self._normalize_request(request, options)
             effective_config = self.resolve_config(normalized_request.options)
+            if self.session.store is not None:
+                if self.session.store.session_id is None:
+                    self.session.store.start_session(normalized_request.query or "Pinned Session")
+                guard = self.session.store.write_guard()
+                guard.__enter__()
+                ownership = guard
 
             # 3. submit 产生新事实；continue 只重建 Checkpoint 的活动 State。
             state = self._build_run_state(normalized_request, effective_config)
@@ -247,6 +255,8 @@ class AgentEngine:
             # 6. 正常结束、异常或调用方关闭事件流时都释放 Engine 占用标记。
             with self._run_lock:
                 self._run_active = False
+            if ownership is not None:
+                ownership.__exit__(None, None, None)
 
     def _apply_pending_steering_intents(self) -> None:
         """在新执行安全边界一次性提交重启前遗留的 steering intent。"""
@@ -371,6 +381,18 @@ class AgentEngine:
                 action="cleared",
                 reason="cancelled",
             )
+
+    def manage_pinned_constraint(self, action: str, command_id: str, **arguments):
+        """受信任 Adapter 的用户管理端口；不注册为模型工具。"""
+        from .session.pinned_constraints import manage_constraint
+        with self._run_lock:
+            if self._run_active:
+                raise RuntimeError("RUN_ACTIVE：只能在安全 Run 边界管理约束")
+            return manage_constraint(self.session.store, action, command_id, **arguments)
+
+    def list_pinned_constraints(self):
+        from .session.pinned_constraints import active_constraints
+        return active_constraints(self.session.store)
 
     def upsert_context_records(
         self,

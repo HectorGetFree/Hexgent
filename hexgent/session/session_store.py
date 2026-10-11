@@ -10,6 +10,8 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+from contextlib import contextmanager
+from .ownership import SessionOwnership, owned_write
 
 
 SESSION_QUERY_HASH_LENGTH = 8
@@ -97,6 +99,7 @@ class SessionStore:
 
         # Runtime 控制线程和 Agent 工具线程可能并发追加事实；序号分配与写入必须原子。
         self._transcript_lock = RLock()
+        self._ownership = SessionOwnership()
 
         # 标记是否已经写入会话开始事件。
         self._session_started = False
@@ -106,6 +109,21 @@ class SessionStore:
 
         # Session 生命周期内按完整内容 Hash 复用的工具结果工件。
         self._artifact_index: dict[str, PersistedToolResult] = {}
+
+        # 1. 仅首次构造加载权威序号；后续 append 冲突不得自动追赶。
+        if self.session_id is not None and self.transcript_path.is_file():
+            with self.write_guard():
+                records = self.read_transcript()
+                if records:
+                    self._next_sequence = records[-1]["sequence"] + 1
+                    if records[0]["type"] == "session_started":
+                        payload = records[0]["payload"]
+                        if payload.get("session_id") != self.session_id:
+                            raise ValueError("Session 标识与 Transcript 不一致")
+                        self._session_started = True
+                        first_query = payload.get("first_query")
+                        if isinstance(first_query, str):
+                            self.display_name = _build_display_name(first_query)
 
     @classmethod
     def open_existing(
@@ -121,7 +139,8 @@ class SessionStore:
             raise FileNotFoundError(f"Session Transcript 不存在：{session_id}")
 
         # 2. 完整校验记录序号和协议版本，再恢复追加写入位置。
-        records = store.read_transcript()
+        with store.write_guard():
+            records = store.read_transcript()
         if not records or records[0]["type"] != "session_started":
             raise ValueError("Session Transcript 缺少 session_started 记录")
         recorded_session_id = records[0]["payload"].get("session_id")
@@ -132,7 +151,9 @@ class SessionStore:
         first_query = records[0]["payload"].get("first_query")
         if isinstance(first_query, str):
             store.display_name = _build_display_name(first_query)
-        store._next_sequence = records[-1]["sequence"] + 1
+        # 2. 构造后日志若已推进，必须拒绝，不能在 open_existing 二次刷新。
+        if store._next_sequence != records[-1]["sequence"] + 1:
+            raise RuntimeError("SESSION_STALE：Transcript 已变化，请重新 Restore")
         store._session_started = True
         return store
 
@@ -279,6 +300,15 @@ class SessionStore:
         """按需创建当前会话目录。"""
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
+    @contextmanager
+    def write_guard(self):
+        if self.session_id is None:
+            yield
+            return
+        with self._ownership.hold(self.session_dir):
+            yield
+
+    @owned_write
     def append_transcript(self, record_type: str, payload: Any) -> None:
         """把一条不可变会话事实追加写入 JSONL Transcript。"""
         with self._transcript_lock:
@@ -286,6 +316,11 @@ class SessionStore:
                 self._pending_records.append((record_type, payload))
                 return
             self._ensure_session_dir()
+            # 其他 Store 在安全边界更新过日志时拒绝旧写入者，要求正式 Restore。
+            existing = self.read_transcript()
+            expected = existing[-1]["sequence"] + 1 if existing else 1
+            if expected != self._next_sequence:
+                raise RuntimeError("SESSION_STALE：Transcript 已变化，请重新 Restore")
             record = {
                 "schema_version": TRANSCRIPT_SCHEMA_VERSION,
                 "sequence": self._next_sequence,
@@ -359,6 +394,7 @@ class SessionStore:
                 records.append(record)
         return records
 
+    @owned_write
     def persist_run_report(self, report: dict[str, Any]) -> Path:
         """原子保存单次 Run Report，并更新当前 Session 的报告索引。"""
         # 1. 每个已经结束的 Run 独占一个不可变 JSON 文件。
@@ -397,6 +433,7 @@ class SessionStore:
         _write_json_atomically(index_path, index)
         return report_path
 
+    @owned_write
     def persist_context_records(self, projection: dict[str, Any]) -> Path | None:
         """原子保存 Session ContextRecord 投影，恢复仍以 Transcript 为准。"""
         if self.session_id is None:
@@ -405,6 +442,7 @@ class SessionStore:
         _write_json_atomically(self.context_records_path, projection)
         return self.context_records_path
 
+    @owned_write
     def persist_tool_result(
         self,
         call_id: str,

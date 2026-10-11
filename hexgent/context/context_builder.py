@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from hashlib import sha256
+import json
 
 from hexgent.plan import format_plan_context
 from hexgent.prompt import SYSTEM_PROMPT
@@ -59,6 +60,8 @@ def build_context_details(
     *,
     plan_warning_tokens: int | None = None,
     active_skill_warning_tokens: int | None = None,
+    pinned_constraints: tuple[dict, ...] = (),
+    pinned_constraints_tokens: int = 4_000,
 ) -> BuiltContext:
     """构建 instructions，并返回分项预算快照供运行时审计使用。"""
     plan_context = format_plan_context(context.plan_store.get_plan())
@@ -68,6 +71,16 @@ def build_context_details(
     )
     sections = [SYSTEM_PROMPT]
     fixed_tokens = {"system_prompt": estimate_value_tokens(SYSTEM_PROMPT)}
+    pinned_constraints = tuple(item for item in pinned_constraints if item["status"] == "ACTIVE")
+    if pinned_constraints:
+        # JSON 中转义尖括号，原文不能关闭保护区；不合并不同 ID。
+        body = json.dumps(list(pinned_constraints), ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+        block = "<pinned-constraints>\n" + body + "\n</pinned-constraints>"
+        tokens = estimate_value_tokens(block)
+        if tokens > pinned_constraints_tokens:
+            raise ValueError("PINNED_CONSTRAINTS_LIMIT_EXCEEDED")
+        sections.append(block)
+        fixed_tokens["pinned_constraints"] = tokens
     warnings: list[str] = []
     if plan_context:
         sections.append(plan_context)

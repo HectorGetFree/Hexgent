@@ -17,6 +17,8 @@ ModelCallErrorReason = Literal[
     "response_incomplete",  # 流式响应未完整结束，不能使用残缺结果。
     "stream_error",  # 创建或消费流时发生其他异常。
     "missing_completed",  # 流结束时没有收到完整响应事件。
+    "PINNED_CONSTRAINTS_LIMIT_EXCEEDED",
+    "CONTEXT_BUDGET_EXCEEDED",
 ]
 
 

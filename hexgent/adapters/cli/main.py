@@ -9,6 +9,7 @@ from ...session import SessionStore
 from ...workspace import find_workspace_root
 from .event_renderer import TerminalEventRenderer
 from .terminal_io import TerminalIO
+from .pinned_commands import handle_pinned_command
 
 
 def main(config_path: Path | None = None) -> None:
@@ -23,6 +24,7 @@ def main(config_path: Path | None = None) -> None:
     print(
         "输入内容后按两次回车或输入 /send 发送消息；"
         "输入 /restore 恢复历史会话，/continue 续跑暂停任务；exit 或 q 可以结束对话。\n"
+        "约束管理：/pin <原文>，/replace-pin <id> <version> <新原文>，/revoke-pin <id> <version>，/pins。\n"
     )
 
     # 2. 每条终端消息启动独立 Run，并跨 Run 复用同一个 AgentEngine。
@@ -40,6 +42,8 @@ def main(config_path: Path | None = None) -> None:
         if normalized_query in {"q", "exit"}:
             break
         if not normalized_query:
+            continue
+        if handle_pinned_command(engine, query):
             continue
 
         # 3. 恢复命令由 CLI Adapter 消费，不得作为普通 Query 写入 Context。

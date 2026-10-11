@@ -23,6 +23,9 @@ class ContextLimits:
     # 用户原始 Query 和工具结果属于活动消息，由完整请求预算与压缩机制单独控制。
     runtime_injection_tokens: int = 12_000
 
+    # 显式用户约束保护区独立上限，超限拒绝，不截断正文。
+    pinned_constraints_tokens: int = 4_000
+
     # Plan 超过该估算 Token 数时记录预算告警，但不截断计划正文。
     plan_warning_tokens: int = 4_000
 
