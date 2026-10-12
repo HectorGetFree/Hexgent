@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F1-01",
+  "facts": [
+    {
+      "fact_id": "F1-01:fact:6",
+      "subject": "旧演练端口",
+      "source_message_id": "F1-01:source:0",
+      "quote": "旧演练端口=18081",
+      "canonical_fact": "旧演练端口=18081",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-01:fact:1",
+      "subject": "监听端口",
+      "source_message_id": "F1-01:source:1",
+      "quote": "监听端口=18473",
+      "canonical_fact": "监听端口=18473",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-01:fact:3",
+      "subject": "应用版本",
+      "source_message_id": "F1-01:source:1",
+      "quote": "应用版本=2.4.17",
+      "canonical_fact": "应用版本=2.4.17",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-01:fact:5",
+      "subject": "索引格式",
+      "source_message_id": "F1-01:source:1",
+      "quote": "索引格式=contract-index-v3",
+      "canonical_fact": "索引格式=contract-index-v3",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-01:fact:7",
+      "subject": "原件保护",
+      "source_message_id": "F1-01:source:1",
+      "quote": "原件保护：禁止修改合同输入原件。",
+      "canonical_fact": "原件保护：禁止修改合同输入原件。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-01:fact:2",
+      "subject": "工件路径",
+      "source_message_id": "F1-01:source:2",
+      "quote": "工件路径=/srv/cedar/contracts/r7",
+      "canonical_fact": "工件路径=/srv/cedar/contracts/r7",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-01:fact:4",
+      "subject": "批次页数上限",
+      "source_message_id": "F1-01:source:2",
+      "quote": "批次页数上限=240页",
+      "canonical_fact": "批次页数上限=240页",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

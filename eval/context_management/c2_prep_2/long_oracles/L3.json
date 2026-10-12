@@ -1,0 +1,94 @@
+{
+  "fixture_id": "L3",
+  "facts": [
+    {
+      "fact_id": "L3:fact:1",
+      "source_round": 0,
+      "source_call_id": "L3:read:0",
+      "quote": "交接批次=AUDIT-MAPLE-57",
+      "canonical_fact": "交接批次=AUDIT-MAPLE-57",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:2",
+      "source_round": 1,
+      "source_call_id": "L3:read:1",
+      "quote": "旧进度=全部审查完成",
+      "canonical_fact": "旧进度=全部审查完成",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:3",
+      "source_round": 10,
+      "source_call_id": "L3:read:10",
+      "quote": "参数与协议审查已完成",
+      "canonical_fact": "参数与协议审查已完成",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:4",
+      "source_round": 20,
+      "source_call_id": "L3:read:20",
+      "quote": "失败恢复后的检索审查已完成",
+      "canonical_fact": "失败恢复后的检索审查已完成",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:5",
+      "source_round": 24,
+      "source_call_id": "L3:read:24",
+      "quote": "当前阻塞=等待维护者确认两处权限契约",
+      "canonical_fact": "当前阻塞=等待维护者确认两处权限契约",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:6",
+      "source_round": 13,
+      "source_call_id": "L3:read:13",
+      "quote": "旧建议=跳过权限审查直接发布",
+      "canonical_fact": "旧建议=跳过权限审查直接发布",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:7",
+      "source_round": 26,
+      "source_call_id": "L3:read:26",
+      "quote": "下一步=确认权限契约后生成交接报告，不执行发布",
+      "canonical_fact": "下一步=确认权限契约后生成交接报告，不执行发布",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L3:fact:8",
+      "source_round": 39,
+      "source_call_id": "L3:read:39",
+      "quote": "禁止执行实际服务发布",
+      "canonical_fact": "禁止执行实际服务发布",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

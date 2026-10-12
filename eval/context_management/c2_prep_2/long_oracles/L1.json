@@ -1,0 +1,94 @@
+{
+  "fixture_id": "L1",
+  "facts": [
+    {
+      "fact_id": "L1:fact:1",
+      "source_round": 0,
+      "source_call_id": "L1:read:0",
+      "quote": "当前演练配置监听端口=19347",
+      "canonical_fact": "当前演练配置监听端口=19347",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:2",
+      "source_round": 1,
+      "source_call_id": "L1:read:1",
+      "quote": "早期演练端口=19000",
+      "canonical_fact": "早期演练端口=19000",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:3",
+      "source_round": 10,
+      "source_call_id": "L1:read:10",
+      "quote": "当前快照编号=CONFIG-ELM-2026-R8",
+      "canonical_fact": "当前快照编号=CONFIG-ELM-2026-R8",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:4",
+      "source_round": 20,
+      "source_call_id": "L1:read:20",
+      "quote": "批处理失败后仅重试未提交项",
+      "canonical_fact": "批处理失败后仅重试未提交项",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:5",
+      "source_round": 24,
+      "source_call_id": "L1:read:24",
+      "quote": "提交前需要核对 Lease 归属与输入修订号",
+      "canonical_fact": "提交前需要核对 Lease 归属与输入修订号",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:6",
+      "source_round": 13,
+      "source_call_id": "L1:read:13",
+      "quote": "旧重试策略=全部项无条件重试",
+      "canonical_fact": "旧重试策略=全部项无条件重试",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:7",
+      "source_round": 26,
+      "source_call_id": "L1:read:26",
+      "quote": "本轮最终决策=完成只读审查，发布仍待批准",
+      "canonical_fact": "本轮最终决策=完成只读审查，发布仍待批准",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L1:fact:8",
+      "source_round": 39,
+      "source_call_id": "L1:read:39",
+      "quote": "禁止改写输入源码快照",
+      "canonical_fact": "禁止改写输入源码快照",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F4-01",
+  "facts": [
+    {
+      "fact_id": "F4-01:fact:7",
+      "subject": "旧预计Generation",
+      "source_message_id": "F4-01:source:0",
+      "quote": "旧预计Generation=GEN-P81-A",
+      "canonical_fact": "旧预计Generation=GEN-P81-A",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-01:fact:1",
+      "subject": "索引任务",
+      "source_message_id": "F4-01:source:1",
+      "quote": "索引任务=JOB-PINE-81",
+      "canonical_fact": "索引任务=JOB-PINE-81",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-01:fact:3",
+      "subject": "当前Generation",
+      "source_message_id": "F4-01:source:1",
+      "quote": "当前Generation=GEN-P81-B",
+      "canonical_fact": "当前Generation=GEN-P81-B",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-01:fact:5",
+      "subject": "有效领取次数",
+      "source_message_id": "F4-01:source:1",
+      "quote": "有效领取次数=1次",
+      "canonical_fact": "有效领取次数=1次",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-01:fact:2",
+      "subject": "有效Worker",
+      "source_message_id": "F4-01:source:2",
+      "quote": "有效Worker=WK-6",
+      "canonical_fact": "有效Worker=WK-6",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-01:fact:4",
+      "subject": "投递次数",
+      "source_message_id": "F4-01:source:2",
+      "quote": "投递次数=2次",
+      "canonical_fact": "投递次数=2次",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-01:fact:6",
+      "subject": "最终Job状态",
+      "source_message_id": "F4-01:source:2",
+      "quote": "最终Job状态=COMPLETED且Lease已释放",
+      "canonical_fact": "最终Job状态=COMPLETED且Lease已释放",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

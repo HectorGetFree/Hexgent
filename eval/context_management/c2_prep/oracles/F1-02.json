@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F1-02",
+  "facts": [
+    {
+      "fact_id": "F1-02:fact:6",
+      "subject": "旧采样周期",
+      "source_message_id": "F1-02:source:0",
+      "quote": "旧采样周期=120秒",
+      "canonical_fact": "旧采样周期=120秒",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-02:fact:1",
+      "subject": "当前探头",
+      "source_message_id": "F1-02:source:1",
+      "quote": "当前探头=FROST-Q8",
+      "canonical_fact": "当前探头=FROST-Q8",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-02:fact:3",
+      "subject": "采样周期",
+      "source_message_id": "F1-02:source:1",
+      "quote": "采样周期=45秒",
+      "canonical_fact": "采样周期=45秒",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-02:fact:5",
+      "subject": "报警条件",
+      "source_message_id": "F1-02:source:1",
+      "quote": "报警条件=连续3个有效采样高于6.8摄氏度",
+      "canonical_fact": "报警条件=连续3个有效采样高于6.8摄氏度",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-02:fact:7",
+      "subject": "证书保护",
+      "source_message_id": "F1-02:source:1",
+      "quote": "证书保护：不得修改校准证书原件。",
+      "canonical_fact": "证书保护：不得修改校准证书原件。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-02:fact:2",
+      "subject": "温度偏移",
+      "source_message_id": "F1-02:source:2",
+      "quote": "温度偏移=-0.37摄氏度",
+      "canonical_fact": "温度偏移=-0.37摄氏度",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-02:fact:4",
+      "subject": "校准证书",
+      "source_message_id": "F1-02:source:2",
+      "quote": "校准证书=CAL-73K-2026",
+      "canonical_fact": "校准证书=CAL-73K-2026",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

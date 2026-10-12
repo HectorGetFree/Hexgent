@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F1-03",
+  "facts": [
+    {
+      "fact_id": "F1-03:fact:6",
+      "subject": "旧恢复点",
+      "source_message_id": "F1-03:source:0",
+      "quote": "旧恢复点=ARCH-9N-039",
+      "canonical_fact": "旧恢复点=ARCH-9N-039",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-03:fact:1",
+      "subject": "当前恢复点",
+      "source_message_id": "F1-03:source:1",
+      "quote": "当前恢复点=ARCH-9N-042",
+      "canonical_fact": "当前恢复点=ARCH-9N-042",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-03:fact:3",
+      "subject": "增量链长度",
+      "source_message_id": "F1-03:source:1",
+      "quote": "增量链长度=4层",
+      "canonical_fact": "增量链长度=4层",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-03:fact:5",
+      "subject": "目标容量下限",
+      "source_message_id": "F1-03:source:1",
+      "quote": "目标容量下限=38GiB",
+      "canonical_fact": "目标容量下限=38GiB",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-03:fact:7",
+      "subject": "恢复禁令",
+      "source_message_id": "F1-03:source:1",
+      "quote": "恢复禁令：本轮禁止实际执行恢复。",
+      "canonical_fact": "恢复禁令：本轮禁止实际执行恢复。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-03:fact:2",
+      "subject": "恢复源目录",
+      "source_message_id": "F1-03:source:2",
+      "quote": "恢复源目录=/archive/mirror/9n/current",
+      "canonical_fact": "恢复源目录=/archive/mirror/9n/current",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F1-03:fact:4",
+      "subject": "清单摘要",
+      "source_message_id": "F1-03:source:2",
+      "quote": "清单摘要=sha256:8e7b9c14",
+      "canonical_fact": "清单摘要=sha256:8e7b9c14",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

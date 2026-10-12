@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F3-03",
+  "facts": [
+    {
+      "fact_id": "F3-03:fact:6",
+      "subject": "旧重试建议",
+      "source_message_id": "F3-03:source:0",
+      "quote": "旧重试建议=全部失败项自动重试",
+      "canonical_fact": "旧重试建议=全部失败项自动重试",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-03:fact:1",
+      "subject": "格式检查状态",
+      "source_message_id": "F3-03:source:1",
+      "quote": "格式检查状态=通过",
+      "canonical_fact": "格式检查状态=通过",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-03:fact:3",
+      "subject": "待补材料",
+      "source_message_id": "F3-03:source:1",
+      "quote": "待补材料=ATT-Q6的业务字段说明",
+      "canonical_fact": "待补材料=ATT-Q6的业务字段说明",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-03:fact:5",
+      "subject": "下一动作",
+      "source_message_id": "F3-03:source:1",
+      "quote": "下一动作=补齐ATT-Q6后核对可补偿项",
+      "canonical_fact": "下一动作=补齐ATT-Q6后核对可补偿项",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-03:fact:7",
+      "subject": "补偿禁令",
+      "source_message_id": "F3-03:source:1",
+      "quote": "补偿禁令：禁止执行实际补偿。",
+      "canonical_fact": "补偿禁令：禁止执行实际补偿。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-03:fact:2",
+      "subject": "错误分类状态",
+      "source_message_id": "F3-03:source:2",
+      "quote": "错误分类状态=已完成",
+      "canonical_fact": "错误分类状态=已完成",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-03:fact:4",
+      "subject": "当前授权状态",
+      "source_message_id": "F3-03:source:2",
+      "quote": "当前授权状态=未批准补偿",
+      "canonical_fact": "当前授权状态=未批准补偿",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

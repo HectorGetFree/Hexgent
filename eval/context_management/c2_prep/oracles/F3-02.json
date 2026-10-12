@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F3-02",
+  "facts": [
+    {
+      "fact_id": "F3-02:fact:6",
+      "subject": "旧作者确认状态",
+      "source_message_id": "F3-02:source:0",
+      "quote": "旧作者确认状态=全部已确认",
+      "canonical_fact": "旧作者确认状态=全部已确认",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-02:fact:1",
+      "subject": "清单比对状态",
+      "source_message_id": "F3-02:source:1",
+      "quote": "清单比对状态=已完成",
+      "canonical_fact": "清单比对状态=已完成",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-02:fact:3",
+      "subject": "待确认引用",
+      "source_message_id": "F3-02:source:1",
+      "quote": "待确认引用=guide.md的L42与L88",
+      "canonical_fact": "待确认引用=guide.md的L42与L88",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-02:fact:5",
+      "subject": "下一动作",
+      "source_message_id": "F3-02:source:1",
+      "quote": "下一动作=作者确认两处引用后提交检查单",
+      "canonical_fact": "下一动作=作者确认两处引用后提交检查单",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-02:fact:7",
+      "subject": "权限保护",
+      "source_message_id": "F3-02:source:1",
+      "quote": "权限保护：不得扩大资料访问权限。",
+      "canonical_fact": "权限保护：不得扩大资料访问权限。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-02:fact:2",
+      "subject": "权限审查状态",
+      "source_message_id": "F3-02:source:2",
+      "quote": "权限审查状态=已完成且不扩大范围",
+      "canonical_fact": "权限审查状态=已完成且不扩大范围",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F3-02:fact:4",
+      "subject": "当前发布状态",
+      "source_message_id": "F3-02:source:2",
+      "quote": "当前发布状态=未发布",
+      "canonical_fact": "当前发布状态=未发布",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

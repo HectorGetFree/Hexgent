@@ -1,0 +1,1438 @@
+{
+  "report": {
+    "results": [
+      {
+        "id": "F1-01",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 138
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 4092,
+        "external_protection": true
+      },
+      {
+        "id": "F1-02",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 128
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 4028,
+        "external_protection": true
+      },
+      {
+        "id": "F1-03",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 145
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 4009,
+        "external_protection": true
+      },
+      {
+        "id": "F2-01",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 117
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3945,
+        "external_protection": true
+      },
+      {
+        "id": "F2-02",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 112
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3940,
+        "external_protection": true
+      },
+      {
+        "id": "F2-03",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 121
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3893,
+        "external_protection": true
+      },
+      {
+        "id": "F3-01",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 124
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 4001,
+        "external_protection": true
+      },
+      {
+        "id": "F3-02",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 133
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 4001,
+        "external_protection": true
+      },
+      {
+        "id": "F3-03",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 125
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3956,
+        "external_protection": true
+      },
+      {
+        "id": "F4-01",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 150
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3886,
+        "external_protection": true
+      },
+      {
+        "id": "F4-02",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 143
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3882,
+        "external_protection": true
+      },
+      {
+        "id": "F4-03",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 148
+            }
+          }
+        },
+        "default_threshold": false,
+        "initial_estimated_input": 3912,
+        "external_protection": true
+      },
+      {
+        "id": "L1",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 152
+            }
+          }
+        },
+        "default_threshold": true,
+        "initial_estimated_input": 75894,
+        "external_protection": true
+      },
+      {
+        "id": "L2",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 155
+            }
+          }
+        },
+        "default_threshold": true,
+        "initial_estimated_input": 76691,
+        "external_protection": true
+      },
+      {
+        "id": "L3",
+        "status": "PASS",
+        "compaction_calls": 1,
+        "main_calls": 1,
+        "accepted": 1,
+        "attribution": {
+          "pass_": true,
+          "matched_calls": 2,
+          "non_dispatch_spans": [],
+          "unexplained_spans": [],
+          "totals": {
+            "MAIN": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 2
+            },
+            "COMPACTION": {
+              "calls": 1,
+              "input_tokens": 1,
+              "output_tokens": 139
+            }
+          }
+        },
+        "default_threshold": true,
+        "initial_estimated_input": 75952,
+        "external_protection": true
+      }
+    ],
+    "output": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z",
+    "evidence_type": "FAKE_PROTOCOL_ONLY",
+    "paid_calls": 0,
+    "production_unchanged": true,
+    "previous_evidence_unchanged": true,
+    "production_hashes": {
+      "hexgent/__init__.py": "50895f4875685c15e97f20152dcc2e372a93e3d6e791f1238f7ee08ca80400fc",
+      "hexgent/__main__.py": "859400b58aeb596f912438110372c7b8cc93aa940bb2cce660b732ee45e1897c",
+      "hexgent/adapters/__init__.py": "92d32f4a7938868e9385ab06133bad02fa7f5c30a6adea4ea63b726b87b008ec",
+      "hexgent/adapters/cli/__init__.py": "d38140aac0e0e75d9636a14ddbd1fd2e81eea23ed3653c8d4c9d8e8f9a905407",
+      "hexgent/adapters/cli/event_renderer.py": "a5e437d39120dffba90fa40f3718a70e53cc18d32976ea2746d3344193427da8",
+      "hexgent/adapters/cli/main.py": "52e6d7516cbedba80297ca844ede4a4a6bf2e94321432c76908ba604f5e2a622",
+      "hexgent/adapters/cli/pinned_commands.py": "723044731d711d7630b7ecf68deb2edb1f8c0ce85d5d39da795e19eef9d9cc76",
+      "hexgent/adapters/cli/terminal_io.py": "e4d1f4488c550c80c10085b6566e78d26371cb7eb1ac62d2dd0544cabbd93c90",
+      "hexgent/adapters/integration/__init__.py": "15fc5139d78daf5b2ef6410c77b0ec10656f8ff762a8ed7572a09bf2d5b278ae",
+      "hexgent/adapters/integration/routes.py": "2c8ba236a7d43e7d651dfce19b7f79e94f7bba393ba5c097f1189dbb39244f2b",
+      "hexgent/adapters/web/__init__.py": "83900ac31d817f3da9dea5255c1d24ab0a085a3eee7c8d9cbd040e5b3b731f17",
+      "hexgent/adapters/web/__main__.py": "b9f60ee6360a68021f790fd13bd99297af023e32744c80d636a8738bc041c9f8",
+      "hexgent/adapters/web/app.py": "c9d4f20a6d63974288de52e204b1d78404761d810772b70fbf5ab8f0e07fc55f",
+      "hexgent/adapters/web/errors.py": "508bd6e1294c803b903422990640b503733d75b45472f83e44b8758dc7daa99c",
+      "hexgent/adapters/web/event_serializer.py": "c3df99fec1aa69accf1d8be20e5e7b60e1c189f20bf3ff1c00e598c3b46d400f",
+      "hexgent/adapters/web/routes.py": "5f2078d30f589bacc03b11211e6f91d87a134e85377656d545f00229fa67f299",
+      "hexgent/adapters/web/run_manager.py": "a0f66cffb8b679e08702be63602016532213850c45349edc7239753a3667fc6f",
+      "hexgent/adapters/web/schemas.py": "c95747291cf0fcb9ab5fabf9ae1f392f7f183ca9f39d7dab6bab1d16c7eda342",
+      "hexgent/adapters/web/session_projection.py": "c606dd944cb6792174896797162a62e9367b44fe67073cb24a626dc98da89624",
+      "hexgent/adapters/web/settings.py": "5d05b55225b0acb05ebc44518e5d8079e407e8dbac0c6cfecdb2b34ab2b3174e",
+      "hexgent/agent_engine.py": "8315c1f47d4a7736ef720413450e4b930a24f8f70c4c1f2c397b5058dd8e3231",
+      "hexgent/client.py": "00b452b62df247268028e73d053cb991cce12772e53e3bd501c8bb8fe8616690",
+      "hexgent/config.py": "a02d29c9065aee07a66d2303a61088756336da07520a2339354cea27b6068112",
+      "hexgent/context/__init__.py": "547e8300631a78591aad6f93266926c1e806c8c4e6ec8ddacc2a62f1c22c525c",
+      "hexgent/context/context_budget.py": "6106658226a0835ef3b02dc8c755431fd48b59eda57bfa1306fca54df946a793",
+      "hexgent/context/context_builder.py": "8ac8af09482153d5f14b6df2457df3b9c2e81327a084d17536131297433e3225",
+      "hexgent/context/context_compaction.py": "ba5c6b036c3a64adbf3d86a28f946cdda7b4ad8137dcad1ac22cc581541b8641",
+      "hexgent/context/context_manager.py": "146aace143afbc6476bd9be4723f0e9465e6bf276876140dcc2b3c3266862246",
+      "hexgent/events.py": "55f1a921731c0c1fc14b1d506f4b6197e7c94b681d1e6d7f15833174cbfe5bd4",
+      "hexgent/integration/__init__.py": "c7ba3eda1f0dc0dc5b26472a90dd263b9accfe8db0ab06f15fbca2b44ddae8d8",
+      "hexgent/integration/capability.py": "b955307308a83f8f351f2dd158705609576d2a149995a193e50bbcba262db87b",
+      "hexgent/integration/lifecycle.py": "9f808c9fe7293bb0dbd7a0dcdf6418b914052baeef7a57562a6bc6c19e899a7b",
+      "hexgent/integration/lifecycle_client.py": "3289cf9324a9b7ea90e5dd62e4632cb966f0bc79e7f63538a504771713c22f11",
+      "hexgent/integration/permission_client.py": "dc58ef8ac3af7c6ef856697e550fbf8af61f053aef74ff90aaaa0b898d61fbdd",
+      "hexgent/integration/protocol.py": "1735f5a073312391e26253ff947d6d0ae4ce5acb4df1b741f6ae1090f4c6bb90",
+      "hexgent/integration/runtime_adapter.py": "34df7b16ad8578c82edf6024298c80e0a8941f65f1bc1605b62f3b6271a9bf84",
+      "hexgent/loop/__init__.py": "9461d1e5e16dfbcfa70f11d5e85fe7a2e73ac67558102b9143fadc01f34ef540",
+      "hexgent/loop/agent_loop.py": "3af43269549060c167d04f1272a38ef2572271df63f82219bae427efada1bc04",
+      "hexgent/loop/agent_turn.py": "73aca402e99517e8c0bea6d7356cb7dc8e2713d71f6983ee6452bf87751c0a4f",
+      "hexgent/loop/call_model.py": "cf96b3df5e4fae4078e9e3decb8a9d430e3502ef40e465afd5ddfd5942798233",
+      "hexgent/loop/extract_context_records.py": "2200505ebe0037742bb3e6f63b551ba7662726e13353b47b824e7c081c9151ca",
+      "hexgent/loop/limits.py": "8bbfea05b64d5a824b5946ad7a001c1f1f81cb632f41bf066f25b6041211e1f0",
+      "hexgent/loop/loop_state.py": "6aadd9db83be2f274101385ec25c8e49084eacf24d6417a50c8fdab8d38f0cf9",
+      "hexgent/loop/transitions.py": "8d13a90d4a62ae3ddddc71bc992209de4434ec16d208582f1b77c2bee6b87a9d",
+      "hexgent/memory/__init__.py": "4468474a2b62b97326b46fba08a5f3a81def89dae9c5784bf02e49c33c558079",
+      "hexgent/memory/context_record_extraction.py": "8a8097d4f945569fb1536235ff78c8db768281610a5ea6cef2d3779f57ebdcb7",
+      "hexgent/memory/context_records.py": "02238007c96e4a281a2699f5f2ba9b3e007832a6b8b48259d9fea71e08a41b35",
+      "hexgent/memory/context_retrieval.py": "3b1f8441507534ac3630461b19c08438dbb586b978d2a85292df4277f8aa4654",
+      "hexgent/memory/memory_auto_extraction.py": "dcb2b390b71e06d591beeacd3ca16b35fbcb0963797eba1b81f9b58d3471bc4a",
+      "hexgent/memory/memory_prompts.py": "b4278e370a451328acdb810f0214fb874ddecb36d5dfe88f38fbed722e90fbe1",
+      "hexgent/memory/memory_retrieval.py": "0d72477a802df98f9a55ed502f25b6720d06cf27a079e2bbe9d42f001e3d37a6",
+      "hexgent/memory/memory_store.py": "7223c437437eb337b82aa642f9fc50af2b10bc7865c07eaa852de074c18d4d30",
+      "hexgent/observation.py": "f3520299422da1b1368ad31fd1b9c37160b1dd62dd036a8ce712f18418165322",
+      "hexgent/plan/__init__.py": "e44b11794a368f9b83bc36213302203cc8f45312c623709f15868739d4db1b78",
+      "hexgent/plan/plan_exit.py": "dd8d14dcc149015e455725cbe418bee6e2df240c038f0c1f28127288dabf7207",
+      "hexgent/plan/plan_model.py": "b5786a0a7ce43170af65532f12eecc576190d140067d040fc3dad029d46a8a67",
+      "hexgent/prompt.py": "90ff916952e7f55446aff47879b418f3bfe81eeaeddeb5b40947782325904cc3",
+      "hexgent/run_control.py": "7a4ae8fe0ab31746821db1aaf26b1034fe7ef1f953df750da087ce54b19e5549",
+      "hexgent/session/__init__.py": "5f44c80e3d71c3d9384f1b26747036096e448eff544e0bd404434fb0f7e93246",
+      "hexgent/session/checkpoint.py": "47881bff5fa87f93bdd0f4ba61d1101ab89c33ece0daa50f81d3a92ee64d4106",
+      "hexgent/session/ownership.py": "7d294cde34f52ab8040c11c9bfac6b63de939c6e022dd3e65b6a0840b7c1c391",
+      "hexgent/session/pinned_constraints.py": "4aa308956cad769014ebd6127c6e4d7f070a7ed975856f3f977039ba206211af",
+      "hexgent/session/run_report.py": "4331b8ecc9e4d31042797d1e0da717d6115d0269498aa8251eb467be6bf401a1",
+      "hexgent/session/session.py": "57b853372e0c66abb33e7bfceff868b95765be2289516fdd68da18ebc01519ba",
+      "hexgent/session/session_restore.py": "5cfa649a3eb73e14edfb891672beb20a8bbbb1851eec0895359b98f0ead933ed",
+      "hexgent/session/session_store.py": "039fab0f7003476a61376209e5f8bd14bf468c96a169a07902b7ef6356991faf",
+      "hexgent/session/tool_call_recovery.py": "8291c60d679e4fee8448b24a2a557120ac6b846f1f39977ddcdc573b80e53e10",
+      "hexgent/skill/__init__.py": "d1648ab544092cc8a35cb499342f85050a800e6f61fcc7903542e0cb796dd5d7",
+      "hexgent/skill/skill_registry.py": "8c4258ebdeb7674fdecec0978091c5f3bc3b13d549fd99db58349a56ef31092a",
+      "hexgent/tool/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "hexgent/tool/builtin_tools.py": "697387a382a74b30a16e7e03997985aac6558ce0d261416dafcf509ba89cb453",
+      "hexgent/tool/memory_tools.py": "ea5a3daaa8dc096b83b6e51ae6145a2510f1fad1a367adcc4fd282a98cab7007",
+      "hexgent/tool/plan_tools.py": "088356b2c175d308913c20cb7f87ddd13c63aa9454c1d8b8873e8ee2a9b9de07",
+      "hexgent/tool/skill_tools.py": "9fa864cae69190fb79b936004bbc79d1f672ab3559c0acf3fab02b20460e45e1",
+      "hexgent/tool/tool_context.py": "c06f2ae660fb5f092f1fdf72b95931ca57af74eec5a54b7387898c378c5a892b",
+      "hexgent/tool/tool_execution.py": "ad05ed2f93d9d219a836832f0f815b658af94a00d6d99df8f763c0a7b0d1048d",
+      "hexgent/tool/tool_permission_pipeline.py": "7ec044d526982e76421139a8b1c6c8011d755b27df40feb71706033f8ae42776",
+      "hexgent/tool/tool_registry.py": "86782a6303914bcc8135fb42498d652d162f42f4d06f1fca23ac5174742e612f",
+      "hexgent/tool/tool_result.py": "83281c4cdf296ecc05279a9ce26747b2ded073c95faa37f6e7c0334b7c3730c2",
+      "hexgent/tool/tool_retry.py": "ac88abc3282c7f149ca6f8000bcd76035fb9318acbb77e009d89d14542665ceb",
+      "hexgent/tool/tool_scheduler.py": "13b5eba844b86f1dab1f1257846dec79becebb16b6a7461017555d72a3dc3979",
+      "hexgent/tool/tool_validation.py": "e256bd1ad79b1e54b10c8141ccb64b128c6423308157b4f1efa24282cd59e335",
+      "hexgent/tool/workspace_capability_tool.py": "ca81627111fdacc20c9f398149826538cc0076dc787cb23e1655b63b4a59b34d",
+      "hexgent/utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "hexgent/utils/retrieval_text.py": "24e91f0febc21fa760c69f255aaf8b4b255620c9fb86b83fdb64060aabc3c82f",
+      "hexgent/utils/token_estimator.py": "cbfdfc3157d9168bdb8126a5e03fc0d53c5f587b7d94d6b7852511410f5a5c07",
+      "hexgent/workspace.py": "fd28d212dd3fb54e1e96782589e0a5ce073774cb7f68db1ebfc43f65bedfe61f"
+    },
+    "final_gate": "BLOCKED_FOR_C2",
+    "blockers": [
+      "PROVIDER_PRICE_UNCONFIRMED",
+      "REAL_INPUT_BOUND_UNCONFIRMED"
+    ],
+    "shared_budget_calls": 30,
+    "shared_reserved_input": 282068,
+    "shared_reserved_output": 150000
+  },
+  "source_audits": [
+    {
+      "id": "F1-01",
+      "source_channel_check": [
+        {
+          "fact_id": "F1-01:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-01:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-01:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-01:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-01:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 4124
+        },
+        {
+          "before_tokens": 4124,
+          "after_tokens": 3245,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 138
+          }
+        }
+      }
+    },
+    {
+      "id": "F1-02",
+      "source_channel_check": [
+        {
+          "fact_id": "F1-02:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-02:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-02:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-02:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-02:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 4059
+        },
+        {
+          "before_tokens": 4059,
+          "after_tokens": 3252,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 128
+          }
+        }
+      }
+    },
+    {
+      "id": "F1-03",
+      "source_channel_check": [
+        {
+          "fact_id": "F1-03:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-03:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-03:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-03:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F1-03:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 4040
+        },
+        {
+          "before_tokens": 4040,
+          "after_tokens": 3249,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 145
+          }
+        }
+      }
+    },
+    {
+      "id": "F2-01",
+      "source_channel_check": [
+        {
+          "fact_id": "F2-01:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-01:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-01:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-01:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3976
+        },
+        {
+          "before_tokens": 3976,
+          "after_tokens": 3255,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 117
+          }
+        }
+      }
+    },
+    {
+      "id": "F2-02",
+      "source_channel_check": [
+        {
+          "fact_id": "F2-02:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-02:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-02:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-02:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3971
+        },
+        {
+          "before_tokens": 3971,
+          "after_tokens": 3261,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 112
+          }
+        }
+      }
+    },
+    {
+      "id": "F2-03",
+      "source_channel_check": [
+        {
+          "fact_id": "F2-03:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-03:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-03:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F2-03:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3924
+        },
+        {
+          "before_tokens": 3924,
+          "after_tokens": 3252,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 121
+          }
+        }
+      }
+    },
+    {
+      "id": "F3-01",
+      "source_channel_check": [
+        {
+          "fact_id": "F3-01:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-01:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-01:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-01:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-01:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 4032
+        },
+        {
+          "before_tokens": 4032,
+          "after_tokens": 3264,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 124
+          }
+        }
+      }
+    },
+    {
+      "id": "F3-02",
+      "source_channel_check": [
+        {
+          "fact_id": "F3-02:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-02:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-02:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-02:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-02:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 4032
+        },
+        {
+          "before_tokens": 4032,
+          "after_tokens": 3270,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 133
+          }
+        }
+      }
+    },
+    {
+      "id": "F3-03",
+      "source_channel_check": [
+        {
+          "fact_id": "F3-03:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-03:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-03:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-03:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F3-03:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3988
+        },
+        {
+          "before_tokens": 3988,
+          "after_tokens": 3262,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 125
+          }
+        }
+      }
+    },
+    {
+      "id": "F4-01",
+      "source_channel_check": [
+        {
+          "fact_id": "F4-01:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-01:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-01:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-01:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-01:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-01:fact:6",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3917
+        },
+        {
+          "before_tokens": 3917,
+          "after_tokens": 3184,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 150
+          }
+        }
+      }
+    },
+    {
+      "id": "F4-02",
+      "source_channel_check": [
+        {
+          "fact_id": "F4-02:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-02:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-02:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-02:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-02:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-02:fact:6",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3913
+        },
+        {
+          "before_tokens": 3913,
+          "after_tokens": 3184,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 143
+          }
+        }
+      }
+    },
+    {
+      "id": "F4-03",
+      "source_channel_check": [
+        {
+          "fact_id": "F4-03:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-03:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-03:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-03:fact:2",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-03:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "F4-03:fact:6",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 3944
+        },
+        {
+          "before_tokens": 3944,
+          "after_tokens": 3204,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": false,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 148
+          }
+        }
+      }
+    },
+    {
+      "id": "L1",
+      "source_channel_check": [
+        {
+          "fact_id": "L1:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L1:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L1:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L1:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L1:fact:7",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 75925
+        },
+        {
+          "before_tokens": 75925,
+          "after_tokens": 26994,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": true,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 152
+          }
+        }
+      }
+    },
+    {
+      "id": "L2",
+      "source_channel_check": [
+        {
+          "fact_id": "L2:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L2:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L2:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L2:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L2:fact:7",
+          "in_summary_input": false,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 76722
+        },
+        {
+          "before_tokens": 76722,
+          "after_tokens": 26528,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": true,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 155
+          }
+        }
+      }
+    },
+    {
+      "id": "L3",
+      "source_channel_check": [
+        {
+          "fact_id": "L3:fact:1",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L3:fact:3",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L3:fact:4",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L3:fact:5",
+          "in_summary_input": true,
+          "in_post_history": true
+        },
+        {
+          "fact_id": "L3:fact:7",
+          "in_summary_input": true,
+          "in_post_history": true
+        }
+      ],
+      "summary_accepted": true,
+      "compaction_events": [
+        {
+          "before_tokens": 75984
+        },
+        {
+          "before_tokens": 75984,
+          "after_tokens": 27008,
+          "status": "compacted"
+        }
+      ],
+      "default_threshold": true,
+      "attribution": {
+        "pass_": true,
+        "matched_calls": 2,
+        "non_dispatch_spans": [],
+        "unexplained_spans": [],
+        "totals": {
+          "MAIN": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 2
+          },
+          "COMPACTION": {
+            "calls": 1,
+            "input_tokens": 1,
+            "output_tokens": 139
+          }
+        }
+      }
+    }
+  ],
+  "offline_tests": {
+    "run": 37,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "production_unchanged": true,
+  "protected_evidence_unchanged": true
+}

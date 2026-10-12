@@ -400,25 +400,29 @@ def run_turn(
     def prepare_current_request(original_request: dict[str, Any]) -> dict[str, Any]:
         """每次实际发送（含重试）复核记录并复用现有预算组装，不改历史。"""
         nonlocal state
-        if session is None:
-            return original_request
-        queries = state.context_manager.user_queries
-        records = session.reselect_context_records(
-            queries[-1], config.context_retrieval, state.relevant_context,
-        ) if queries else ()
-        state = replace(state, relevant_context=records)
-        try:
-            current = current_context(records)
-        except ValueError as error:
-            session.record_runtime_event("pinned_context_rejected", {"reason": str(error)})
-            raise ModelCallError(str(error), str(error)) from error
-        prepared = {**original_request, "instructions": current.instructions}
+        # 1. Session 请求保持既有权威状态复核与组装；无 Session 不新增召回行为。
+        prepared = original_request
+        if session is not None:
+            queries = state.context_manager.user_queries
+            records = session.reselect_context_records(
+                queries[-1], config.context_retrieval, state.relevant_context,
+            ) if queries else ()
+            state = replace(state, relevant_context=records)
+            try:
+                current = current_context(records)
+            except ValueError as error:
+                session.record_runtime_event("pinned_context_rejected", {"reason": str(error)})
+                raise ModelCallError(str(error), str(error)) from error
+            prepared = {**original_request, "instructions": current.instructions}
+        # 2. 所有入口每次实际发送（含重试）均按真实输出额度检查完整请求。
         estimated = estimate_request_tokens(prepared["instructions"], prepared["input"], prepared.get("tools", []))
         total = estimated + prepared.get("max_output_tokens", 0)
         if total + active_context_limits.safety_margin_tokens > active_context_limits.context_window_tokens:
-            session.record_runtime_event("pinned_context_rejected", {"reason": "CONTEXT_BUDGET_EXCEEDED", "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
+            if session is not None:
+                session.record_runtime_event("pinned_context_rejected", {"reason": "CONTEXT_BUDGET_EXCEEDED", "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
             raise ModelCallError("CONTEXT_BUDGET_EXCEEDED", "CONTEXT_BUDGET_EXCEEDED")
-        session.record_runtime_event("pinned_context_prepared", {"constraint_ids": [item["id"] for item in active_constraints(session.store)], "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
+        if session is not None:
+            session.record_runtime_event("pinned_context_prepared", {"constraint_ids": [item["id"] for item in active_constraints(session.store)], "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
         return prepared
 
     try:

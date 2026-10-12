@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "provider_host": "www.rightapi.ai",
+  "model_id": "gpt-6.1-sol",
+  "minimum_confirmed_context_window_tokens": 128000,
+  "confirmed": true,
+  "source_type": "MANUAL_USER_CONFIRMATION",
+  "source_question": "你是否能确认当前 gpt-6.1-sol 路由至少支持 128K 上下文？",
+  "source_answer": "能",
+  "confirmed_date": "2026-10-11",
+  "provider_document_reference": null,
+  "limitation": "本轮用户容量声明；未收到控制台截图或Provider文档，非独立在线容量测试",
+  "contract_role": "独立补充确认；替代smoke_manifest.json中的待确认容量状态，不改写原Manifest"
+}

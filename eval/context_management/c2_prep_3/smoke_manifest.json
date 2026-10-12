@@ -1,0 +1,810 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "fixture_id": "F1-02",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep/fixtures/F1-02.json",
+      "fixture_hash": "cf37c788f669e428896a2f2378d4ed3c85c68e33a18dc3be463c4bce8b96f68e",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/F1-02.json",
+      "oracle_v2_hash": "5d5f95a3fd3219e92746791a511c8c7cc9bdbfe0f6642981d704625215cda4ea",
+      "source": "SYNTHETIC_FIXED_HISTORY",
+      "category": "C2-A",
+      "execution_order": 1,
+      "stage": 1,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 3401,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 100,
+          "reactive_recent_context_tokens": 50,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 3401,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 100,
+        "reactive_recent_context_tokens": 50,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 1204,
+      "max_reserved_input_per_call": 2048,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "F1-02"
+    },
+    {
+      "fixture_id": "L2",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/long_fixtures/L2.json",
+      "fixture_hash": "75bd5934617807099930e91b6a4e8979102f90cdeb507df53148ce21b95822c5",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/L2.json",
+      "oracle_v2_hash": "d738506e08e224217dac5e6877644d9048f0f30c1efa32126b3c5f3724edae09",
+      "source": "SYNTHETIC_LONG_HISTORY",
+      "category": "C2-B",
+      "execution_order": 2,
+      "stage": 1,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 64000,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 24000,
+          "reactive_recent_context_tokens": 8000,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 64000,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 24000,
+        "reactive_recent_context_tokens": 8000,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 50598,
+      "max_reserved_input_per_call": 63488,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "L2"
+    },
+    {
+      "fixture_id": "F2-01",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep/fixtures/F2-01.json",
+      "fixture_hash": "26846032eda9a5b28153245a737f3f45358470e63f93f283bba967cbf9cd46e5",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/F2-01.json",
+      "oracle_v2_hash": "7247c41642630ac11fc83ff8db9c098e981a59c7d7ebb1d28075ebf37a37c386",
+      "source": "SYNTHETIC_FIXED_HISTORY",
+      "category": "C2-A",
+      "execution_order": 3,
+      "stage": 2,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 3401,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 100,
+          "reactive_recent_context_tokens": 50,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 3401,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 100,
+        "reactive_recent_context_tokens": 50,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 1121,
+      "max_reserved_input_per_call": 2048,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "F2-01"
+    },
+    {
+      "fixture_id": "F3-02",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep/fixtures/F3-02.json",
+      "fixture_hash": "879e1ccfda492c9da1f9271c5dc6b7212e94f2554c678fc134f118a2cf2c6aa5",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/F3-02.json",
+      "oracle_v2_hash": "28f4128dad279db7a1ef8d021401f0a45111cd3fcbd61a196817e7b64ceb188e",
+      "source": "SYNTHETIC_FIXED_HISTORY",
+      "category": "C2-A",
+      "execution_order": 4,
+      "stage": 2,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 3401,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 100,
+          "reactive_recent_context_tokens": 50,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 3401,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 100,
+        "reactive_recent_context_tokens": 50,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 1177,
+      "max_reserved_input_per_call": 2048,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "F3-02"
+    },
+    {
+      "fixture_id": "F4-03",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep/fixtures/F4-03.json",
+      "fixture_hash": "9f7aa51cc1fa256ba9764aed7b389e7548db41706f1cf4581c95850766903906",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/F4-03.json",
+      "oracle_v2_hash": "709ed394d9b63a9599d78082295fe90c831417dd1cf7c156cf844063c9989015",
+      "source": "SYNTHETIC_FIXED_HISTORY",
+      "category": "C2-A",
+      "execution_order": 5,
+      "stage": 2,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 3333,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 100,
+          "reactive_recent_context_tokens": 50,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 3333,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 100,
+        "reactive_recent_context_tokens": 50,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 1156,
+      "max_reserved_input_per_call": 2048,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "F4-03"
+    },
+    {
+      "fixture_id": "L1",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/long_fixtures/L1.json",
+      "fixture_hash": "8b33dd50d1f5146a2fd713082dd180ae0001c844f3ff43261bd989e487e2961c",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/L1.json",
+      "oracle_v2_hash": "56a94c7556886bff1d8245022d256197e895f4eb6e5cc8c55b27162f65a397c8",
+      "source": "SYNTHETIC_LONG_HISTORY",
+      "category": "C2-B",
+      "execution_order": 6,
+      "stage": 2,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 64000,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 24000,
+          "reactive_recent_context_tokens": 8000,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 64000,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 24000,
+        "reactive_recent_context_tokens": 8000,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 49354,
+      "max_reserved_input_per_call": 62464,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "L1"
+    },
+    {
+      "fixture_id": "L3",
+      "fixture_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/long_fixtures/L3.json",
+      "fixture_hash": "2db1cc911b1a7e888d971b777d436e65eeeede4156b4b83814efdb6bf65fd1eb",
+      "oracle_v2_path": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_3/oracle_v2/L3.json",
+      "oracle_v2_hash": "91f36cebc3edc3ef78bef01b1bdfa8d4a9aa45f679f5369f001e56ce77ba9175",
+      "source": "SYNTHETIC_LONG_HISTORY",
+      "category": "C2-B",
+      "execution_order": 7,
+      "stage": 2,
+      "frozen_config": {
+        "loop": {
+          "max_model_rounds": 100,
+          "max_tool_calls": 300,
+          "max_total_tokens": 1000000,
+          "max_output_tokens_per_round": 8000,
+          "max_elapsed_seconds": 3600,
+          "finalization_output_tokens": 2000,
+          "max_plan_completion_nudges": 1,
+          "enforce_run_limits": true
+        },
+        "context": {
+          "context_window_tokens": 128000,
+          "reserved_output_tokens": 8000,
+          "safety_margin_tokens": 8000,
+          "proactive_threshold_tokens": 64000,
+          "runtime_injection_tokens": 12000,
+          "pinned_constraints_tokens": 4000,
+          "plan_warning_tokens": 4000,
+          "active_skill_warning_tokens": 6000,
+          "summary_output_tokens": 2000,
+          "recent_context_tokens": 24000,
+          "reactive_recent_context_tokens": 8000,
+          "max_compaction_attempts": 2,
+          "min_compaction_savings_tokens": 2000,
+          "min_compaction_savings_ratio": 0.1,
+          "max_partial_compactions": 1
+        },
+        "tool_result": {
+          "max_inline_characters": 12000,
+          "preview_characters": 500,
+          "max_batch_inline_tokens": 3000,
+          "max_batch_preview_tokens": 1000
+        },
+        "tool_parallel": {
+          "enabled": true,
+          "max_workers": 4,
+          "batch_timeout_seconds": 60.0
+        },
+        "tool_retry": {
+          "enabled": false,
+          "max_attempts": 3,
+          "initial_backoff_seconds": 0.25,
+          "backoff_multiplier": 2.0,
+          "max_backoff_seconds": 2.0
+        },
+        "permission": {
+          "default_mode": "default"
+        },
+        "context_retrieval": {
+          "enabled": false,
+          "max_records": 6,
+          "max_characters": 2000,
+          "minimum_score": 0.15,
+          "max_unmatched_constraints": 3
+        },
+        "context_extraction": {
+          "enabled": false,
+          "turn_interval": 4,
+          "max_input_characters": 8000,
+          "max_event_characters": 1000,
+          "max_records": 4,
+          "max_output_tokens": 1000,
+          "timeout_seconds": 8.0
+        },
+        "memory_retrieval": {
+          "enabled": false,
+          "max_records": 4,
+          "max_characters": 1200,
+          "minimum_score": 0.2,
+          "max_unmatched_constraints": 2
+        }
+      },
+      "compaction_parameters": {
+        "context_window_tokens": 128000,
+        "reserved_output_tokens": 8000,
+        "safety_margin_tokens": 8000,
+        "proactive_threshold_tokens": 64000,
+        "runtime_injection_tokens": 12000,
+        "pinned_constraints_tokens": 4000,
+        "plan_warning_tokens": 4000,
+        "active_skill_warning_tokens": 6000,
+        "summary_output_tokens": 2000,
+        "recent_context_tokens": 24000,
+        "reactive_recent_context_tokens": 8000,
+        "max_compaction_attempts": 2,
+        "min_compaction_savings_tokens": 2000,
+        "min_compaction_savings_ratio": 0.1,
+        "max_partial_compactions": 1
+      },
+      "observed_retry_candidate_estimated_input": 49398,
+      "max_reserved_input_per_call": 62464,
+      "max_output_tokens_per_call": 2000,
+      "max_compaction_calls": 4,
+      "artifact_subdirectory": "L3"
+    }
+  ],
+  "stages": [
+    {
+      "stage": 1,
+      "fixture_ids": [
+        "F1-02",
+        "L2"
+      ],
+      "max_compaction_calls": 8,
+      "max_total_reserved_input": 262144,
+      "max_total_reserved_output": 16000,
+      "human_approval_required": true
+    },
+    {
+      "stage": 2,
+      "fixture_ids": [
+        "F2-01",
+        "F3-02",
+        "F4-03",
+        "L1",
+        "L3"
+      ],
+      "max_compaction_calls": 20,
+      "max_total_reserved_input": 524288,
+      "max_total_reserved_output": 40000,
+      "human_approval_required": true
+    }
+  ],
+  "provider": {
+    "host": "www.rightapi.ai",
+    "base_url": "https://www.rightapi.ai/v1",
+    "model": "gpt-6.1-sol",
+    "sdk_max_retries": 0,
+    "protocol": "RESPONSES_STREAMING",
+    "parameters_source": "Production Compaction请求，无新增采样参数"
+  },
+  "policy": {
+    "input_margin_ratio": 1.25,
+    "max_compaction_calls": 28,
+    "max_total_reserved_input": 786432,
+    "max_total_reserved_output": 56000,
+    "max_reserved_input_per_call": 63488,
+    "max_output_tokens_per_call": 2000
+  },
+  "monetary_cost": "MONETARY_COST_NOT_EVALUATED",
+  "eval_runner_retries": 0,
+  "main_provider": "FAKE_TERMINAL_ONLY",
+  "capacity_evidence": {
+    "configured_context_window_tokens": 128000,
+    "configured_source": "hexgent/context/context_budget.py",
+    "provider_route_capacity": "UNCONFIRMED",
+    "confirmed": false,
+    "reason": "本地配置不是Provider路由容量证明"
+  },
+  "stops": [
+    "TOKEN_OR_CALL_BUDGET_EXHAUSTED",
+    "SDK_RETRY_NOT_DISABLED",
+    "ATTRIBUTION_MISSING",
+    "ARTIFACT_PERSIST_FAILED",
+    "CAPACITY_NOT_CONFIRMED",
+    "STAGE_2_REQUIRES_HUMAN_APPROVAL"
+  ],
+  "output_directory": "eval/context_management/c2_prep_3/runs/smoke-<unique-run-id>",
+  "production_hash_source": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/reviewed_dry_run.json"
+}

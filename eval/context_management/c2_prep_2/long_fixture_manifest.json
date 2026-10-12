@@ -1,0 +1,68 @@
+[
+  {
+    "id": "L1",
+    "title": "多轮 Runtime 配置与调用链审查",
+    "fixture_hash": "8b33dd50d1f5146a2fd713082dd180ae0001c844f3ff43261bd989e487e2961c",
+    "oracle_hash": "16dd6ab5a0994c9581dda036925052739d720261c93e1ceb783b32391e6a1def",
+    "rounds": 40,
+    "tool_calls": 40,
+    "messages": 160,
+    "unique_source_files": 40,
+    "source_bytes": 229413,
+    "character_count": 239851,
+    "history_estimated_tokens": 72780,
+    "tool_output_char_ratio": 0.891796886415537,
+    "fact_counts": {
+      "SUMMARY_REQUIRED": 5,
+      "OBSOLETE": 2,
+      "EXTERNALLY_PROTECTED": 1
+    },
+    "production_context_threshold": 64000,
+    "classification": "C2-B",
+    "evidence_type": "SYNTHETIC_LONG_HISTORY"
+  },
+  {
+    "id": "L2",
+    "title": "大型工具输出与测试证据阅读",
+    "fixture_hash": "75bd5934617807099930e91b6a4e8979102f90cdeb507df53148ce21b95822c5",
+    "oracle_hash": "45d96b2d23f6c594880225ece1573e745494c36602fe0bbb46b2a7b3a70eb116",
+    "rounds": 28,
+    "tool_calls": 28,
+    "messages": 112,
+    "unique_source_files": 28,
+    "source_bytes": 247486,
+    "character_count": 257690,
+    "history_estimated_tokens": 73576,
+    "tool_output_char_ratio": 0.923053917798855,
+    "fact_counts": {
+      "SUMMARY_REQUIRED": 5,
+      "OBSOLETE": 2,
+      "EXTERNALLY_PROTECTED": 1
+    },
+    "production_context_threshold": 64000,
+    "classification": "C2-B",
+    "evidence_type": "SYNTHETIC_LONG_HISTORY"
+  },
+  {
+    "id": "L3",
+    "title": "长审查任务部分完成及失败恢复交接",
+    "fixture_hash": "2db1cc911b1a7e888d971b777d436e65eeeede4156b4b83814efdb6bf65fd1eb",
+    "oracle_hash": "5b2409d00040669c1c753b50635fd88b4efd9e5cd18092265eae797c6fe3cc61",
+    "rounds": 40,
+    "tool_calls": 40,
+    "messages": 160,
+    "unique_source_files": 40,
+    "source_bytes": 229413,
+    "character_count": 239707,
+    "history_estimated_tokens": 72838,
+    "tool_output_char_ratio": 0.8917317983014951,
+    "fact_counts": {
+      "SUMMARY_REQUIRED": 5,
+      "OBSOLETE": 2,
+      "EXTERNALLY_PROTECTED": 1
+    },
+    "production_context_threshold": 64000,
+    "classification": "C2-B",
+    "evidence_type": "SYNTHETIC_LONG_HISTORY"
+  }
+]

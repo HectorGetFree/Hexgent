@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F2-02",
+  "facts": [
+    {
+      "fact_id": "F2-02:fact:5",
+      "subject": "旧候选规模",
+      "source_message_id": "F2-02:source:0",
+      "quote": "旧候选规模=12",
+      "canonical_fact": "旧候选规模=12",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-02:fact:6",
+      "subject": "旧输入决定",
+      "source_message_id": "F2-02:source:0",
+      "quote": "旧输入决定=仅使用块正文",
+      "canonical_fact": "旧输入决定=仅使用块正文",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-02:fact:1",
+      "subject": "当前候选规模",
+      "source_message_id": "F2-02:source:1",
+      "quote": "当前候选规模=30",
+      "canonical_fact": "当前候选规模=30",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-02:fact:3",
+      "subject": "模型决定",
+      "source_message_id": "F2-02:source:1",
+      "quote": "模型决定=保持原排序模型",
+      "canonical_fact": "模型决定=保持原排序模型",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-02:fact:7",
+      "subject": "标注保护",
+      "source_message_id": "F2-02:source:1",
+      "quote": "标注保护：不得修改已冻结的标注数据。",
+      "canonical_fact": "标注保护：不得修改已冻结的标注数据。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-02:fact:2",
+      "subject": "当前排序输入",
+      "source_message_id": "F2-02:source:2",
+      "quote": "当前排序输入=文档标题加章节路径加块正文",
+      "canonical_fact": "当前排序输入=文档标题加章节路径加块正文",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-02:fact:4",
+      "subject": "上线前置",
+      "source_message_id": "F2-02:source:2",
+      "quote": "上线前置=完成专属资料库隔离验证",
+      "canonical_fact": "上线前置=完成专属资料库隔离验证",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

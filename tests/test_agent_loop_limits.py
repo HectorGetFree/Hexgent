@@ -529,6 +529,8 @@ class AgentLoopLimitsTest(unittest.TestCase):
             events, _ = run_agent(
                 conversation,
                 self.context,
+                # 极小窗口Fixture的实际输出额度与既有预留对齐，不绕过最终预算。
+                limits=LoopLimits(max_output_tokens_per_round=1),
                 context_limits=context_limits,
             )
 

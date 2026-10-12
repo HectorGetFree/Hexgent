@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F4-03",
+  "facts": [
+    {
+      "fact_id": "F4-03:fact:7",
+      "subject": "旧处置建议",
+      "source_message_id": "F4-03:source:0",
+      "quote": "旧处置建议=立即自动重试",
+      "canonical_fact": "旧处置建议=立即自动重试",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-03:fact:1",
+      "subject": "调用标识",
+      "source_message_id": "F4-03:source:1",
+      "quote": "调用标识=CALL-BIRCH-52",
+      "canonical_fact": "调用标识=CALL-BIRCH-52",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-03:fact:3",
+      "subject": "Handler进入次数",
+      "source_message_id": "F4-03:source:1",
+      "quote": "Handler进入次数=1次",
+      "canonical_fact": "Handler进入次数=1次",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-03:fact:5",
+      "subject": "恢复派发",
+      "source_message_id": "F4-03:source:1",
+      "quote": "恢复派发=未再次派发",
+      "canonical_fact": "恢复派发=未再次派发",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-03:fact:2",
+      "subject": "崩溃边界",
+      "source_message_id": "F4-03:source:2",
+      "quote": "崩溃边界=副作用提交后且Finished未持久化",
+      "canonical_fact": "崩溃边界=副作用提交后且Finished未持久化",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-03:fact:4",
+      "subject": "副作用提交次数",
+      "source_message_id": "F4-03:source:2",
+      "quote": "副作用提交次数=1次",
+      "canonical_fact": "副作用提交次数=1次",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F4-03:fact:6",
+      "subject": "当前处置",
+      "source_message_id": "F4-03:source:2",
+      "quote": "当前处置=需要人工核验未知结果",
+      "canonical_fact": "当前处置=需要人工核验未知结果",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

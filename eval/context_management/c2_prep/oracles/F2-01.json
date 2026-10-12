@@ -1,0 +1,83 @@
+{
+  "fixture_id": "F2-01",
+  "facts": [
+    {
+      "fact_id": "F2-01:fact:5",
+      "subject": "旧结算窗口",
+      "source_message_id": "F2-01:source:0",
+      "quote": "旧结算窗口=每日23:00",
+      "canonical_fact": "旧结算窗口=每日23:00",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-01:fact:6",
+      "subject": "旧复核规则",
+      "source_message_id": "F2-01:source:0",
+      "quote": "旧复核规则=仅需单人复核",
+      "canonical_fact": "旧复核规则=仅需单人复核",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-01:fact:1",
+      "subject": "结算窗口",
+      "source_message_id": "F2-01:source:1",
+      "quote": "结算窗口=每周二及周五09:30",
+      "canonical_fact": "结算窗口=每周二及周五09:30",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-01:fact:3",
+      "subject": "当前缺项",
+      "source_message_id": "F2-01:source:1",
+      "quote": "当前缺项=批次RF-28的负责人签名",
+      "canonical_fact": "当前缺项=批次RF-28的负责人签名",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-01:fact:7",
+      "subject": "账目保护",
+      "source_message_id": "F2-01:source:1",
+      "quote": "账目保护：禁止改写原始退款账目。",
+      "canonical_fact": "账目保护：禁止改写原始退款账目。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-01:fact:2",
+      "subject": "复核门槛",
+      "source_message_id": "F2-01:source:2",
+      "quote": "复核门槛=单笔超过7300元须双人复核",
+      "canonical_fact": "复核门槛=单笔超过7300元须双人复核",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    },
+    {
+      "fact_id": "F2-01:fact:4",
+      "subject": "支付状态",
+      "source_message_id": "F2-01:source:2",
+      "quote": "支付状态=未获授权",
+      "canonical_fact": "支付状态=未获授权",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

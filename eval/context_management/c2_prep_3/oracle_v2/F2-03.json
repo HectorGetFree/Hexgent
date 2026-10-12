@@ -1,0 +1,183 @@
+{
+  "schema_version": 2,
+  "fixture_id": "F2-03",
+  "original_oracle": "/Users/hector/dev/hexgent/eval/context_management/c2_prep/oracles/F2-03.json",
+  "original_oracle_hash": "c479814208277d2f27f4f4c242107d8172260a67b6a2a68355de033248f86ae1",
+  "fixture_hash": "4a32f754b0efdae8371e328f31a7d4df884deb0b7fd9ca53941125573b762147",
+  "facts": [
+    {
+      "fact_id": "F2-03:fact:5",
+      "subject": "旧交付格式",
+      "source_message_id": "F2-03:source:0",
+      "quote": "旧交付格式=XLSX表格",
+      "canonical_fact": "旧交付格式=XLSX表格",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:0",
+        "field": "text",
+        "transcript_sequences": [
+          4
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": false,
+      "pinned_present": false,
+      "summary_responsibility": "OBSOLETE",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    },
+    {
+      "fact_id": "F2-03:fact:6",
+      "subject": "旧接收角色",
+      "source_message_id": "F2-03:source:0",
+      "quote": "旧接收角色=临时岗T2",
+      "canonical_fact": "旧接收角色=临时岗T2",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:0",
+        "field": "text",
+        "transcript_sequences": [
+          4
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": false,
+      "pinned_present": false,
+      "summary_responsibility": "OBSOLETE",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    },
+    {
+      "fact_id": "F2-03:fact:1",
+      "subject": "当前订单",
+      "source_message_id": "F2-03:source:1",
+      "quote": "当前订单=PO-SABLE-418",
+      "canonical_fact": "当前订单=PO-SABLE-418",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:1",
+        "field": "text",
+        "transcript_sequences": [
+          5,
+          14
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    },
+    {
+      "fact_id": "F2-03:fact:3",
+      "subject": "当前接收角色",
+      "source_message_id": "F2-03:source:1",
+      "quote": "当前接收角色=验收岗V7",
+      "canonical_fact": "当前接收角色=验收岗V7",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:1",
+        "field": "text",
+        "transcript_sequences": [
+          5,
+          14
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    },
+    {
+      "fact_id": "F2-03:fact:7",
+      "subject": "订单保护",
+      "source_message_id": "F2-03:source:1",
+      "quote": "订单保护：不得覆盖原始订单文件。",
+      "canonical_fact": "订单保护：不得覆盖原始订单文件。",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:1",
+        "field": "text",
+        "transcript_sequences": [
+          5,
+          9
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": true,
+      "summary_responsibility": "EXTERNALLY_PROTECTED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    },
+    {
+      "fact_id": "F2-03:fact:2",
+      "subject": "交付格式",
+      "source_message_id": "F2-03:source:2",
+      "quote": "交付格式=JSON清单并附SHA256摘要",
+      "canonical_fact": "交付格式=JSON清单并附SHA256摘要",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:2",
+        "field": "text",
+        "transcript_sequences": [
+          7,
+          14
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    },
+    {
+      "fact_id": "F2-03:fact:4",
+      "subject": "交付前置",
+      "source_message_id": "F2-03:source:2",
+      "quote": "交付前置=采购负责人确认数量差异",
+      "canonical_fact": "交付前置=采购负责人确认数量差异",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F2-03:source:2",
+        "field": "text",
+        "transcript_sequences": [
+          7,
+          14
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F2-03/evidence.json"
+    }
+  ],
+  "scope": "SOURCE_RESPONSIBILITY_AUDIT_NOT_QUALITY_RESULT"
+}

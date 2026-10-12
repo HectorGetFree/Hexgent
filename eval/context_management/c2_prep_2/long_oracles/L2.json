@@ -1,0 +1,94 @@
+{
+  "fixture_id": "L2",
+  "facts": [
+    {
+      "fact_id": "L2:fact:1",
+      "source_round": 0,
+      "source_call_id": "L2:read:0",
+      "quote": "目标查询=QUERY-WILLOW-804",
+      "canonical_fact": "目标查询=QUERY-WILLOW-804",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:2",
+      "source_round": 1,
+      "source_call_id": "L2:read:1",
+      "quote": "旧残缺响应排名=第2名",
+      "canonical_fact": "旧残缺响应排名=第2名",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:3",
+      "source_round": 7,
+      "source_call_id": "L2:read:7",
+      "quote": "目标文档=DOC-W804-6",
+      "canonical_fact": "目标文档=DOC-W804-6",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:4",
+      "source_round": 14,
+      "source_call_id": "L2:read:14",
+      "quote": "完整响应 Dense Top30 未命中",
+      "canonical_fact": "完整响应 Dense Top30 未命中",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:5",
+      "source_round": 16,
+      "source_call_id": "L2:read:16",
+      "quote": "完整响应 Sparse 第7名且 RRF 第11名",
+      "canonical_fact": "完整响应 Sparse 第7名且 RRF 第11名",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:6",
+      "source_round": 9,
+      "source_call_id": "L2:read:9",
+      "quote": "旧结论=目标已进入Top5",
+      "canonical_fact": "旧结论=目标已进入Top5",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:7",
+      "source_round": 18,
+      "source_call_id": "L2:read:18",
+      "quote": "最终完整排序=第8名，仍在Top5外",
+      "canonical_fact": "最终完整排序=第8名，仍在Top5外",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    },
+    {
+      "fact_id": "L2:fact:8",
+      "source_round": 27,
+      "source_call_id": "L2:read:27",
+      "quote": "不得修改查询与标注文件",
+      "canonical_fact": "不得修改查询与标注文件",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "EXTERNALLY_PROTECTED",
+      "rule": "实体、取值、条件和生效状态一致，允许释义；历史提及不等于激活。"
+    }
+  ],
+  "review_status": "MANUAL_REVIEW_REQUIRED"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "F4-01",
+  "family": "F4",
+  "title": "异步索引重复投递日志审查",
+  "messages": [
+    {
+      "id": "F4-01:source:0",
+      "role": "tool",
+      "text": "日志审查任务读取了消息投递记录、Worker领取记录和索引构建结果。消息队列里同一Job出现两次并不等于执行两次，须与领取和提交事实对应。日志中重复心跳占主要篇幅，每条心跳都携带Worker和Lease截止值，不能把心跳当作完成事实。警告日志只表示一次网络重试，最终状态由提交记录决定。检查范围是离线样本，不连接队列或数据库。\n历史记录，当前已废止：旧预计Generation=GEN-P81-A",
+      "source": "SYNTHETIC_FIXED_HISTORY"
+    },
+    {
+      "id": "F4-01:source:1",
+      "role": "tool",
+      "text": "两次投递关联到同一个Job，第二次投递没有取得有效Lease。第一次Worker完成构建后发布了一个有效Generation，清理日志只删除失败候选。旧日志曾打印预计发布ID，那不是最后提交ID。核对要保留权威提交与重复投递计数，剔除大量无变化心跳。没有证据证明物理写入只发生一次，因此报告不能升级为端到端Exactly-once。\n当前核对结论：索引任务=JOB-PINE-81\n当前核对结论：当前Generation=GEN-P81-B\n当前核对结论：有效领取次数=1次",
+      "source": "SYNTHETIC_FIXED_HISTORY"
+    },
+    {
+      "id": "F4-01:source:2",
+      "role": "tool",
+      "text": "最后一段日志显示任务已完成且Lease已释放。对象清理状态与索引发布状态独立，清理成功不代表检索结果已经对外可见。当前交接应列清Job、Worker、提交Generation和重复投递情况，同时将旧预计Generation作为无效候选。后续任务可以回读原日志，但摘要应保存必要证据定位。\n当前核对结论：有效Worker=WK-6\n当前核对结论：投递次数=2次\n当前核对结论：最终Job状态=COMPLETED且Lease已释放",
+      "source": "SYNTHETIC_FIXED_HISTORY"
+    }
+  ]
+}

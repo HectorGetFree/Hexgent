@@ -1,0 +1,184 @@
+{
+  "schema_version": 2,
+  "fixture_id": "F4-02",
+  "original_oracle": "/Users/hector/dev/hexgent/eval/context_management/c2_prep/oracles/F4-02.json",
+  "original_oracle_hash": "d9a96596dde5e675644ddae8272703a1845cedee1fdc66139b9ef3de885dc3e2",
+  "fixture_hash": "dad354275acd3ba785a11df2260b0a9a339a17c4ccdbb4946e8f441491fe7356",
+  "facts": [
+    {
+      "fact_id": "F4-02:fact:7",
+      "subject": "旧残缺排名",
+      "source_message_id": "F4-02:source:0",
+      "quote": "旧残缺排名=第3名",
+      "canonical_fact": "旧残缺排名=第3名",
+      "importance": "HISTORICAL",
+      "status": "OBSOLETE",
+      "channel": "OBSOLETE",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:0",
+        "field": "text",
+        "transcript_sequences": [
+          4
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": false,
+      "pinned_present": false,
+      "summary_responsibility": "OBSOLETE",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    },
+    {
+      "fact_id": "F4-02:fact:1",
+      "subject": "查询标识",
+      "source_message_id": "F4-02:source:1",
+      "quote": "查询标识=QUERY-LARCH-19",
+      "canonical_fact": "查询标识=QUERY-LARCH-19",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:1",
+        "field": "text",
+        "transcript_sequences": [
+          6,
+          13
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    },
+    {
+      "fact_id": "F4-02:fact:3",
+      "subject": "Dense位置",
+      "source_message_id": "F4-02:source:1",
+      "quote": "Dense位置=Top30未命中",
+      "canonical_fact": "Dense位置=Top30未命中",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:1",
+        "field": "text",
+        "transcript_sequences": [
+          6,
+          13
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    },
+    {
+      "fact_id": "F4-02:fact:5",
+      "subject": "RRF位置",
+      "source_message_id": "F4-02:source:1",
+      "quote": "RRF位置=第12名",
+      "canonical_fact": "RRF位置=第12名",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:1",
+        "field": "text",
+        "transcript_sequences": [
+          6,
+          13
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    },
+    {
+      "fact_id": "F4-02:fact:2",
+      "subject": "相关文档",
+      "source_message_id": "F4-02:source:2",
+      "quote": "相关文档=DOC-L19-7",
+      "canonical_fact": "相关文档=DOC-L19-7",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:2",
+        "field": "text",
+        "transcript_sequences": [
+          8,
+          13
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    },
+    {
+      "fact_id": "F4-02:fact:4",
+      "subject": "Sparse位置",
+      "source_message_id": "F4-02:source:2",
+      "quote": "Sparse位置=第8名",
+      "canonical_fact": "Sparse位置=第8名",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:2",
+        "field": "text",
+        "transcript_sequences": [
+          8,
+          13
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    },
+    {
+      "fact_id": "F4-02:fact:6",
+      "subject": "最终位置",
+      "source_message_id": "F4-02:source:2",
+      "quote": "最终位置=第9名未进入Top5",
+      "canonical_fact": "最终位置=第9名未进入Top5",
+      "importance": "CRITICAL",
+      "status": "ACTIVE",
+      "channel": "SUMMARY_REQUIRED",
+      "rule": "保留实体、取值、单位和条件；允许同义表达。旧事实仅历史提及不算激活。",
+      "source_location": {
+        "message_id": "F4-02:source:2",
+        "field": "text",
+        "transcript_sequences": [
+          8,
+          13
+        ]
+      },
+      "summary_input_present": true,
+      "recent_tail_present": false,
+      "final_request_present": true,
+      "pinned_present": false,
+      "summary_responsibility": "SUMMARY_REQUIRED",
+      "evidence_reference": "/Users/hector/dev/hexgent/eval/context_management/c2_prep_2/runs/dry-20261011T072848768794Z/F4-02/evidence.json"
+    }
+  ],
+  "scope": "SOURCE_RESPONSIBILITY_AUDIT_NOT_QUALITY_RESULT"
+}

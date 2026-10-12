@@ -1,0 +1,18 @@
+{
+  "provider_host": "www.rightapi.ai",
+  "model_id": "gpt-6.1-sol",
+  "currency": null,
+  "input_price_per_million_upper_bound": null,
+  "output_price_per_million_upper_bound": null,
+  "cache_write_price_upper_bound": null,
+  "failed_timeout_cancel_billing_rule": null,
+  "max_actual_input_tokens": null,
+  "max_billable_output_tokens": null,
+  "input_bound_method": null,
+  "max_estimated_cost": null,
+  "max_compaction_provider_calls": 60,
+  "source": "PENDING_ACCOUNT_ROUTE_CONFIRMATION",
+  "checked_date": "2026-10-11",
+  "confirmed_date": null,
+  "confirmed": false
+}
