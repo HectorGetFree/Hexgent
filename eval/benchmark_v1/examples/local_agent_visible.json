@@ -1,0 +1,1 @@
+{"allowed_tools":["fixture_update"],"execution_budget":{"max_provider_tokens":1000,"max_tool_calls":4,"max_wall_time_seconds":30.0},"user_query":"将本地示例记录的状态设为完成，保持保护记录不变。"}
