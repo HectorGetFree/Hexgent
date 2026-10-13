@@ -93,3 +93,9 @@ docs/*
 /eval/context_remediation_v1/diagnostics/**/*report.md
 /eval/context_remediation_v1/diagnostics/**/final_review.md
 /eval/context_remediation_v1/diagnostics/**/manual_review_findings.json
+
+# 诊断脚本生成的大型历史案例由本地重建，不跟踪展开后的数据。
+/eval/context_remediation_v1/diagnostics/**/projection_v*_cases.json
+/eval/context_remediation_v1/diagnostics/**/historical_regression_cases.json
+/eval/context_remediation_v1/diagnostics/**/adversarial_cases.json
+/eval/context_remediation_v1/diagnostics/**/positive_controls.json
