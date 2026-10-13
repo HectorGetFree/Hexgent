@@ -79,3 +79,17 @@ docs/*
 
 # Next.js 构建输出使用目录规则，避免逐个列举生成文件。
 /frontend/.next/
+
+# 上下文评测生成报告与诊断输出保留本地；测试输入仍跟踪。
+/eval/context_remediation_v1/CLOSEOUT.json
+/eval/context_remediation_v1/REPORT.md
+/eval/context_remediation_v1/IMPLEMENTATION_REVIEW.md
+/eval/context_remediation_v1/production_v2_closure/
+/eval/context_remediation_v1/diagnostics/**/*.json
+!/eval/context_remediation_v1/diagnostics/**/*cases*.json
+!/eval/context_remediation_v1/diagnostics/**/expected_results*.json
+!/eval/context_remediation_v1/diagnostics/**/positive_controls.json
+/eval/context_remediation_v1/diagnostics/**/evidence/
+/eval/context_remediation_v1/diagnostics/**/*report.md
+/eval/context_remediation_v1/diagnostics/**/final_review.md
+/eval/context_remediation_v1/diagnostics/**/manual_review_findings.json

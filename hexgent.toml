@@ -1,5 +1,12 @@
 # Hexgent 默认运行配置。未填写的字段会使用代码默认值。
 
+# 暂停ContextRecord自动提取与召回；不影响长期Memory和压缩Snapshot。
+[context_extraction]
+enabled = false
+
+[context_retrieval]
+enabled = false
+
 [loop]
 # 是否启用模型轮次、工具次数、累计 Token 和总运行时间限制。
 enforce_run_limits = true
@@ -34,5 +41,8 @@ max_batch_preview_tokens = 4000
 [tool_parallel]
 # 仅连续且声明为并行安全的工具会进入线程池。
 enabled = false
-max_workers = 4
+max_workers = 8
 batch_timeout_seconds = 60.0
+
+[permission]
+default_mode = "auto_approve"
