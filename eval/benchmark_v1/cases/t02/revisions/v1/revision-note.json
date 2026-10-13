@@ -1,0 +1,4 @@
+{
+  "reason": "提供公开、可核验的目标资源身份；list_folder根目录返回null，不能要求Agent猜测创建的父目录ID。未修改Oracle或业务要求。",
+  "status": "历史运行保留"
+}
