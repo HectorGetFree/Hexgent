@@ -316,6 +316,8 @@ TOOL_REGISTRY: dict[str, RegisteredTool] = {
         display_argument="documentId",
         permission_capability="workspace_read",
         execution_domain="workspace_capability",
+        concurrency_safe=True,
+        interrupt_behavior="cancel",
     ),
     "search_workspace": RegisteredTool(
         invoke_search_workspace,

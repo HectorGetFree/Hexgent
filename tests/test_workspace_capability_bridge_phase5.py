@@ -1,10 +1,16 @@
 import unittest
+import json
+from threading import Barrier
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from hexgent.integration.capability import CapabilityResult
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.tool.tool_execution import execute_tool_call
 from hexgent.tool.tool_registry import get_tool
+from hexgent.tool.tool_execution import execute_tool_batch
+from hexgent.tool.tool_scheduler import ToolParallelLimits
+from hexgent.tool.workspace_capability_tool import invoke_workspace_capability
 
 
 class _PlanStore:
@@ -12,6 +18,45 @@ class _PlanStore:
 
 
 class WorkspaceCapabilityBridgePhase5Test(unittest.TestCase):
+    def test_parallel_documents_keep_request_identity(self):
+        """同时进入桥接函数后，远程请求和模型结果仍各自匹配调用身份。"""
+        context = self.context()
+        barrier = Barrier(2)
+        received = []
+
+        def bridge(capability, arguments, call_context):
+            barrier.wait(timeout=3)
+            return invoke_workspace_capability(capability, arguments, call_context)
+
+        def invoke(run_id, call_id, capability, arguments):
+            received.append((call_id, arguments['documentId']))
+            return CapabilityResult('v1', run_id, call_id, 'SUCCEEDED', arguments)
+
+        calls = [SimpleNamespace(call_id=f'call-{i}', name='get_document',
+                 arguments=json.dumps(dict(documentId=i, versionId=i + 10,
+                                           startLine=1, lineCount=200))) for i in (1, 2)]
+        with patch('hexgent.tool.workspace_capability_tool.invoke_workspace_capability', side_effect=bridge), \
+             patch('hexgent.tool.workspace_capability_tool.WorkspaceCapabilityClient.invoke', side_effect=invoke):
+            generator = execute_tool_batch(calls, context=context,
+                user_confirmation=lambda _tool, _message: 'allow',
+                parallel_limits=ToolParallelLimits(enabled=True, max_workers=2),
+                remaining_tool_calls=None, deadline=None)
+            while True:
+                try:
+                    next(generator)
+                except StopIteration as stopped:
+                    batch = stopped.value
+                    break
+        self.assertEqual(sorted(received), [('call-1', 1), ('call-2', 2)])
+        self.assertEqual([item['call_id'] for item in batch.outputs], ['call-1', 'call-2'])
+        self.assertEqual([json.loads(item['output'])['documentId'] for item in batch.outputs], [1, 2])
+        self.assertEqual(context.integration_metadata['tool_call_id'], 'call-1')
+        scoped = context.for_tool_call('isolated')
+        self.assertIs(scoped.cache_lock, context.cache_lock)
+        self.assertIs(scoped.tool_call_cache, context.tool_call_cache)
+        self.assertIs(scoped.plan_store, context.plan_store)
+        self.assertTrue(get_tool('get_document').concurrency_safe)
+
     def context(self):
         context = ToolExecutionContext(_PlanStore(), __import__("pathlib").Path("/tmp"))
         context.integration_metadata.update({"workspace_run_id": "ws-run", "tool_call_id": "call-1"})

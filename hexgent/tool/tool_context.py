@@ -1,6 +1,7 @@
 """工具执行期间共享的运行时上下文。"""
 
 from dataclasses import InitVar, dataclass, field
+from copy import copy
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -114,6 +115,16 @@ class ToolExecutionContext:
         """在旧文件正文可能离开活动上下文后清空读取状态。"""
         with self.cache_lock:
             self.read_file_cache.clear()
+
+    def for_tool_call(self, call_id: str) -> "ToolExecutionContext":
+        """隔离调用身份，同时保留同一 Run 的缓存、锁和诊断句柄。"""
+        # 1. 浅复制保留共享运行依赖，避免重建 MemoryStore 或 SkillRegistry。
+        context = copy(self)
+        # 2. 仅隔离请求元数据，多个线程不会覆盖彼此的 tool_call_id。
+        object.__setattr__(context, "integration_metadata", {
+            **self.integration_metadata, "tool_call_id": call_id,
+        })
+        return context
 
     def clear_tool_call_cache(self) -> None:
         """清空当前 Agent Run 的精确工具调用缓存和重复计数。"""

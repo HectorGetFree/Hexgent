@@ -399,7 +399,7 @@ def execute_tool_call(
         return prepared
 
     if call_id is not None:
-        context.integration_metadata["tool_call_id"] = call_id
+        context = context.for_tool_call(call_id)
 
     # 2. 权限允许且未命中缓存后，通知调用方工具即将开始执行。
     if execution_notifier is not None:
