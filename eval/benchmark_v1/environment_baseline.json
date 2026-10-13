@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "baseline_id": "b1b-seed-v1",
+  "documents": [
+    {"file_name": "delivery.md", "content": "# 项目交付\n项目代号：MAPLE。\n交付日：2026-11-06。\n负责人：林舟。\n"},
+    {"file_name": "budget.md", "content": "# 项目预算\n项目代号：MAPLE。\n批准预算：12000 元。\n审批人：周宁。\n"}
+  ]
+}
