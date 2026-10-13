@@ -13,7 +13,7 @@ class ContextExtractionLimits:
     """控制自动提取频率、请求规模和等待时间。"""
 
     # 是否在完整 Turn 边界自动沉淀记录。
-    enabled: bool = True
+    enabled: bool = False
     # 积累多少个未处理完整 Turn 后执行一次提取。
     turn_interval: int = 4
     # 每次请求的事实正文与已有记录合计最大字符数。

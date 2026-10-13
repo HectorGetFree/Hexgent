@@ -1,6 +1,7 @@
 """上下文状态、Token 估算和主动压缩测试。"""
 
 from types import SimpleNamespace
+from tests.support.fact_extraction_fixture import extraction_event
 import unittest
 
 from hexgent.context.context_compaction import compact_context_if_needed
@@ -23,6 +24,9 @@ class FakeResponses:
 
     def create(self, **arguments):
         """返回只包含 completed 的内部摘要事件流。"""
+        extraction = extraction_event(self, arguments)
+        if extraction is not None:
+            return extraction
         self.calls.append(arguments)
         return iter(
             [SimpleNamespace(type="response.completed", response=self.response)]
@@ -54,7 +58,7 @@ class ContextCompactionTest(unittest.TestCase):
         conversation = ContextManager()
         conversation.append_message({"role": "user", "content": "较早的问题"})
         conversation.append_messages(
-            [SimpleNamespace(type="message", text="较早的回答" * 100)],
+            [SimpleNamespace(type="message", text="较早的回答" * 1000)],
             completes_round=True,
         )
         latest_message = {"role": "user", "content": "最新的问题"}
@@ -73,7 +77,8 @@ class ContextCompactionTest(unittest.TestCase):
                 "系统提示词",
                 [],
                 ContextLimits(
-                    context_window_tokens=12,
+                    context_window_tokens=128000,
+                    proactive_threshold_tokens=10,
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=100,
@@ -121,7 +126,7 @@ class ContextCompactionTest(unittest.TestCase):
         conversation = ContextManager()
         first = conversation.append_user_query("第一条 Query，保留原始标点！")
         conversation.append_messages(
-            [SimpleNamespace(type="message", text="第一轮回答" * 100)],
+            [SimpleNamespace(type="message", text="第一轮回答" * 1000)],
             completes_round=True,
         )
         second = conversation.append_user_query("第二条 Query 也必须保持不变。")
@@ -137,7 +142,8 @@ class ContextCompactionTest(unittest.TestCase):
                 "系统提示词",
                 [],
                 ContextLimits(
-                    context_window_tokens=10,
+                    context_window_tokens=128000,
+                    proactive_threshold_tokens=10,
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=100,
@@ -171,7 +177,7 @@ class ContextCompactionTest(unittest.TestCase):
         tool_result = {
             "type": "function_call_output",
             "call_id": "call-1",
-            "output": "文件内容",
+            "output": "文件内容" * 1000,
         }
         conversation.append_messages([tool_call])
         conversation.append_messages([tool_result], completes_round=True)
@@ -188,7 +194,8 @@ class ContextCompactionTest(unittest.TestCase):
                 "系统提示词",
                 [],
                 ContextLimits(
-                    context_window_tokens=10,
+                    context_window_tokens=128000,
+                    proactive_threshold_tokens=10,
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=100,
@@ -264,7 +271,8 @@ class ContextCompactionTest(unittest.TestCase):
                 "系统提示词",
                 [],
                 ContextLimits(
-                    context_window_tokens=100,
+                    context_window_tokens=128000,
+                    proactive_threshold_tokens=98,
                     reserved_output_tokens=1,
                     safety_margin_tokens=1,
                     recent_context_tokens=10,

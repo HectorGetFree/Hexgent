@@ -3,6 +3,7 @@
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
+from tests.support.fact_extraction_fixture import extraction_event
 import unittest
 from unittest.mock import patch
 
@@ -55,6 +56,9 @@ class FakeResponses:
 
     def create(self, **arguments):
         """记录请求参数并将下一个完整响应转换为事件流。"""
+        extraction = extraction_event(self, arguments)
+        if extraction is not None:
+            return extraction
         self.calls.append(arguments)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
@@ -614,7 +618,8 @@ class AgentLoopLimitsTest(unittest.TestCase):
             [make_response([], "<summary>已保留必要历史。</summary>")]
         )
         context_limits = ContextLimits(
-            context_window_tokens=20,
+            context_window_tokens=128000,
+            proactive_threshold_tokens=18,
             reserved_output_tokens=1,
             safety_margin_tokens=1,
             recent_context_tokens=10,

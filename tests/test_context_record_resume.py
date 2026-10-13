@@ -38,6 +38,7 @@ class ContextRecordResumeTest(TestCase):
         self.root = Path(self.temp.name)
         base = HexgentConfig()
         self.config = replace(base, context_extraction=replace(base.context_extraction, enabled=False),
+                              context_retrieval=replace(base.context_retrieval, enabled=True),
                               memory_retrieval=replace(base.memory_retrieval, enabled=False))
         self.engine = AgentEngine(self.config, self.root)
         model = FakeModel([text_response("用户授权已登记")])
@@ -167,7 +168,8 @@ class ContextRecordResumeTest(TestCase):
         context.append_messages([{"role":"assistant", "content":history}], completes_round=True)
         limits = replace(self.config.context, min_compaction_savings_tokens=1, min_compaction_savings_ratio=0.001, recent_context_tokens=1)
         summary = "<summary>历史观察：" + A + "部署还需审批。</summary>"
-        client = SimpleNamespace(responses=FakeModel([text_response(summary)]))
+        from tests.support.fact_extraction_fixture import WithExtraction
+        client = SimpleNamespace(responses=WithExtraction(FakeModel([text_response(summary)])))
         stream = compact_context_if_needed(context, client, "offline", "系统", [], limits, force=True)
         while True:
             try:

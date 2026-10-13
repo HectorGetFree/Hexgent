@@ -132,6 +132,9 @@ def agent_loop(
                         "checkpoint_failed",
                         {"message": f"写入 Checkpoint 失败：{error}"},
                     )
+                    if turn_output.reason in {"context_compacted", "reactive_context_compacted"}:
+                        # 已提交 Compaction 不回滚；停止并由正式 Restore 重建。
+                        raise RuntimeError("COMPACTION_COMMITTED_RESTORE_REQUIRED：Checkpoint 失败") from error
             continue
 
         # 4. Stop 是 Agent Loop 的唯一正常出口。

@@ -1,6 +1,7 @@
 """跨模型轮次复用的活动模型上下文。"""
 
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import Any
 
 
@@ -41,6 +42,46 @@ class ContextManager:
     # 下一条用户 Query 使用的活动上下文内递增序号。
     _next_query_sequence: int = field(default=1, repr=False)
 
+    # 身份与消息正文分离，Checkpoint 和 Transcript 重放延续同一序列。
+    message_ids: list[str] = field(default_factory=list)
+    next_message_sequence: int = 1
+    key_fact_snapshot: dict[str, Any] | None = None
+    source_ids_legacy: bool = False
+
+    def __post_init__(self) -> None:
+        self._ensure_message_ids()
+
+    def _ensure_message_ids(self) -> None:
+        if len(self.message_ids) > len(self.active_messages):
+            raise ValueError("CONTEXT_MESSAGE_ID_MISMATCH")
+        while len(self.message_ids) < len(self.active_messages):
+            self.message_ids.append(f"msg-{self.next_message_sequence}")
+            self.next_message_sequence += 1
+
+    def prefix_sources(self, cut_index: int) -> list[dict]:
+        from .key_fact_snapshot import json_value
+        self._ensure_message_ids()
+        if not 0 < cut_index <= len(self.active_messages):
+            raise ValueError("SNAPSHOT_CUTPOINT_INVALID")
+        return [{"message_id": identity, "message": json_value(message)}
+                for identity, message in zip(self.message_ids[:cut_index], self.active_messages[:cut_index])]
+
+    def intent_source_ids(self) -> tuple[str, ...]:
+        """最新 Query 即使落入物理切点，也只能作为只读意图参考。"""
+        self._ensure_message_ids()
+        latest = next((m for m in reversed(self.active_messages) if isinstance(m, UserQuery) or _is_user_message(m)), None)
+        return tuple(identity for identity, message in zip(self.message_ids, self.active_messages) if message is latest)
+
+    @property
+    def latest_query_reference(self) -> str | None:
+        latest = next((m for m in reversed(self.active_messages) if isinstance(m, UserQuery) or _is_user_message(m)), None)
+        return latest.content if isinstance(latest, UserQuery) else latest["content"] if latest is not None else None
+
+    def candidate_compaction(self, cut_index: int, summary: str, snapshot: dict, **metrics) -> dict:
+        """候选在隔离副本构建，不发布给 MAIN。"""
+        candidate = deepcopy(self)
+        return candidate.apply_compaction(cut_index, summary, snapshot=snapshot, **metrics)
+
     @classmethod
     def from_messages(cls, messages: list[Any]) -> "ContextManager":
         """兼容现有列表调用方，并继续共享其活动消息列表。"""
@@ -77,6 +118,13 @@ class ContextManager:
             partial_compaction_count=int(snapshot.get("partial_compaction_count", 0)),
         )
         manager._next_query_sequence = int(snapshot.get("next_query_sequence", 1))
+        if "message_ids" in snapshot:
+            manager.message_ids = list(snapshot["message_ids"])
+            manager.next_message_sequence = int(snapshot["next_message_sequence"])
+            if len(manager.message_ids) != len(messages) or len(set(manager.message_ids)) != len(messages):
+                raise ValueError("CHECKPOINT_MESSAGE_IDS_INVALID")
+        manager.key_fact_snapshot = deepcopy(snapshot.get("key_fact_snapshot"))
+        manager.source_ids_legacy = bool(snapshot.get("source_ids_legacy", "message_ids" not in snapshot))
         return manager
 
 
@@ -91,12 +139,17 @@ class ContextManager:
 
     def model_messages(self) -> list[Any]:
         """把不可变 Query 物化为原始 user 消息后构造模型输入。"""
-        return self.materialize_messages(self.active_messages)
+        return self.messages_with_snapshot(self.active_messages, self.key_fact_snapshot)
+
+    def messages_with_snapshot(self, messages: list[Any], snapshot: dict | None) -> list[Any]:
+        from .key_fact_snapshot import snapshot_message
+        prefix = [snapshot_message(snapshot)] if snapshot is not None else []
+        return [*prefix, *self.materialize_messages(messages)]
 
     def materialize_messages(self, messages: list[Any]) -> list[Any]:
         """将任意活动条目列表中的不可变 Query 转换为模型消息。"""
         return [
-            item.to_message() if isinstance(item, UserQuery) else item
+            _request_message(item.to_message() if isinstance(item, UserQuery) else item)
             for item in messages
         ]
 
@@ -105,6 +158,7 @@ class ContextManager:
         query = UserQuery(self._next_query_sequence, content)
         self._next_query_sequence += 1
         self.active_messages.append(query)
+        self._ensure_message_ids()
         self.partial_compaction_count = 0
         return query
 
@@ -120,6 +174,7 @@ class ContextManager:
         query = UserQuery(sequence, content)
         self._next_query_sequence = sequence + 1
         self.active_messages.append(query)
+        self._ensure_message_ids()
         self.partial_compaction_count = 0
         return query
 
@@ -129,6 +184,7 @@ class ContextManager:
             self.append_user_query(message["content"])
             return
         self.active_messages.append(message)
+        self._ensure_message_ids()
         self.partial_compaction_count = 0
 
     def append_messages(
@@ -201,11 +257,19 @@ class ContextManager:
         summary_tokens: int,
         recent_tokens: int,
         status: str,
+        snapshot: dict | None = None,
     ) -> dict[str, Any]:
         """提交已经验证收益的候选压缩，并返回结构化边界事实。"""
         compacted_messages, compacted_boundaries, preserved_queries = (
             self.build_compacted_messages(cut_index, summary)
         )
+        self._ensure_message_ids()
+        sources = self.prefix_sources(cut_index)
+        previous_ids = list(self.message_ids)
+        # 1. 摘要是新生成消息，不复用已压缩原始消息的身份。
+        summary_id = f"summary-{self.compaction_count + 1}"
+        preserved_ids = [previous_ids[self.active_messages.index(query)] for query in preserved_queries]
+        self.message_ids = [*preserved_ids, summary_id, *previous_ids[cut_index:]]
         self.active_messages[:] = compacted_messages
         self.round_boundaries[:] = compacted_boundaries
         boundary_record = {
@@ -229,6 +293,11 @@ class ContextManager:
         boundary_record["resulting_message_count"] = len(self.active_messages)
         boundary_record["compaction_count"] = self.compaction_count
         boundary_record["partial_compaction_count"] = self.partial_compaction_count
+        if snapshot is not None:
+            self.key_fact_snapshot = deepcopy(snapshot)
+            boundary_record.update(key_fact_snapshot=deepcopy(snapshot), source_messages=sources,
+                                   resulting_message_ids=list(self.message_ids),
+                                   next_message_sequence=self.next_message_sequence)
         return boundary_record
 
     def restore_compaction(self, record: dict[str, Any]) -> None:
@@ -261,18 +330,76 @@ class ContextManager:
         if record.get("resulting_message_count") != len(compacted_messages):
             raise ValueError("上下文压缩记录的消息数量与重放结果不一致")
 
-        # 3. 原子替换活动上下文并恢复压缩熔断相关计数。
+        # 3. 全部校验通过后才发布恢复状态。
+        validated = None
+        if "key_fact_snapshot" in record:
+            # 2.5. 恢复再次验证已提交来源和生命周期，不调用 Extractor。
+            from .key_fact_snapshot import validate_snapshot
+            snapshot = record["key_fact_snapshot"]
+            raw = {k: snapshot[k] for k in ("as_of_message_id", "facts", "dispositions")}
+            sources = self.prefix_sources_from_previous(record, cut_index)
+            actual_sources = self.prefix_sources(cut_index)
+            same_sources = sources == actual_sources
+            if self.source_ids_legacy:
+                # 老快照没有消息身份；逐消息核对正文后采用首次新提交中的权威身份。
+                same_sources = [s["message"] for s in sources] == [s["message"] for s in actual_sources]
+            if not same_sources:
+                raise ValueError("SNAPSHOT_RESTORE_PREFIX_MISMATCH")
+            validated = validate_snapshot(raw, cutpoint=sources[-1]["message_id"], sources=sources,
+                                          previous=self.key_fact_snapshot, budget_tokens=10**12,
+                                          excluded_source_ids=tuple(s["message_id"] for s, identity in
+                                              zip(sources, self.message_ids[:cut_index])
+                                              if identity in self.intent_source_ids()))
+            if validated != snapshot:
+                raise ValueError("SNAPSHOT_RESTORE_SOURCE_MISMATCH")
+            ids = record["resulting_message_ids"]
+            if len(ids) != len(compacted_messages) or len(set(ids)) != len(ids):
+                raise ValueError("SNAPSHOT_RESTORE_IDS_INVALID")
         self.active_messages[:] = compacted_messages
         self.round_boundaries[:] = boundaries
+        if validated is not None:
+            self.key_fact_snapshot = deepcopy(validated)
+            self.message_ids = list(record["resulting_message_ids"])
+            self.next_message_sequence = int(record["next_message_sequence"])
+            self.source_ids_legacy = False
+        else:
+            # 旧事件没有 Snapshot，继续保持其原有恢复契约。
+            self.message_ids = [f"legacy-{self.compaction_count}-{i}" for i in range(len(compacted_messages))]
+            self.source_ids_legacy = True
         self.compaction_count = int(record.get("compaction_count", 0))
         self.partial_compaction_count = int(
             record.get("partial_compaction_count", 0)
         )
         self.consecutive_compaction_failures = 0
 
+    def prefix_sources_from_previous(self, record: dict, cut_index: int) -> list[dict]:
+        """仅用于重放校验；来源在改动活动消息之前核对。"""
+        sources = record.get("source_messages")
+        if not isinstance(sources, list) or len(sources) != cut_index:
+            raise ValueError("SNAPSHOT_RESTORE_SOURCES_INVALID")
+        return sources
+
     def record_compaction_failure(self) -> None:
         """累计一次压缩失败，供后续熔断判断使用。"""
         self.consecutive_compaction_failures += 1
+
+def _request_message(message: Any, *, response_item: bool = True) -> Any:
+    """规范化请求副本的兼容字段，不改权威历史或事实正文。"""
+    # 1. SDK 输出对象与已恢复的 JSON 消息采用同一请求序列化边界。
+    if callable(getattr(message, "model_dump", None)):
+        message = message.model_dump(mode="json")
+    # 2. reasoning.status 是可省略的响应状态元数据，当前Provider不接受回传。
+    #    只处理顶层响应条目，不删除工具数据、嵌套事实或其他消息的状态。
+    if isinstance(message, dict):
+        return {
+            key: [] if key == "logprobs" and value is None else _request_message(value, response_item=False)
+            for key, value in message.items()
+            if not (response_item and message.get("type") == "reasoning" and key == "status")
+        }
+    if isinstance(message, list):
+        return [_request_message(value, response_item=False) for value in message]
+    return message
+
 
 def _is_user_message(message: Any) -> bool:
     """判断一条消息是否为包含原始文本的用户 Query。"""

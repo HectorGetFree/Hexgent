@@ -89,7 +89,8 @@ class PinnedProductionContextTests(unittest.TestCase):
         self.run_model([text_response(history, output=[message(history)])])
         self.run_model([text_response("第二轮资料核对完成", output=[message("第二轮资料核对完成")])])
         limits = replace(self.cfg.context, recent_context_tokens=1, min_compaction_savings_tokens=1, min_compaction_savings_ratio=0.001)
-        model = FakeModel([text_response("<summary>任务剩余：核对结果。</summary>")])
+        from tests.support.fact_extraction_fixture import WithExtraction
+        model = WithExtraction(FakeModel([text_response("<summary>任务剩余：核对结果。</summary>")]))
         stream = compact_context_if_needed(self.engine.context_manager, SimpleNamespace(responses=model), "offline",
             build_context_details(self.engine.tool_context, pinned_constraints=active_constraints(self.engine.session.store)).instructions,
             [], limits, force=True)

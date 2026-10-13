@@ -71,8 +71,9 @@ TOOLS = [
         "name": "list_folder",
         "description": (
             "List the direct children of a Workspace folder. Omit folderId to list the Workspace root. "
-            "Use a returned folder id to browse that folder, or use a returned documentId and versionId "
-            "with get_document. This tool is not recursive."
+            "For folder items, use id as folderId to browse that folder. For document items, "
+            "use id as documentId and versionId as the immutable version record ID with get_document. "
+            "This tool is not recursive."
         ),
         "parameters": {
             "type": "object",
@@ -96,7 +97,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "documentId": {"type": "integer", "description": "文档 ID。"},
-                "versionId": {"type": "integer", "description": "精确的文档版本号。"},
+                "versionId": {"type": "integer", "description": "不可变文档版本记录的主键 ID，不是文档内版本号。"},
                 "startLine": {
                     "type": ["integer", "null"],
                     "minimum": 1,

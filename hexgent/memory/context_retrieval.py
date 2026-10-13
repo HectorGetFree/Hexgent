@@ -18,7 +18,7 @@ class ContextRetrievalLimits:
     """限制单次 Run 召回并注入的历史上下文规模。"""
 
     # 是否在新 Query 到达时启用 ContextRecord 召回。
-    enabled: bool = True
+    enabled: bool = False
 
     # 单次最多召回的有效记录数量。
     max_records: int = 6

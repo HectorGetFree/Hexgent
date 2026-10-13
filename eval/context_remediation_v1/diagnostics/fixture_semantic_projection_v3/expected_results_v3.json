@@ -1,0 +1,318 @@
+{
+  "A1-full": {
+    "classification": "PASS",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "PASS"
+  },
+  "A1-endpoints": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A1-summary": {
+    "classification": "PASS",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "PASS"
+  },
+  "A1-union-trap": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A1-wording": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A1-bundle": {
+    "classification": "PASS",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "PASS"
+  },
+  "A2-full": {
+    "classification": "PASS",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "PASS"
+  },
+  "A2-partial": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A2-ambiguous": {
+    "classification": "UNCERTAIN",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "UNCERTAIN"
+  },
+  "A2-stale": {
+    "classification": "STATE_ERROR",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "STATE_ERROR"
+  },
+  "A2-conflict": {
+    "classification": "UNCERTAIN",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "UNCERTAIN"
+  },
+  "A3-above": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A3-these": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "补足核验动作及当前完成状态；原始30个来源只陈述depends，未提供核验动作或完成状态，不补填任何匹配值。",
+    "original_classification": "PASS"
+  },
+  "A3-batch": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "标注/记录义务独立保留；来源实际depends记录证明已记载，不等于依赖核验已完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A3-related": {
+    "classification": "UNCERTAIN",
+    "rationale": "所有相关模块通过不能投影为上游依赖；保留通过谓词及未解析范围，结果仍UNCERTAIN。",
+    "original_classification": "UNCERTAIN"
+  },
+  "A3-main": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "A3-all-deps": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "当前全部依赖不等同唯一未决依赖；原证据sole_pending仅覆盖未决子集，不能排除其他已解决但仍属依赖的事项。原句整体集合义务保留，来源缺乏该完整集合声明。",
+    "original_classification": "PASS"
+  },
+  "A4-unique": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "A4-existence-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "UNSUPPORTED_FACT"
+  },
+  "A4-no-blockers": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "A4-absence-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "UNSUPPORTED_FACT"
+  },
+  "A4-open-scope": {
+    "classification": "UNCERTAIN",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "UNCERTAIN"
+  },
+  "A4-complete-negative": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "A4-local-negative": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A4-all-checks": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "检查通过不等于完成；源只有completed的更新，未提供check_passed命题，所以不能以完成状态false判检查失败；未获支持。",
+    "original_classification": "STATE_ERROR"
+  },
+  "A5-complete": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "审批后继续保留动作continue，不能只保存前置条件after_approval；来源只写next_condition，缺少动作。",
+    "original_classification": "PASS"
+  },
+  "A5-partial": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "审批后继续保留动作continue，不能只保存前置条件after_approval；来源只写next_condition，缺少动作。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A5-one-unknown": {
+    "classification": "UNCERTAIN",
+    "rationale": "已验收谓词显式保留，相关范围未知不默认为通过。",
+    "original_classification": "UNCERTAIN"
+  },
+  "A5-unsupported-part": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "MAP完成是任务完成，不用仅里程碑done替代；发布义务仍保留，源不支持这些额外整体状态。",
+    "original_classification": "UNSUPPORTED_FACT"
+  },
+  "A5-invalid": {
+    "classification": "SOURCE_INVALID",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "SOURCE_INVALID"
+  },
+  "A5-future": {
+    "classification": "SOURCE_INVALID",
+    "rationale": "审批后继续保留动作continue，不能只保存前置条件after_approval；来源只写next_condition，缺少动作。",
+    "original_classification": "SOURCE_INVALID"
+  },
+  "A6-broad": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "A6-narrow": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "A6-drop-dependency": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "A6-wrong-downgrade": {
+    "classification": "STATE_ERROR",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "STATE_ERROR"
+  },
+  "H-Pilot10-f6": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "原句第二子命题为全前缀没有上批工作完成证据，旧模型只覆盖依赖全称；新增文本性缺失义务，不推断业务没完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "H-Pilot10-f13": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "阅读证据与测试PASS不等价这一独立子命题补入投影，引用原前言限定，而非漏掉子命题只测全称。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "H-Pilot11-f4": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "全前缀30阅读项支持主要构成；自身引用仅3项不足多数。后半限定静态阅读的认识能力，分别支持三个不可确认状态，不推出未发生。"
+  },
+  "H-Stability-L3-R1-f8": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "阅读证据与测试PASS不等价这一独立子命题补入投影，引用原前言限定，而非漏掉子命题只测全称。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "H-Stability-L3-R2-f6": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "原句第二子命题为全前缀没有上批工作完成证据，旧模型只覆盖依赖全称；新增文本性缺失义务，不推断业务没完成。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "H-Stability-L3-R2-f7": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "阅读证据与测试PASS不等价这一独立子命题补入投影，引用原前言限定，而非漏掉子命题只测全称。；恢复/权限需独立证据的子命题分别检查。",
+    "original_classification": "REFERENCE_GAP"
+  },
+  "H-Pilot10-f3": {
+    "classification": "PASS",
+    "rationale": "补足读取动作种类与原句明确列出的文件身份，原引用/原始消息完全不动；只给新投影加可追溯字段。",
+    "original_classification": "PASS"
+  },
+  "H-Pilot11-f3": {
+    "classification": "PASS",
+    "rationale": "补足读取动作种类与原句明确列出的文件身份，原引用/原始消息完全不动；只给新投影加可追溯字段。",
+    "original_classification": "PASS"
+  },
+  "H-R-SPARSE-S1-f1": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "H-R-SPARSE-S1-f2": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "H-R-SPARSE-S1-f3": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "H-Stability-L3-R1-f3": {
+    "classification": "PASS",
+    "rationale": "补足读取动作种类与原句明确列出的文件身份，原引用/原始消息完全不动；只给新投影加可追溯字段。",
+    "original_classification": "PASS"
+  },
+  "H-Stability-L3-R2-f4": {
+    "classification": "PASS",
+    "rationale": "补足读取动作种类与原句明确列出的文件身份，原引用/原始消息完全不动；只给新投影加可追溯字段。",
+    "original_classification": "PASS"
+  },
+  "H-Stability-SP-R1-f3": {
+    "classification": "PASS",
+    "rationale": "原投影已保留主体、范围、谓词、状态、条件/否定/唯一性及切点；无需改其命题。",
+    "original_classification": "PASS"
+  },
+  "V2-dependency-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "原始证据仅依赖存在，没有核验动作及完成态，不向来源补齐目标布尔值。"
+  },
+  "V2-start-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "证明动作启动，不证明完成，也不把没完成证据误填为当前业务状态False。"
+  },
+  "V2-all-completed": {
+    "classification": "PASS",
+    "rationale": "每项操作结果有明确动作与completed状态，覆盖全部30接口。"
+  },
+  "V2-partial-completed": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "只有1—15完成证据，16—30只有依赖关系，整个前缀也不足以证明全部完成。"
+  },
+  "V2-prefix-only-completed": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "完整前缀含全部核验结果，但Fact仅引用旧依赖记录，引用不足。"
+  },
+  "V2-authoritative-summary": {
+    "classification": "PASS",
+    "rationale": "单条权威汇总实际包含30项动作与completed状态，不能按refs数量误伤。"
+  },
+  "V2-revoked": {
+    "classification": "STATE_ERROR",
+    "rationale": "完整核验后接口30发生明确状态撤销，不能用旧汇总声明当前全部completed；历史动作仍有据。"
+  },
+  "V2-ambiguous-summary": {
+    "classification": "UNCERTAIN",
+    "rationale": "模糊汇总的结构化候选字段不升级成真实已知覆盖，人工资格UNKNOWN。"
+  },
+  "V3-only-failure_recovery": {
+    "classification": "STATE_ERROR",
+    "rationale": "已提供failure_recovery验证完成证据；另外两类经限定证据核查不能确认，不能互相替代。"
+  },
+  "V3-only-permission_handling": {
+    "classification": "STATE_ERROR",
+    "rationale": "已提供permission_handling验证完成证据；另外两类经限定证据核查不能确认，不能互相替代。"
+  },
+  "V3-only-other_runtime_behaviors": {
+    "classification": "STATE_ERROR",
+    "rationale": "已提供other_runtime_behaviors验证完成证据；另外两类经限定证据核查不能确认，不能互相替代。"
+  },
+  "V3-all-verified": {
+    "classification": "STATE_ERROR",
+    "rationale": "三类均有明确验证完成记录。"
+  },
+  "V3-no-confirmable": {
+    "classification": "PASS",
+    "rationale": "明确限定为阅读证据，三类均不能据此确认；不判断外部是否已执行。"
+  },
+  "V3-explicit-not-verified": {
+    "classification": "STATE_ERROR",
+    "rationale": "证据明确确认三类尚未验证；原句仅为不能确认。这里检查精确认识状态投影，不提供跨状态蕴含规则。"
+  },
+  "V3-explicit-matching": {
+    "classification": "PASS",
+    "rationale": "明确否定的来源与明确否定的投影一致。"
+  },
+  "V3-unknown": {
+    "classification": "UNCERTAIN",
+    "rationale": "来源无法确定三类认识状态，不可升级为不能确认或明确未验证。"
+  },
+  "V3-tests-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "只有一般测试通过记录，未限定测试覆盖三类行为，也无三类认识状态核查。"
+  },
+  "V3-front-gap": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "前半范围缺口不免除后半三项独立判定。"
+  }
+}

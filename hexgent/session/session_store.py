@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import re
 from threading import RLock
+from time import monotonic
+from stat import S_IMODE
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -345,6 +347,56 @@ class SessionStore:
         """返回下一条 Transcript 记录将使用的序号。"""
         with self._transcript_lock:
             return self._next_sequence
+
+    @owned_write
+    def commit_compaction(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """仅 Compaction 使用原子日志发布；不承诺 fsync 级断电持久性。"""
+        with self._transcript_lock:
+            if self.session_id is None:
+                raise RuntimeError("COMPACTION_SESSION_NOT_INITIALIZED")
+            self._ensure_session_dir()
+            records = self.read_transcript()
+            expected = records[-1]["sequence"] + 1 if records else 1
+            if expected != self._next_sequence:
+                raise RuntimeError("SESSION_STALE：Transcript 已变化，请重新 Restore")
+            old = self.transcript_path.read_bytes() if self.transcript_path.exists() else b""
+            record = dict(schema_version=TRANSCRIPT_SCHEMA_VERSION, sequence=expected,
+                          type="context_compaction_applied", created_at=_beijing_now().isoformat(), payload=payload)
+            separator = b"" if not old or old.endswith(b"\n") else b"\n"
+            data = old + separator + (json.dumps(record, ensure_ascii=False, default=_json_default,
+                                                separators=(",", ":")) + "\n").encode()
+            temporary = self.transcript_path.with_name(f".{self.transcript_path.name}.{uuid4().hex}.tmp")
+            start = monotonic()
+            cleanup_error = None
+            try:
+                # 1. 临时文件完全关闭后替换；普通追加每次重开路径，无旧句柄缓存。
+                self._write_compaction_temporary(temporary, data)
+                if temporary.stat().st_size != len(data):
+                    raise OSError("COMPACTION_TEMPORARY_INCOMPLETE")
+                if self.transcript_path.exists():
+                    temporary.chmod(S_IMODE(self.transcript_path.stat().st_mode))
+                replacing_started = monotonic()
+                temporary.replace(self.transcript_path)
+                replacement_latency_ms = (monotonic()-replacing_started)*1000
+                # 2. 替换为唯一提交点，序号在同一所有权/线程锁内推进。
+                self._next_sequence = expected + 1
+            finally:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as error:
+                    cleanup_error = str(error)
+            return dict(transcript_bytes_before=len(old), transcript_bytes_after=len(data),
+                        temporary_bytes=len(data), replacement_latency_ms=replacement_latency_ms,
+                        publication_latency_ms=(monotonic()-start)*1000,
+                        temporary_cleanup_error=cleanup_error,
+                        transcript_sequence=expected, durability="ATOMIC_VISIBILITY_NO_FSYNC")
+
+    @staticmethod
+    def _write_compaction_temporary(path: Path, data: bytes) -> None:
+        """独立边界用于确定性故障注入，不暴露给模型或配置。"""
+        with path.open("xb") as stream:
+            if stream.write(data) != len(data):
+                raise OSError("COMPACTION_TEMPORARY_INCOMPLETE")
 
     def next_run_id(self) -> str:
         """根据现有 Report 文件分配 Session 内下一个运行编号。"""

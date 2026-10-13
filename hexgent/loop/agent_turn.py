@@ -20,7 +20,7 @@ from ..tool.tool_scheduler import execute_tool_batch
 from ..tool.tool_permission_pipeline import PermissionContext
 from hexgent.context.context_builder import build_context_details
 from hexgent.session.pinned_constraints import active_constraints
-from hexgent.utils.token_estimator import estimate_request_tokens
+from hexgent.utils.token_estimator import estimate_request_tokens, estimate_value_tokens
 from hexgent.events import (
     AgentEvent,
     AgentLoopResult,
@@ -313,6 +313,10 @@ def run_turn(
             state.relevant_context,
         ))
     def current_context(records):
+        if state.context_manager.key_fact_snapshot is not None:
+            from ..context.key_fact_snapshot import snapshot_message
+            if estimate_value_tokens(snapshot_message(state.context_manager.key_fact_snapshot)) > active_context_limits.key_fact_snapshot_tokens:
+                raise ValueError("KEY_FACT_SNAPSHOT_LIMIT_EXCEEDED")
         return build_context_details(
             state.tool_context, records, state.relevant_memory,
             state.active_skill, active_context_limits.runtime_injection_tokens,
@@ -341,6 +345,25 @@ def run_turn(
 
     # 5. 每次主模型调用前检查并压缩活动上下文，收尾轮也不能越过容量边界。
     request_tools = _available_tools_for_state(state) if state.mode == "working" else []
+    current_output_allowance = (max(1, min(limits.max_output_tokens_per_round, limits.max_total_tokens-state.total_tokens))
+        if state.mode == "working" and limits.enforce_run_limits
+        else limits.max_output_tokens_per_round if state.mode == "working" else limits.finalization_output_tokens)
+    def commit_current_compaction(boundary):
+        # Checkpoint 可再生：同一权威提交包含已知的续跑预算，不推测旧快照计数。
+        ledger = boundary["cost_ledger"]
+        calls = [ledger["extractor"], *ledger["summary"]]
+        resumed = replace(state,
+            input_tokens=state.input_tokens + sum(call.get("input_tokens") or 0 for call in calls),
+            output_tokens=state.output_tokens + sum(call.get("output_tokens") or 0 for call in calls),
+            transition="reactive_context_compacted" if boundary.get("reactive") else "context_compacted",
+            reactive_compaction_attempted=state.reactive_compaction_attempted or boundary.get("reactive", False))
+        boundary["resume_state"] = resumed.to_snapshot().to_dict()
+        return session.record_compaction(boundary)
+
+    def commit_reactive_compaction(boundary):
+        boundary["reactive"] = True
+        return commit_current_compaction(boundary)
+
     compaction = yield from compact_context_if_needed(
         state.context_manager,
         client,
@@ -349,6 +372,9 @@ def run_turn(
         request_tools,
         active_context_limits,
         instruction_budget=built_context.instruction_tokens,
+        commit_boundary=commit_current_compaction if session is not None and session.store is not None else None,
+        plan_reference=state.tool_context.plan_store.get_plan(),
+        output_allowance=current_output_allowance,
     )
     if session is not None and compaction.status != "not_needed":
         session.record_runtime_event(
@@ -357,11 +383,11 @@ def run_turn(
                 "mode": state.mode,
                 "status": compaction.status,
                 "request_budget": compaction.request_budget,
+                "cost_ledger": compaction.cost_ledger,
+                "publication_metrics": (compaction.boundary or {}).get("publication_metrics"),
             },
         )
     if compaction.status in {"compacted", "partial"}:
-        if compaction.boundary is not None and session is not None:
-            session.record_compaction(compaction.boundary)
         state.tool_context.clear_tool_caches()
         next_state = replace(
             state,
@@ -478,6 +504,9 @@ def run_turn(
                 reactive_limits,
                 force=True,
                 instruction_budget=built_context.instruction_tokens,
+                commit_boundary=commit_reactive_compaction if session is not None and session.store is not None else None,
+                plan_reference=state.tool_context.plan_store.get_plan(),
+                output_allowance=current_output_allowance,
             )
             if session is not None:
                 session.record_runtime_event(
@@ -486,17 +515,12 @@ def run_turn(
                         "mode": state.mode,
                         "status": reactive_compaction.status,
                         "request_budget": reactive_compaction.request_budget,
+                        "cost_ledger": reactive_compaction.cost_ledger,
+                        "publication_metrics": (reactive_compaction.boundary or {}).get("publication_metrics"),
                         "reactive": True,
                     },
                 )
             if reactive_compaction.status in {"compacted", "partial"}:
-                if (
-                    reactive_compaction.boundary is not None
-                    and session is not None
-                ):
-                    session.record_compaction(
-                        reactive_compaction.boundary
-                    )
                 state.tool_context.clear_tool_caches()
                 next_state = replace(
                     state,

@@ -193,6 +193,10 @@ def _context_snapshot(context_manager: ContextManager) -> dict[str, Any]:
         "consecutive_compaction_failures": context_manager.consecutive_compaction_failures,
         "partial_compaction_count": context_manager.partial_compaction_count,
         "next_query_sequence": context_manager._next_query_sequence,
+        "message_ids": list(context_manager.message_ids),
+        "next_message_sequence": context_manager.next_message_sequence,
+        "key_fact_snapshot": context_manager.key_fact_snapshot,
+        "source_ids_legacy": context_manager.source_ids_legacy,
     }
 
 

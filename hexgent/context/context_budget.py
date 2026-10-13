@@ -35,6 +35,13 @@ class ContextLimits:
     # 单次上下文摘要允许生成的最大 Token 数量。
     summary_output_tokens: int = 2_000
 
+    # 关键事实保护区不截断；提取独立调用且不启用隐藏重试。
+    key_fact_snapshot_tokens: int = 2_000
+    fact_extraction_output_tokens: int = 4_000
+    fact_extraction_timeout_seconds: float = 120.0
+    # 辅助调用独立容量，Preflight 仍需核对同一模型路由的真实容量。
+    auxiliary_context_window_tokens: int = 128_000
+
     # 压缩后尽量原样保留的最近消息 Token 数量。
     recent_context_tokens: int = 24_000
 

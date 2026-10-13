@@ -43,7 +43,7 @@ class ContextRetrievalTest(unittest.TestCase):
             ]
         )
 
-        results = ContextRecordRetriever().retrieve(
+        results = ContextRecordRetriever(ContextRetrievalLimits(enabled=True)).retrieve(
             "继续检查 SessionRestorer 的会话恢复逻辑",
             store.active_records,
         )
@@ -62,7 +62,7 @@ class ContextRetrievalTest(unittest.TestCase):
             ]
         )
         retriever = ContextRecordRetriever(
-            ContextRetrievalLimits(max_records=1, max_characters=100)
+            ContextRetrievalLimits(enabled=True, max_records=1, max_characters=100)
         )
 
         results = retriever.retrieve("恢复方案", store.active_records)
@@ -80,7 +80,7 @@ class ContextRetrievalTest(unittest.TestCase):
             ]
         )
 
-        results = ContextRecordRetriever().retrieve(
+        results = ContextRecordRetriever(ContextRetrievalLimits(enabled=True)).retrieve(
             "前面的方案怎么继续？",
             store.active_records,
             allow_recent_fallback=True,
@@ -95,7 +95,7 @@ class ContextRetrievalTest(unittest.TestCase):
         """新 Query 应在调用 Agent Loop 前完成召回并注入 instructions。"""
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            engine = AgentEngine.create(HexgentConfig(), root)
+            engine = AgentEngine.create(HexgentConfig(context_retrieval=ContextRetrievalLimits(enabled=True)), root)
             source_query = engine.context_manager.append_user_query("确认恢复设计")
             engine.session.record_user_query(source_query)
             engine.upsert_context_records(

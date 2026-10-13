@@ -39,7 +39,7 @@ class ContextRecordExtractionTest(unittest.TestCase):
             [{"role": "assistant", "content": "已了解"}], completes_round=True, source="model_response",
         )
         self.through = self.session.store.next_sequence - 1
-        self.limits = ContextExtractionLimits()
+        self.limits = ContextExtractionLimits(enabled=True)
 
     def candidate_text(self, **overrides):
         """提供可核对用户来源的模拟模型输出。"""

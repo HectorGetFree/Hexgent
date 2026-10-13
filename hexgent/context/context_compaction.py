@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from dataclasses import dataclass, field
 import re
+from time import monotonic
 from typing import Any, Literal
 
 from hexgent.events import (
@@ -16,6 +17,11 @@ from hexgent.utils.token_estimator import estimate_request_tokens, estimate_valu
 from hexgent.observation import begin_span, end_span
 from .context_budget import ContextLimits
 from .context_manager import ContextManager
+from .key_fact_extractor import extract_snapshot, usage_dict
+
+
+class CompactionPublicationError(RuntimeError):
+    """已提交事件的投影失败；必须停止并 Restore，不得声称回滚。"""
 
 
 COMPACTION_INSTRUCTIONS = """你负责压缩 Agent 的历史会话上下文。
@@ -70,6 +76,9 @@ class CompactionOutcome:
 
     # 压缩检查时完整请求的分项 Token 估算，供运行时诊断使用。
     request_budget: dict[str, int] = field(default_factory=dict)
+
+    # 实际成本与未知 Usage 单独保留，不用估算填补。
+    cost_ledger: dict[str, Any] = field(default_factory=dict)
 
 
 def _usage_values(usage: Any) -> tuple[int, int]:
@@ -132,11 +141,13 @@ def _has_meaningful_savings(
     )
 
 
-def _read_completed_response(stream: Any) -> Any:
+def _read_completed_response(stream: Any, *, deadline: float | None = None) -> Any:
     """消费内部摘要流，并只返回协议完整的 Response。"""
     completed_response = None
     try:
         for event in stream:
+            if deadline is not None and monotonic() > deadline:
+                raise TimeoutError("FACT_EXTRACTION_TIMEOUT")
             if event.type == "response.completed":
                 completed_response = event.response
             elif event.type in {"response.failed", "response.incomplete", "error"}:
@@ -160,6 +171,9 @@ def compact_context_if_needed(
     *,
     force: bool = False,
     instruction_budget: dict[str, int] | None = None,
+    commit_boundary: Any = None,
+    plan_reference: Any = None,
+    output_allowance: int | None = None,
 ) -> Generator[AgentEvent, None, CompactionOutcome]:
     """在主模型调用前检查容量，并在需要时压缩较早的完整轮次。"""
     # 1. 估算包含运行时指令和工具定义的完整请求大小。
@@ -222,6 +236,20 @@ def compact_context_if_needed(
         context_manager.active_messages[cut_index:]
     )
     recent_tokens = estimate_value_tokens(recent_messages)
+    # 4.1. 一次独立提取；任何提取/来源/预算失败都不能回退旧摘要路径。
+    try:
+        snapshot, extraction_ledger = extract_snapshot(client, model, context_manager,
+                                                       cut_index, limits, plan_reference)
+    except Exception as error:
+        context_manager.record_compaction_failure()
+        message = f"关键事实提取失败：{error}"
+        yield ContextCompactionFailedEvent(message)
+        return CompactionOutcome("blocked" if before_tokens >= limits.blocking_threshold_tokens else "failed",
+                                 before_tokens, before_tokens, message=message, request_budget=request_budget,
+                                 cost_ledger={"extractor": getattr(error, "ledger", {"status": "NOT_DISPATCHED", "failure_reason": str(error)})})
+    total_input_tokens += extraction_ledger["input_tokens"] or 0
+    total_output_tokens += extraction_ledger["output_tokens"] or 0
+    summary_ledger = []
     for attempt in range(1, limits.max_compaction_attempts + 1):
         retry_instruction = (
             ""
@@ -229,8 +257,15 @@ def compact_context_if_needed(
             else "\n上一次摘要格式或压缩收益不合格。必须显著缩短内容，并严格只输出 summary 区块。"
         )
         observed = begin_span("provider", request_type="COMPACTION", model=model, attempt=attempt)
+        started = monotonic()
         try:
-            stream = client.responses.create(
+            estimated_summary_input = estimate_request_tokens(COMPACTION_INSTRUCTIONS + retry_instruction,
+                context_manager.materialize_messages(context_manager.active_messages[:cut_index]), [])
+            if estimated_summary_input + limits.summary_output_tokens + limits.safety_margin_tokens > limits.auxiliary_context_window_tokens:
+                raise ValueError("SUMMARY_CONTEXT_BUDGET_EXCEEDED")
+            options = getattr(client, "with_options", None)
+            summary_client = options(max_retries=0) if callable(options) else client
+            stream = summary_client.responses.create(
                 model=model,
                 instructions=COMPACTION_INSTRUCTIONS + retry_instruction,
                 input=context_manager.materialize_messages(
@@ -242,6 +277,9 @@ def compact_context_if_needed(
             response = _read_completed_response(stream)
         except Exception as error:
             end_span(observed, status="FAILED", failure_reason=type(error).__name__)
+            summary_ledger.append(dict(attempt=attempt, input_tokens=None, output_tokens=None,
+                                       candidate_status="PROVIDER_FAILED", latency_ms=(monotonic()-started)*1000,
+                                       failure_reason=str(error)))
             failure_reason = f"摘要模型调用失败：{error}"
             continue
 
@@ -252,6 +290,11 @@ def compact_context_if_needed(
         )
         total_input_tokens += response_input_tokens
         total_output_tokens += response_output_tokens
+        values = usage_dict(response)
+        summary_ledger.append(dict(attempt=attempt, input_tokens=values.get("input_tokens"),
+                                   output_tokens=values.get("output_tokens"), candidate_status="REJECTED",
+                                   latency_ms=(monotonic()-started)*1000,
+                                   estimated_input_tokens=estimated_summary_input))
         summary = _extract_summary(response.output_text)
         if summary is None:
             failure_reason = "摘要模型没有返回唯一且非空的 <summary> 区块"
@@ -268,7 +311,7 @@ def compact_context_if_needed(
         )
         after_tokens = estimate_request_tokens(
             instructions,
-            context_manager.materialize_messages(candidate_messages),
+            context_manager.messages_with_snapshot(candidate_messages, snapshot),
             tools,
         )
         if not _has_meaningful_savings(before_tokens, after_tokens, limits):
@@ -282,6 +325,9 @@ def compact_context_if_needed(
             if after_tokens < limits.compaction_threshold_tokens
             else "partial"
         )
+        if after_tokens + (limits.reserved_output_tokens if output_allowance is None else output_allowance) + limits.safety_margin_tokens > limits.context_window_tokens:
+            failure_reason = "CONTEXT_BUDGET_EXCEEDED：Snapshot 与摘要无法共同容纳"
+            continue
         if (
             status == "partial"
             and context_manager.partial_compaction_count
@@ -290,10 +336,11 @@ def compact_context_if_needed(
             failure_reason = "上下文仍超过主动阈值，且部分压缩次数已达到上限"
             continue
 
-        # 5. 只有验证收益后才提交候选上下文，完整 Transcript 继续保留。
-        boundary = context_manager.apply_compaction(
+        # 5. 候选副本 → 单事件权威提交 → 内存投影发布，不能反序。
+        boundary = context_manager.candidate_compaction(
             cut_index,
             summary,
+            snapshot,
             before_tokens=before_tokens,
             after_tokens=after_tokens,
             summary_tokens=summary_tokens,
@@ -301,6 +348,24 @@ def compact_context_if_needed(
             status=status,
         )
         boundary["request_budget"] = request_budget
+        summary_ledger[-1]["candidate_status"] = "ACCEPTED"
+        boundary["cost_ledger"] = dict(extractor=extraction_ledger, summary=summary_ledger,
+                                      amortized_benefit="AMORTIZED_BENEFIT_NOT_EVALUATED")
+        try:
+            publication_metrics = commit_boundary(boundary) if commit_boundary is not None else None
+        except Exception as error:
+            context_manager.record_compaction_failure()
+            message = f"Compaction 提交前失败：{error}"
+            yield ContextCompactionFailedEvent(message)
+            return CompactionOutcome("blocked", before_tokens, before_tokens, total_input_tokens,
+                                     total_output_tokens, message, request_budget=request_budget,
+                                     cost_ledger=boundary["cost_ledger"])
+        try:
+            context_manager.restore_compaction(boundary)
+        except Exception as error:
+            raise CompactionPublicationError("COMPACTION_COMMITTED_RESTORE_REQUIRED：内存投影发布失败") from error
+        if publication_metrics:
+            boundary["publication_metrics"] = publication_metrics
         yield ContextCompactionFinishedEvent(before_tokens, after_tokens, status)
         return CompactionOutcome(
             status,
@@ -310,6 +375,7 @@ def compact_context_if_needed(
             total_output_tokens,
             boundary=boundary,
             request_budget=request_budget,
+            cost_ledger=boundary["cost_ledger"],
         )
 
     # 6. 所有尝试均无效时累计熔断计数，硬阈值以上明确阻塞。
@@ -329,4 +395,6 @@ def compact_context_if_needed(
         total_output_tokens,
         message,
         request_budget=request_budget,
+        cost_ledger=dict(extractor=extraction_ledger, summary=summary_ledger,
+                         amortized_benefit="AMORTIZED_BENEFIT_NOT_EVALUATED"),
     )

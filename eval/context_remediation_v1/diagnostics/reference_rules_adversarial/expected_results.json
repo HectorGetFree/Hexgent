@@ -1,0 +1,198 @@
+{
+  "A1-full": {
+    "classification": "PASS",
+    "rationale": "逐项完整覆盖范围及属性。"
+  },
+  "A1-endpoints": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "完整前缀有证据，端点不是权威汇总。"
+  },
+  "A1-summary": {
+    "classification": "PASS",
+    "rationale": "单条权威汇总完整覆盖，不能要求30个引用。"
+  },
+  "A1-union-trap": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "其他Facts refs不能自动补足本Fact。"
+  },
+  "A1-wording": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "同义措辞经人工确认指同一范围，不由正则措辞改变判定。"
+  },
+  "A1-bundle": {
+    "classification": "PASS",
+    "rationale": "一条可核验完整工件覆盖全范围，不以refs数量判FAIL。"
+  },
+  "A2-full": {
+    "classification": "PASS",
+    "rationale": "内容、身份、范围均资格确认。"
+  },
+  "A2-partial": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "标题不替代内容，只有15项。"
+  },
+  "A2-ambiguous": {
+    "classification": "UNCERTAIN",
+    "rationale": "不可把模糊汇总的模型覆盖元数据当真实权威覆盖，交人工。"
+  },
+  "A2-stale": {
+    "classification": "STATE_ERROR",
+    "rationale": "明确后续更新否定旧状态，来源合法但旧状态不生效。"
+  },
+  "A2-conflict": {
+    "classification": "UNCERTAIN",
+    "rationale": "相同有效时间且没有显式解决规则的权威冲突，不能任意挑一个。"
+  },
+  "A3-above": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "前文已列举1—30，指代范围确定。"
+  },
+  "A3-these": {
+    "classification": "PASS",
+    "rationale": "有明确对象集合且引用覆盖。"
+  },
+  "A3-batch": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "隐式全称不比显式1—30更宽松。"
+  },
+  "A3-related": {
+    "classification": "UNCERTAIN",
+    "rationale": "相关模块集合无法确定，不默认PASS或FAIL。"
+  },
+  "A3-main": {
+    "classification": "PASS",
+    "rationale": "已人工确认主要=固定30项中超过一半，16个支持足够，不机械要求全30。"
+  },
+  "A3-all-deps": {
+    "classification": "PASS",
+    "rationale": "权威源明确排他性集合，不是因没看到其他依赖而猜唯一。"
+  },
+  "A4-unique": {
+    "classification": "PASS",
+    "rationale": "来源原文确认唯一。"
+  },
+  "A4-existence-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "存在不蕴含唯一；信息缺失不证明排他。"
+  },
+  "A4-no-blockers": {
+    "classification": "PASS",
+    "rationale": "已确认完整范围检查及明确否定证据。"
+  },
+  "A4-absence-only": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "没提供不等于不存在；FAIL是未被支持，不宣称命题事实上为假。"
+  },
+  "A4-open-scope": {
+    "classification": "UNCERTAIN",
+    "rationale": "检查范围未说明；不能把未见局部信息当全历史不存在。"
+  },
+  "A4-complete-negative": {
+    "classification": "PASS",
+    "rationale": "范围完整且逐记录证据资格明确，形成穷尽的否定性证据链。"
+  },
+  "A4-local-negative": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "两个局部免责声明不能证明全前缀缺失。"
+  },
+  "A4-all-checks": {
+    "classification": "STATE_ERROR",
+    "rationale": "明确失败更新使当前全部通过不成立。"
+  },
+  "A5-complete": {
+    "classification": "PASS",
+    "rationale": "各独立子命题均有来源。"
+  },
+  "A5-partial": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "主体与完成充分，依赖/条件缺引用；不能把整句判无依据。"
+  },
+  "A5-one-unknown": {
+    "classification": "UNCERTAIN",
+    "rationale": "一个必要子命题未知，不能因前两项充分就整条PASS。"
+  },
+  "A5-unsupported-part": {
+    "classification": "UNSUPPORTED_FACT",
+    "rationale": "部分事实有据，不掩盖新增发布状态无证据。"
+  },
+  "A5-invalid": {
+    "classification": "SOURCE_INVALID",
+    "rationale": "不存在的source ID明确失败，不将有据前缀当refs合法。"
+  },
+  "A5-future": {
+    "classification": "SOURCE_INVALID",
+    "rationale": "未来引用不可用，即使合法前缀也有同义事实。"
+  },
+  "A6-broad": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "范围超过自身refs。"
+  },
+  "A6-narrow": {
+    "classification": "PASS",
+    "rationale": "合理收窄可PASS，但Oracle若要求全部30则保留失败。"
+  },
+  "A6-drop-dependency": {
+    "classification": "PASS",
+    "rationale": "引用充分，但丢失Oracle必需依赖；引用与Recall分别评分。"
+  },
+  "A6-wrong-downgrade": {
+    "classification": "STATE_ERROR",
+    "rationale": "不能为保守收窄把已完成降级为未完成。"
+  },
+  "H-Pilot10-f3": {
+    "classification": "PASS",
+    "rationale": "逐项引用覆盖该工作项范围、文件路径、正文阅读和非验收状态；不机械要求数量，而是此处无汇总、独立记录恰覆盖所有对象。"
+  },
+  "H-Pilot10-f6": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "上述工作项指前面f3–f5的工作项1—30；只有项1/30记录，不能覆盖中间28项。后半全前缀缺独立确认也是集合级缺失断言。"
+  },
+  "H-Pilot10-f13": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "本批工具与整个历史前缀的证据类型/没有测试通过是全范围主张；引用只有项1/30的阅读免责声明，不是完整前缀权威汇总。"
+  },
+  "H-Pilot11-f3": {
+    "classification": "PASS",
+    "rationale": "逐项引用覆盖该工作项范围、文件路径、正文阅读和非验收状态；不机械要求数量，而是此处无汇总、独立记录恰覆盖所有对象。"
+  },
+  "H-Pilot11-f4": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "已有证据主要是阅读这一范围/比例主张需整体构成；只引用项1/2/30不能证明整体主要组成。后半不能据此推断测试PASS的局部逻辑成立，但不足使整条引用充分。"
+  },
+  "H-R-SPARSE-S1-f1": {
+    "classification": "PASS",
+    "rationale": "原工具当前结论直接支持精确对象与仅限范围。"
+  },
+  "H-R-SPARSE-S1-f2": {
+    "classification": "PASS",
+    "rationale": "源资料明确当前唯一未决依赖，不仅证明依赖存在，还直接支持排他性；与前缀无相反状态。"
+  },
+  "H-R-SPARSE-S1-f3": {
+    "classification": "PASS",
+    "rationale": "同时引用read_file路径参数和对应结果，通过call_id关联逐对象支持；未把读取当验收。"
+  },
+  "H-Stability-L3-R1-f3": {
+    "classification": "PASS",
+    "rationale": "引文直接支持本Fact目标/状态/条件，或仅作这些已引用记录的阅读与验证边界解释，没有由有限样例升级为整段历史的穷尽断言。"
+  },
+  "H-Stability-L3-R1-f8": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "前半来源区分实现与测试得到支持；后半当前前缀未提供测试通过证据是对120条消息的否定性主张，三个阅读样例不穷尽该范围。"
+  },
+  "H-Stability-L3-R2-f4": {
+    "classification": "PASS",
+    "rationale": "逐项引用覆盖该工作项范围、文件路径、正文阅读和非验收状态；不机械要求数量，而是此处无汇总、独立记录恰覆盖所有对象。"
+  },
+  "H-Stability-L3-R2-f6": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "明确称项1—30均依赖，引用仅项1/30；中间28项无本Fact引用覆盖，无范围性权威汇总。前缀缺完成状态也是同一范围性证据缺失主张。"
+  },
+  "H-Stability-L3-R2-f7": {
+    "classification": "REFERENCE_GAP",
+    "rationale": "本轮工具返回均为阅读证据这一批次性概括只有项1/21/30案例引用；这些案例支持各自不是测试结果及一般阅读不等于验证，未证明整批范围。"
+  },
+  "H-Stability-SP-R1-f3": {
+    "classification": "PASS",
+    "rationale": "同时引用read_file路径参数和对应结果，通过call_id关联逐对象支持；未把读取当验收。"
+  }
+}

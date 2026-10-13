@@ -522,9 +522,16 @@ class Session:
         )
         return records
 
-    def record_compaction(self, boundary: dict[str, Any]) -> None:
-        """记录一次已经提交、可确定性重放的 Context 压缩。"""
-        self.record_runtime_event("context_compaction_applied", boundary)
+    def record_compaction(self, boundary: dict[str, Any]) -> dict[str, Any]:
+        """权威日志先提交；调用方随后发布内存投影。"""
+        if self.store is None:
+            raise RuntimeError("COMPACTION_DURABLE_STORE_REQUIRED")
+        metrics = self.store.commit_compaction(boundary)
+        from ..observation import current_observation
+        observer = current_observation.get()
+        if observer:
+            observer.emit("compaction_transcript_published", **metrics)
+        return metrics
 
     def record_plan_state(
         self,

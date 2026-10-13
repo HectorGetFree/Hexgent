@@ -284,6 +284,16 @@ def _pending_run_state(
     records: list[dict[str, Any]],
 ) -> RunStateSnapshot | None:
     """判断恢复出的 Checkpoint 是否仍能安全地继续运行。"""
+    # 新 Compaction 事件携带完整已提交续跑状态；Checkpoint 失败时不猜测旧预算。
+    for record in reversed(records):
+        if record["type"] == "context_compaction_applied" and "resume_state" in record["payload"]:
+            if checkpoint is not None and checkpoint.transcript_sequence >= record["sequence"]:
+                break
+            later_stateful = {"context_user_query_appended", "context_messages_appended",
+                              "context_compaction_applied", "model_response_completed", "agent_run_finished"}
+            if any(r["sequence"] > record["sequence"] and r["type"] in later_stateful for r in records):
+                return None
+            return RunStateSnapshot.from_dict(record["payload"]["resume_state"])
     if checkpoint is None or checkpoint.run_status not in {"active", "continuable"}:
         return None
     if not isinstance(checkpoint.run_state, dict):
