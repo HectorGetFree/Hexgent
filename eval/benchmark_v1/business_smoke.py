@@ -25,6 +25,10 @@ def records(environment):
     result=[]
     for path in (environment.workdir/'.hexgent/sessions').glob('*/transcript.jsonl'):
         # 并发追加期间忽略尚未完整写入的最后一行；终态读取必须全部完整。
+        if (environment.workdir/'.benchmark-control.json').exists():
+            from .protocol_v2 import strict_jsonl
+            result.append((path.parent.name,strict_jsonl(path,active=True)))
+            continue
         rows=[]
         for line in path.read_text().splitlines():
             try: rows.append(json.loads(line))
@@ -39,16 +43,20 @@ def audit(environment):
         started={}; run_id=None
         for row in rows:
             payload=row['payload']; kind=row['type']
-            if kind=='agent_run_started': run_id=payload.get('workspace_run_id')
+            if kind=='agent_run_started': run_id=(payload.get('run_id') if (environment.workdir/'.benchmark-control.json').exists() else payload.get('workspace_run_id'))
             if kind=='tool_execution_started': started[payload['call_id']]=payload
             if kind=='tool_execution_finished':
                 source=started.get(payload['call_id'],{})
+                try:arguments=json.loads(source.get('arguments','{}'))
+                except ValueError:
+                    if not (environment.workdir/'.benchmark-control.json').exists():raise
+                    arguments={'_invalid_json':source.get('arguments','')}
                 calls.append({'session_id':sid,'run_id':run_id,'call_id':payload['call_id'],
-                    'tool_name':payload['tool_name'],'arguments':json.loads(source.get('arguments','{}')),
+                    'tool_name':payload['tool_name'],'arguments':arguments,
                     'status':payload['status'],'data':payload.get('data'), 'failure':payload.get('failure')})
                 if payload['tool_name']=='read_file':
                     consumption.append({'call_id':payload['call_id'],'status':payload['status'],
-                                        'arguments':json.loads(source.get('arguments','{}'))})
+                                        'arguments':arguments})
             if kind=='model_response_completed':
                 usage.append({'session_id':sid,'sequence':row['sequence'],'kind':'main',
                               'usage':payload.get('usage')})
@@ -116,6 +124,7 @@ def settle(manager,environment,deadline):
 
 def main():
     parser=argparse.ArgumentParser()
+    parser.add_argument('--phase',choices=['protocol_smoke','baseline'],default='protocol_smoke')
     parser.add_argument('--case',choices=['T01','T02','T03'],required=True)
     parser.add_argument('--trial-id',required=True)
     parser.add_argument('--root',type=Path,required=True)
@@ -125,7 +134,7 @@ def main():
     parser.add_argument('--provider-env-file',type=Path,required=True)
     parser.add_argument('--embedding-env-file',type=Path,required=True)
     args=parser.parse_args()
-    contract,baseline=load_case(args.case)
+    contract,baseline=load_case(args.case,revision=args.revision)
     provider={k:v for k,v in dotenv_values(args.provider_env_file).items()
               if k in {'OPENAI_API_KEY','OPENAI_BASE_URL','MODEL_ID'}}
     for key in ['HTTP_PROXY','HTTPS_PROXY']:
@@ -140,11 +149,14 @@ def main():
     deadline=started+contract.execution_budget.max_wall_time_seconds
     try:
         environment=manager.provision(args.trial_id,contract.baseline_id)
+        if args.replacement_of:
+            from .protocol_v2 import reserve_replacement
+            reserve_replacement(environment.artifact_root,args.replacement_of,contract,args.trial_id)
         write_json(environment.artifact_root/'contract.json',contract)
         dump(environment.artifact_root/'baseline-frozen.json',baseline)
         dump(environment.artifact_root/'build-metadata.json',metadata)
         # 仅模型名和路由主机进入公开配置，凭证与完整 Provider URL 不进入。
-        run_config={'variant':'full-protocol-smoke','model':provider['MODEL_ID'],
+        run_config={'protocol_version':2 if contract.verifier_spec.verifier_version=='2' else 1,'variant':'full-baseline' if args.phase=='baseline' else 'full-protocol-smoke','phase':args.phase,'model':provider['MODEL_ID'],
             'provider_host':urlparse(provider['OPENAI_BASE_URL']).hostname,'tool_parallel':False,
             'provider_egress_proxy_enabled':bool(provider.get('HTTPS_PROXY')),
             'context_record_extraction':False,'context_record_retrieval':False,
@@ -157,6 +169,7 @@ def main():
         ready=manager.readiness(environment,timeout_seconds=180)
         if ready['status']!='PASS': raise EnvironmentError('Seed 版本／解析／索引未就绪')
         initial=manager.observe(environment)
+        if contract.verifier_spec.verifier_version=="2":dump(environment.artifact_root/"observations/initial-state-v2.json",initial)
         seed=json.loads((environment.artifact_root/'seed.json').read_text())
         conversation=manager._api(environment,'POST',f"/api/v1/workspaces/{seed['workspace_id']}/conversations",
                                    {'title':contract.case_id})['conversationId']
@@ -167,6 +180,7 @@ def main():
             stages.append(stage)
             dump(environment.artifact_root/'stage-results.json',stages)
             if stage['runtime_status']=='failed':
+                if contract.verifier_spec.verifier_version=='2':protocol['termination_reason']='agent_failed'
                 raise EnvironmentError('Production Agent 失败；保留 Provider/Runtime 原始证据，不自动重试')
         current,settled=settle(manager,environment,min(deadline,time.monotonic()+120))
         independent=manager.observe_versions(environment)
@@ -204,12 +218,15 @@ def main():
                 transcript=ArtifactReference(path=f'sessions/{sid}/transcript.jsonl'),run_reports=reports,
                 provider_usage=(ArtifactReference(path=f'sessions/{sid}/provider-usage.json'),)))
         manifest=TrialManifest(schema_version=1,suite_id=contract.suite_id,task_id=contract.task_id,
-            case_id=contract.case_id,trial_id=args.trial_id,environment_kind='hexworkspace',phase='protocol_smoke',
-            baseline_id=contract.baseline_id,verifier_version='1',task_contract_sha256=contract.digest(),
+            case_id=contract.case_id,trial_id=args.trial_id,environment_kind='hexworkspace',phase=args.phase,
+            baseline_id=contract.baseline_id,verifier_version=contract.verifier_spec.verifier_version,task_contract_sha256=contract.digest(),
             contract=ArtifactReference(path='contract.json'),run_config=run_config,
             code_versions={'runtime':metadata['runtime']['commit'],'workspace':metadata['workspace']['commit'],
                 'business_cases_sha256':sha256((Path(__file__).with_name('cases')/args.case.lower()/'contract.json').read_bytes()).hexdigest(),
                 'smoke_code_sha256':sha256(Path(__file__).read_bytes()).hexdigest()},sessions=tuple(sessions))
+        if contract.verifier_spec.verifier_version=='2':
+            manifest=manifest.model_copy(update={'code_versions':{**manifest.code_versions,
+                'verifier_v2_sha256':sha256(Path(__file__).with_name('verifier_v2.py').read_bytes()).hexdigest()}})
         result=BusinessCaseVerifier().verify(VerificationInput(contract=contract,trial=manifest,
             artifact_root=environment.artifact_root,observation_suite_id=contract.suite_id,
             observation_case_id=contract.case_id,observation_trial_id=args.trial_id,
@@ -228,6 +245,15 @@ def main():
     except Exception as exc:
         protocol.update(protocol_status='FAIL',reason=type(exc).__name__)
     finally:
+        if contract.verifier_spec.verifier_version=='2':
+            if environment is None:environment=manager.environments.get(args.trial_id)
+            if environment:
+                from .trial_finalize import finalize_workspace
+                reason=protocol.get('reason') or ''
+                if '墙钟' in reason:protocol['termination_reason']='trial_wall_time'
+                if 'Token' in reason:protocol['termination_reason']='trial_provider_tokens'
+                finalize_workspace(manager,environment,contract,{**protocol,'phase':args.phase},stages)
+            return
         if environment is None: environment=manager.environments.get(args.trial_id)
         if environment:
             # 超时／失败不能留下正在付费的 Agent；Destroy 隔离 Runtime 中止其所有请求。
@@ -242,7 +268,7 @@ def main():
                 if not (environment.artifact_root/'verifier-result.json').exists():
                     invalid=VerifierResult(schema_version=1,suite_id=contract.suite_id,case_id=contract.case_id,
                         trial_id=args.trial_id,status='INVALID',failure_category='environment' if protocol['protocol_status']=='BLOCKED' else 'protocol',
-                        verifier_version='1',assertions=(AssertionResult(assertion_id='execution_validity',category='protocol',
+                        verifier_version=contract.verifier_spec.verifier_version,assertions=(AssertionResult(assertion_id='execution_validity',category='protocol',
                             status='FAIL',evidence=(ArtifactReference(path='lifecycle.jsonl'),),
                             detail=protocol.get('reason') or '执行协议未完成'),))
                     write_json(environment.artifact_root/'verifier-result.json',invalid)
@@ -260,8 +286,8 @@ def main():
                     if partial:
                         invalid=VerifierResult.model_validate_json((environment.artifact_root/'verifier-result.json').read_text())
                         failed_manifest=TrialManifest(schema_version=1,suite_id=contract.suite_id,task_id=contract.task_id,
-                            case_id=contract.case_id,trial_id=args.trial_id,environment_kind='hexworkspace',phase='protocol_smoke',
-                            baseline_id=contract.baseline_id,verifier_version='1',task_contract_sha256=contract.digest(),
+                            case_id=contract.case_id,trial_id=args.trial_id,environment_kind='hexworkspace',phase=args.phase,
+                            baseline_id=contract.baseline_id,verifier_version=contract.verifier_spec.verifier_version,task_contract_sha256=contract.digest(),
                             contract=ArtifactReference(path='contract.json'),run_config={'model':provider['MODEL_ID'],'execution_complete':False},
                             code_versions={'runtime':metadata['runtime']['commit'],'workspace':metadata['workspace']['commit']},
                             sessions=tuple(partial),verifier_result=invalid)

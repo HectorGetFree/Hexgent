@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "baseline_id": "t04-ineligible-seed-v1",
+  "orders": [
+    {
+      "id": "ORDER-41",
+      "paid": true,
+      "stock": 0,
+      "total_cny": 900,
+      "shipped": false
+    },
+    {
+      "id": "ORDER-99",
+      "paid": true,
+      "stock": 5,
+      "total_cny": 100,
+      "shipped": false
+    }
+  ],
+  "policy": {
+    "max_total_cny": 1000
+  }
+}

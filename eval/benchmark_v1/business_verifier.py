@@ -42,6 +42,9 @@ class BusinessCaseVerifier:
     """把可核对的业务证据转换为布尔断言，再复用 B1-A 结果协议。"""
 
     def verify(self, inputs: VerificationInput) -> VerifierResult:
+        if inputs.contract.verifier_spec.verifier_version == "2":
+            from .verifier_v2 import BusinessVerifierV2
+            return BusinessVerifierV2().verify(inputs)
         try:
             return self._verify(inputs)
         except (KeyError, TypeError, ValueError, IndexError):

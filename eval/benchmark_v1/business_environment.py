@@ -2,6 +2,7 @@
 
 from hashlib import sha256
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -25,6 +26,7 @@ class BusinessCaseEnvironment(TrialEnvironmentManager):
     def __init__(self, *args, contract, baseline, provider, **kwargs):
         super().__init__(*args, suite_id=contract.suite_id, case_id=contract.case_id, **kwargs)
         self.contract, self.provider = contract, provider
+        self.protocol_started_at=time.time()
         if not all(provider.get(key) for key in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "MODEL_ID"]):
             raise EnvironmentError("真实 Agent Provider 配置缺失")
         if any("\n" in str(v) or "\r" in str(v) for v in provider.values()):
@@ -68,6 +70,15 @@ enabled = false
 enabled = false
 max_workers = 4
 ''')
+        if self.contract.verifier_spec.verifier_version=='2':
+            control=dict(protocol_version=2,identity=dict(suite_id=self.contract.suite_id,
+                case_id=self.contract.case_id,trial_id=trial_id,contract_sha256=self.contract.digest()),
+                started_at=self.protocol_started_at,budget=budget.model_dump(),ledger_path='/workdir/.benchmark/trial-budget.jsonl')
+            dump(private/'workdir/.benchmark-control.json',control)
+            eval_root=Path(__file__).resolve().parents[1]
+            config['services']['runtime']['volumes'].append(f'{eval_root}:/opt/benchmark/eval:ro')
+            config['services']['runtime']['environment']={'PYTHONPATH':'/opt/benchmark:/opt/hexgent'}
+            config['services']['runtime']['command']=['python','-m','eval.benchmark_v1.eval_runtime','--workdir','/workdir']
         return config
 
     def start_stage(self, environment, conversation_id, query):

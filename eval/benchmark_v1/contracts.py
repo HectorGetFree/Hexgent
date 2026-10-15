@@ -57,7 +57,7 @@ class AssertionSpec(ContractModel):
 
 class VerifierSpec(ContractModel):
     kind: Literal["field_equality_v1"]
-    verifier_version: Literal["1"]
+    verifier_version: Literal["1", "2"]
     assertions: tuple[AssertionSpec, ...] = Field(min_length=2)
 
     @model_validator(mode="after")
@@ -162,7 +162,7 @@ class VerifierResult(VersionedModel):
     assertions: tuple[AssertionResult, ...]
     failure_category: Literal["outcome", "safety", "environment", "protocol",
                               "missing_evidence", "attribution"] | None
-    verifier_version: Literal["1"]
+    verifier_version: Literal["1", "2"]
 
     @model_validator(mode="after")
     def consistent_status(self):
@@ -186,7 +186,7 @@ class TrialManifest(VersionedModel):
     environment_kind: Literal["hexworkspace", "business_fixture"]
     phase: Literal["protocol_smoke", "baseline", "ablation"]
     baseline_id: Identifier
-    verifier_version: Literal["1"]
+    verifier_version: Literal["1", "2"]
     task_contract_sha256: Digest
     contract: ArtifactReference
     run_config: dict[str, JsonValue]
@@ -201,6 +201,8 @@ class TrialManifest(VersionedModel):
             raise ValueError("Trial 中 Session ID 不能重复")
         if self.verifier_result is not None:
             result = self.verifier_result
+            if result.verifier_version != self.verifier_version:
+                raise ValueError("Verifier Result 与 Trial 评分版本不一致")
             if (result.suite_id, result.case_id, result.trial_id) != (
                     self.suite_id, self.case_id, self.trial_id):
                 raise ValueError("Verifier Result 与 Trial 标识不一致")

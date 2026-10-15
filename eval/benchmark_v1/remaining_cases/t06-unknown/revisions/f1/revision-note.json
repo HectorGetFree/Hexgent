@@ -1,0 +1,9 @@
+{
+  "revision": "f1",
+  "previous_contract": "../../contract.json",
+  "previous_case_id": "t06-unknown-v1",
+  "case_id": "t06-unknown-v2",
+  "verifier_version": "2",
+  "default_loader": "legacy unchanged; explicit revision=f1 required",
+  "comparability": "评分语义改变，不与旧B2直接比较；旧成绩不重判"
+}

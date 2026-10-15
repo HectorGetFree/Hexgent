@@ -74,7 +74,8 @@ class FieldEqualityVerifier:
             return VerifierResult(schema_version=1, suite_id=trial.suite_id,
                                   case_id=trial.case_id, trial_id=trial.trial_id,
                                   status=status, assertions=tuple(assertions),
-                                  failure_category=category, verifier_version="1")
+                                  failure_category=category,
+                                  verifier_version=contract.verifier_spec.verifier_version)
 
         # 1. 合同或独立观察结果串 Trial，属于实验协议失效，不给 Agent 记失败。
         if not trial.matches(contract) or (
