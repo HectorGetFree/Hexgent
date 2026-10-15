@@ -185,10 +185,4 @@ python -m unittest discover -s tests
 
 设计说明：[核心机制](docs/核心机制设计.md)、[工具系统](docs/工具系统设计.md)、[上下文管理](docs/上下文管理设计.md)、[Memory](docs/Memory设计.md)、[运行观测](docs/runtime-observation.md)。
 
-## 能力边界
 
-- 没有通用 OS 沙箱、分布式 Memory 或完整多租户身份系统。
-- 未知副作用需要核验；安全恢复不等于任意崩溃点自动续跑。
-- Compaction 不保证事实无损，也未普遍证明净成本收益。
-- ContextRecord 默认关闭，不将其历史实验能力包装成当前主链路能力。
-- 当前仓库未提供独立许可证文件，发布和复用前应明确许可证。
