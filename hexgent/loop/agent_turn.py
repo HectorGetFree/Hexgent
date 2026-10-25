@@ -229,14 +229,24 @@ def _continue_with_steering(
     # 2. 每条 Query 保持独立原文进入 Context 和 Transcript，不合并、不摘要。
     applied_queries = []
     for query in queries:
+        mutations = session.steering_context_mutations(query.command_id) if session is not None else []
+        if mutations:
+            from ..context.context_manager import UserQuery
+            previous = mutations[0]
+            applied_queries.append(UserQuery(previous["query_sequence"], previous["content"]))
+            session.record_runtime_control_effect(query.command_id, "steering_applied")
+            continue
         user_query = state.context_manager.append_user_query(query.content)
         applied_queries.append(user_query)
         if session is not None:
-            session.record_user_query(user_query, source="steering")
+            session.record_user_query(user_query, source="steering", command_id=query.command_id,
+                loop_state=replace(state, plan_completion_nudges=0, transition="steering_applied"))
+            session.record_runtime_control_effect(query.command_id, "steering_applied")
             session.record_runtime_event(
                 "steering_applied",
                 {
                     "steering_sequence": query.sequence,
+                    "command_id": query.command_id,
                     "steering_mode": query.mode,
                     "query_sequence": user_query.sequence,
                     "before_model_round": state.model_rounds + 1,

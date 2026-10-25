@@ -49,7 +49,7 @@ def _replay(checkpoint, records):
             active = p['run_id']
             if not isinstance(active,str) or not active:raise ValueError('Run身份无效')
             valid = False;paused=False
-        publishes = kind in {'agent_run_started','context_messages_appended','run_state_committed'} and 'run_state_version' in p
+        publishes = kind in {'agent_run_started','context_messages_appended','run_state_committed','context_user_query_appended'} and 'run_state_version' in p
         compaction = kind == 'context_compaction_applied' and 'resume_state' in p
         if publishes or compaction:
             if publishes and (type(p['run_state_version']) is not int or p['run_state_version'] != 1 or p['run_id'] != active or not active):

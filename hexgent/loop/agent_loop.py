@@ -52,6 +52,7 @@ def agent_loop(
             plan=state.tool_context.plan_store.get_plan(),
             loop_state=state,
         )
+        active_control.restore_steering(session)
         observation = current_observation.get()
         if observation is not None:
             observation.emit("run_binding", run_id=session._active_run_id,
