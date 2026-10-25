@@ -381,6 +381,7 @@ def execute_tool_call(
     retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
     permission_event_recorder: PermissionEventRecorder | None = None,
+    dispatch_guard: Callable[[int], bool | ToolExecutionResult] | None = None,
 ) -> ToolExecutionResult:
     """完成工具查找、参数校验、权限处理和真正执行。"""
     # 1. 普通调用现场完成准备；批次调用复用主线程已经完成的准备结果。
@@ -410,6 +411,19 @@ def execute_tool_call(
     attempt_count = 0
     while True:
         attempt_count += 1
+        # 每次 Handler 尝试都重新准入，纠偏后不能经退避重试绕过派发闸门。
+        admission = dispatch_guard(attempt_count) if dispatch_guard is not None else True
+        if isinstance(admission, ToolExecutionResult):
+            return ToolExecutionResult(admission.status, admission.output, admission.is_error,
+                                       failure=admission.failure, attempt_count=attempt_count - 1)
+        if not admission:
+            return ToolExecutionResult(
+                "error", "错误：当前工具批次已收束，本次 Handler 尝试未执行", True,
+                failure=ToolFailure("steering_interrupted", "scheduling",
+                                    "当前工具批次已收束，本次 Handler 尝试未执行",
+                                    side_effect_state="not_started"),
+                attempt_count=attempt_count - 1,
+            )
         result = _execute_prepared_tool_call(
             prepared,
             context=context,
@@ -458,6 +472,7 @@ def execute_tool_batch(
     retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
     interrupt_controller: InterruptController | None = None,
+    dispatch_gate: Any = None,
 ) -> Generator[AgentEvent, None, Any]:
     """兼容旧导入路径，并在调用时惰性委托给批次调度器。"""
     from .tool_scheduler import execute_tool_batch as schedule_tool_batch
@@ -474,6 +489,7 @@ def execute_tool_batch(
             retry_limits=retry_limits,
             permission_context=permission_context,
             interrupt_controller=interrupt_controller,
+            dispatch_gate=dispatch_gate,
         )
     )
 

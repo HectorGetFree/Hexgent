@@ -81,7 +81,12 @@ def _replay(checkpoint, records):
                 if cid in finished:raise ValueError('重复工具结果')
                 finished.add(cid)
                 status=p['status']
-                if status in {'success','error','deduplicated'}:charged.add(cid)
+                failure=p.get('failure') or {}
+                never_admitted=(status=='error' and p.get('attempt_count')==0
+                    and failure.get('phase')=='scheduling' and failure.get('side_effect_state')=='not_started'
+                    and failure.get('code') in {'steering_interrupted','execution_interrupted','tool_timeout'})
+                if never_admitted:charged.discard(cid)
+                elif status in {'success','error','deduplicated'}:charged.add(cid)
                 elif status not in {'denied','invalid','skipped','interrupted'}:raise ValueError('未知工具状态')
                 if status=='interrupted':charged.discard(cid)  # 已确认中断按原Kernel计数；未知派发仍保留消耗。
                 if p['tool_name']=='activate_skill' and status=='success':

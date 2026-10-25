@@ -670,30 +670,27 @@ def run_turn(
         )
 
     # 14. 执行工具批次；Pause/Cancel 后仍需先提交完整配对结果。
-    batch = yield from execute_tool_batch(
-        tool_calls,
-        context=state.tool_context,
-        user_confirmation=user_confirmation,
-        remaining_tool_calls=(
-            max(0, limits.max_tool_calls - state.tool_calls)
-            if limits.enforce_run_limits
-            else None
-        ),
-        deadline=(
-            state.started_at + limits.max_elapsed_seconds
-            if limits.enforce_run_limits
-            else None
-        ),
-        session_store=session.store if session is not None else None,
-        parallel_limits=config.tool_parallel,
-        retry_limits=config.tool_retry,
-        permission_context=(
-            session.permission_context
-            if session is not None
-            else PermissionContext(config.permission.default_mode)
-        ),
-        interrupt_controller=controller,
-    )
+    with active_control.tool_batch() as dispatch_gate:
+        batch = yield from execute_tool_batch(
+            tool_calls,
+            context=state.tool_context,
+            user_confirmation=user_confirmation,
+            remaining_tool_calls=(
+                max(0, limits.max_tool_calls - state.tool_calls)
+                if limits.enforce_run_limits else None
+            ),
+            deadline=(
+                state.started_at + limits.max_elapsed_seconds
+                if limits.enforce_run_limits else None
+            ),
+            session_store=session.store if session is not None else None,
+            parallel_limits=config.tool_parallel,
+            retry_limits=config.tool_retry,
+            permission_context=(session.permission_context if session is not None
+                                else PermissionContext(config.permission.default_mode)),
+            interrupt_controller=dispatch_gate.controller,
+            dispatch_gate=dispatch_gate,
+        )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
     response_state = replace(response_state,
         tool_calls=state.tool_calls + batch.budgeted_call_count,

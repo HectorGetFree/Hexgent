@@ -91,6 +91,14 @@ class RunStateReplayTest(unittest.TestCase):
         for cid,status in zip(['c1','c2','c3'],['denied','invalid','skipped']):self.tool('started',cid);self.tool('finished',cid,status)
         self.assertEqual(self.restored().pending_run_state.tool_calls,3)
 
+    def test_steering_blocked_call_is_not_charged_after_restore(self):
+        self.model_commit([{'type':'function_call','name':'business_write','call_id':cid,'arguments':'{}'} for cid in ['c1','c2']])
+        self.tool('started','c1');self.tool('dispatched','c1');self.tool('finished','c1','success')
+        self.tool('started','c2')
+        self.tool('finished','c2','error',attempt_count=0,
+                  failure=dict(code='steering_interrupted',phase='scheduling',side_effect_state='not_started'))
+        self.assertEqual(self.restored().pending_run_state.tool_calls,4)
+
     def test_finished_output_repaired_without_dispatch_or_double_charge(self):
         self.model_commit();self.tool('started');self.tool('dispatched');self.tool('finished',status='success')
         first=self.restored();second=self.restored()
