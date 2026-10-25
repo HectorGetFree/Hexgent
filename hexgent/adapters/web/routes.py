@@ -147,8 +147,10 @@ async def steer_run(
     request: Request,
 ) -> ControlResponse:
     """按 FIFO 向当前 Run 提交一条 Steering Query。"""
-    await _manager(request).steer(run_id, body.query)
-    return ControlResponse(run_id=run_id, action="steer")
+    from uuid import uuid4
+    identity = body.command_id or str(uuid4())
+    await _manager(request).steer(run_id, body.query, mode=body.mode, command_id=identity)
+    return ControlResponse(run_id=run_id, action="steer", command_id=identity)
 
 
 @router.post(

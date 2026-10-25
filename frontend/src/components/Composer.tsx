@@ -77,7 +77,7 @@ export function Composer({
           onKeyDown={handleKeyDown}
           placeholder={
             isActive
-              ? '输入补充要求，可在完整 Turn 边界调整方向…'
+              ? '输入新要求，让当前生成让位；在途工具收束后继续…'
               : isPaused
                 ? '输入补充要求，或直接点击继续…'
                 : '给 Hexgent 发送消息'

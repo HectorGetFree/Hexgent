@@ -15,6 +15,7 @@ class TerminalIO:
 
     def __init__(self) -> None:
         """初始化终端输入，并容忍粘贴内容中的非法字节。"""
+        self.pending_lines = []
         # 1. input() 在解码阶段就可能抛出异常，必须在读取前设置替换策略。
         #    合法 UTF-8 不会改变；非法字节只替换为 �，避免会话进程退出。
         try:
@@ -56,7 +57,8 @@ class TerminalIO:
     def read_message(self) -> str:
         """持续读取多行内容，直到输入空行或 /send 后提交。"""
         # 1. 只在第一行展示提示，避免粘贴多行时重复绘制续行符号。
-        lines: list[str] = []
+        lines: list[str] = self.pending_lines
+        self.pending_lines = []
         while True:
             prompt = "\033[32m你：\033[0m" if not lines else ""
             line = input(prompt)

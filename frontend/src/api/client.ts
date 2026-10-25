@@ -84,7 +84,7 @@ export function cancelRun(runId: string): Promise<unknown> {
 export function steerRun(runId: string, query: string): Promise<unknown> {
   return request(`/api/runs/${runId}/steer`, {
     method: 'POST',
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, mode: 'interrupt', command_id: crypto.randomUUID() }),
   })
 }
 
