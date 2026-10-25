@@ -7,6 +7,31 @@ from hexgent.context import ContextManager
 
 
 class RequestLogprobsCompatibilityTests(unittest.TestCase):
+    def test_null_annotations_normalized_without_history_mutation(self):
+        raw = dict(type="message", role="assistant", content=[dict(type="output_text", text=" ", annotations=None, logprobs=None)])
+        before = deepcopy(raw)
+        manager = ContextManager()
+        manager.append_messages([raw], completes_round=True)
+        part = manager.model_messages()[0]["content"][0]
+        self.assertEqual(part["annotations"], [])
+        self.assertEqual(part["logprobs"], [])
+        self.assertEqual(part["text"], " ")
+        self.assertEqual(raw, before)
+        self.assertEqual(manager.active_messages[0], before)
+        sdk = SimpleNamespace(model_dump=lambda **kwargs: deepcopy(raw))
+        self.assertEqual(manager.materialize_messages([sdk]), manager.materialize_messages([raw]))
+
+    def test_annotations_values_and_tool_payload_are_preserved(self):
+        raw = dict(type="message", role="assistant", content=[dict(type="output_text", text="事实", annotations=[dict(type="url_citation", url="https://example.test", title="source", start_index=0, end_index=2)])])
+        tool = dict(type="function_call_output", call_id="c1", output='{"annotations":null}')
+        arbitrary = dict(annotations=None)
+        manager = ContextManager()
+        self.assertEqual(manager.materialize_messages([raw, tool, arbitrary]), [raw, tool, arbitrary])
+
+    def test_missing_annotations_not_synthesized(self):
+        raw = dict(type="message", role="assistant", content=[dict(type="output_text", text="事实")])
+        self.assertEqual(ContextManager().materialize_messages([raw]), [raw])
+
     def test_null_logprobs_normalized_without_history_mutation(self):
         raw = dict(type="message", role="assistant", content=[dict(type="output_text", text="原文事实", annotations=[], logprobs=None)])
         before = deepcopy(raw)

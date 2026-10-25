@@ -392,7 +392,12 @@ def _request_message(message: Any, *, response_item: bool = True) -> Any:
     #    只处理顶层响应条目，不删除工具数据、嵌套事实或其他消息的状态。
     if isinstance(message, dict):
         return {
-            key: [] if key == "logprobs" and value is None else _request_message(value, response_item=False)
+            # 兼容服务可能在output_text中返回null；回填请求要求数组。
+            # 只规范化请求副本，不改Transcript、正文或工具结果字符串。
+            key: [] if value is None and (
+                key == "logprobs" or
+                (message.get("type") == "output_text" and key == "annotations")
+            ) else _request_message(value, response_item=False)
             for key, value in message.items()
             if not (response_item and message.get("type") == "reasoning" and key == "status")
         }
