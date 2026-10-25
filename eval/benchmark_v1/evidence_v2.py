@@ -7,6 +7,8 @@ from .protocol_v2 import strict_jsonl,classify
 
 def inspect_events(root,manifest):
     calls=[];sessions=set();bindings=set();native_dispatch=set()
+    from .recovery_evidence import planned_crash
+    crash_proof=planned_crash(root,manifest)
     supervised=None
     if (root/'supervisor-stop.json').exists():supervised=json.loads((root/'supervisor-stop.json').read_text())
     for session in manifest.sessions:
@@ -15,15 +17,27 @@ def inspect_events(root,manifest):
         sessions.add(sid);rows=strict_jsonl(root/session.transcript.path)
         if not rows or rows[0]['type']!='session_started' or rows[0]['payload']['session_id']!=sid:raise ValueError('Session起始身份不匹配')
         if any(type(r['sequence']) is not int for r in rows) or [r['sequence'] for r in rows]!=list(range(1,len(rows)+1)):raise ValueError('Transcript序号缺失/重复')
-        active=None;starts={};ends=set()
+        active=None;starts={};ends=set();crash_closed=False
+        recovery_seen=False;repair_seen=False;resume_consumed=False
         for r in rows:
             if not {'schema_version','type','created_at','payload','sequence'}<=r.keys():raise ValueError('Transcript字段缺失')
             if r['schema_version']!=2 or not isinstance(r['payload'],dict) or not isinstance(r['created_at'],str):raise ValueError('Transcript结构版本非法')
             kind=r['type'];p=r['payload']
+            if crash_proof and sid==crash_proof['session_id'] and not crash_closed and r['sequence']>crash_proof['transcript_sequence']:
+                if active!=crash_proof['run_id']:raise ValueError('崩溃切点与Run不匹配')
+                active=None;crash_closed=True
             if kind=='agent_run_started':
                 if active is not None:raise ValueError('Run未结束又开始')
-                if (sid,p['run_id']) in bindings:raise ValueError('Run身份重复')
+                # 崩溃后尚无RunReport，Production可能复用原Run编号。
+                # 仅放行监督切点后的第一次、已重建并修复工具的续跑。
+                if (sid,p['run_id']) in bindings and not (
+                    crash_proof and crash_closed and recovery_seen and repair_seen and
+                    not resume_consumed and p['run_id']==crash_proof['run_id']):
+                    raise ValueError('Run身份重复')
+                if crash_closed:resume_consumed=True
                 active=p['run_id'];bindings.add((sid,active))
+            elif kind=='session_recovered' and crash_closed:
+                recovery_seen=True
             elif kind=='agent_run_finished':
                 if p['status'] not in {'completed','failed','incomplete','interrupted'}:raise ValueError('Run状态非法')
                 if active!=p['run_id']:raise ValueError('Run结束身份不匹配')
@@ -42,6 +56,14 @@ def inspect_events(root,manifest):
                 key=(p['call_id'],active)
                 if key not in starts or key in ends or starts[key]['tool_name']!=p['tool_name']:raise ValueError('结果不配对/重复')
                 ends.add(key);calls.append({**starts[key],'status':p['status'],'data':p.get('data'),'failure':p.get('failure')})
+            elif kind=='session_recovery_repaired' and crash_proof and crash_closed:
+                from .protocol_v2 import recovered_call
+                for repair in p['repaired_calls']:
+                    if repair['recovery_action']=='restore_finished_output':continue
+                    key=(repair['call_id'],crash_proof['run_id'])
+                    if key not in starts or key in ends or starts[key]['tool_name']!=repair['tool_name']:raise ValueError('恢复调用与崩溃前事件不一致')
+                    calls.append(recovered_call(starts[key],repair['recovery_action']));ends.add(key)
+                    repair_seen=True
         allowed=bool(supervised and supervised.get('trial_id')==manifest.trial_id and supervised.get('process_stopped') is True and
             (supervised.get('termination_reason','').startswith('trial_') or supervised.get('termination_reason')=='agent_failed') and
             supervised.get('source') in {'Runner child.kill/wait','owned Trial Compose stop runtime'})
@@ -62,6 +84,10 @@ def seal(root,manifest,identity):
     paths += [str(p.relative_to(root)) for p in (root/'observations').glob('*.json')]
     paths += [ref.path for s in manifest.sessions for ref in (s.transcript,*s.run_reports,*s.provider_usage)]
     paths += [str(p.relative_to(root)) for p in root.glob('sessions/*/observation.jsonl')]
+    if manifest.run_config.get('variant_id') is not None:paths.append('run-config.json')
+    if manifest.task_id=='T08':
+        paths += [str(p.relative_to(root)) for p in root.glob('sessions/*/checkpoints/*.json')]
+        paths += [n for n in ['supervisor-crash.json','crash-boundary.json','restore.json','continue-result.json'] if (root/n).exists()]
     if (root/'supervisor-stop.json').exists():paths.append('supervisor-stop.json')
     if (root/'replacement-manifest-v2.json').exists():paths.append('replacement-manifest-v2.json')
     if (root/'provider-setup-error-v2.json').exists():paths.append('provider-setup-error-v2.json')
@@ -87,6 +113,9 @@ def verify(root,manifest):
         required={manifest.contract.path,'readiness.json','tool-trace.json','provider-usage.json','trial-budget.jsonl','runtime-protocol-v2.json','lifecycle.json'}
         refs=[manifest.contract]+[ref for session in manifest.sessions for ref in (session.transcript,*session.run_reports,*session.provider_usage)]
         required.update(ref.path for ref in refs)
+        if manifest.run_config.get('variant_id') is not None:required.add('run-config.json')
+        if manifest.task_id=='T08' and (root/'supervisor-crash.json').exists():
+            required.update(['supervisor-crash.json','crash-boundary.json','restore.json'])
         required.add('observations/business-evidence.json' if manifest.task_id in {'T01','T02','T03'} else 'observations/remaining-evidence.json')
         if not required<=m['files'].keys():raise FileNotFoundError('关键文件不在完整性Manifest')
         for ref in refs:
@@ -97,10 +126,21 @@ def verify(root,manifest):
             if p.suffix=='.json':json.loads(p.read_text())
             elif p.suffix=='.jsonl':strict_jsonl(p)
         calls,bindings,native=inspect_events(root,manifest)
+        if manifest.task_id=='T08':
+            from .recovery_evidence import verify_recovery_sources
+            verify_recovery_sources(root,manifest,m['files'])
         from .contracts import TaskContract
         contract=TaskContract.model_validate_json((root/manifest.contract.path).read_text())
         runtime=json.loads((root/'runtime-protocol-v2.json').read_text())
         if runtime['identity']!=identity or runtime['budget']!=contract.execution_budget.model_dump() or runtime['protocol_version']!=2:raise ValueError('实际Trial预算/协议与Contract不一致')
+        if manifest.run_config.get('variant_id') is not None:
+            from .variants import metadata as variant_metadata,verify_actual
+            from .baseline_support import metrics
+            variant=manifest.run_config['variant_id']
+            expected=variant_metadata(contract.execution_budget.model_dump(),variant)
+            saved=json.loads((root/'run-config.json').read_text())
+            if any(manifest.run_config.get(k)!=v or saved.get(k)!=v for k,v in expected.items()):raise ValueError('Variant配置快照/摘要不一致')
+            verify_actual(metrics(root)['native_run_configurations'],expected['effective_config'],manifest.run_config['model'])
         if json.loads((root/'tool-trace.json').read_text())!=calls:raise ValueError('规范化Tool Audit与原始事件不一致')
         ledger=strict_jsonl(root/'trial-budget.jsonl')
         if [r['sequence'] for r in ledger]!=list(range(1,len(ledger)+1)):raise ValueError('预算账本序号不完整')

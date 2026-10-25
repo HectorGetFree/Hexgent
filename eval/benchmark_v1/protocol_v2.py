@@ -143,3 +143,11 @@ def cleanup(actions):
         try:action()
         except Exception as exc:errors[name]=type(exc).__name__
     return errors
+
+
+def recovered_call(source, action):
+    """规范化Production修复的未闭合调用；不伪造tool_execution_finished。"""
+    if action not in {'not_started','safe_to_retry','verify_before_retry'}:raise ValueError('未知恢复动作')
+    return {**source,'status':'interrupted','data':None,'failure':{
+        'code':'PROCESS_INTERRUPTED','side_effect_state':'unknown' if action=='verify_before_retry' else 'none',
+        'recovery_action':action}}

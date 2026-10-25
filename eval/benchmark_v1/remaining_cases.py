@@ -11,7 +11,7 @@ def load_remaining(case, *, revision=None):
     if case not in CASE_NAMES: raise ValueError('只允许冻结的 B1-D Case 名称')
     root=CASES/case
     if revision is not None:
-        if revision != 'f1' or case in {'t05-multiidentity','t08-crash'}:
+        if revision != 'f1' or case == 't05-multiidentity':
             raise ValueError('该Case没有可执行的F1 Revision')
         root=root/'revisions'/revision
     contract = TaskContract.model_validate_json((root/'contract.json').read_text())

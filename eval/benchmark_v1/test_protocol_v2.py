@@ -201,7 +201,8 @@ class ProtocolV2Tests(unittest.TestCase):
 
     def test_f1_runner_cannot_fallback_to_legacy_smoke(self):
         from .baseline import inventory
-        with self.assertRaisesRegex(ValueError,'不得回退'):inventory('f1')
+        with patch('eval.benchmark_v1.baseline.MODULE',self.root):
+            with self.assertRaisesRegex(ValueError,'不得回退'):inventory('f1')
 
     def test_final_v2_verifier_requires_integrity_manifest(self):
         from .test_verifier_v2 import VerifierV2Tests

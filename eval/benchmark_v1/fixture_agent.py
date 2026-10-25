@@ -49,10 +49,13 @@ def main():
         from .baseline_support import full_config
         config=full_config(cfg['budget'])
     config=replace(config,context_extraction=replace(config.context_extraction,enabled=False),context_retrieval=replace(config.context_retrieval,enabled=False))
+    if cfg.get('variant_id') is not None:
+        from .variants import effective_config
+        config=effective_config(cfg['budget'],cfg['variant_id'])
     if args.restore:
         sid=json.loads((out/'agent-session.json').read_text())['session_id']
         engine=AgentEngine.restore(config,workdir,sid)
-        dump(out/'restore.json',{'session_id':sid,'has_continuable_run':engine.has_continuable_run,'mechanism':'AgentEngine.restore + RunRequest.continue_run','pid':__import__('os').getpid(),'continue_attempted':True})
+        dump(out/'restore.json',{'session_id':sid,'has_continuable_run':engine.has_continuable_run,'restored_run_state':engine._pending_run_state.to_dict() if engine._pending_run_state else None,'mechanism':'AgentEngine.restore + RunRequest.continue_run','pid':__import__('os').getpid(),'continue_attempted':True})
         request=RunRequest.continue_run()
     else:
         engine=AgentEngine.create(config,workdir)

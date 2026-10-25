@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from dotenv import dotenv_values
 from .artifacts import write_json
 from .baseline_support import full_config,metrics,aggregate,raw_rows
+from .variants import VARIANTS,effective_config,metadata as variant_metadata,exclusion,verify_actual,trial_id as variant_trial_id
 from .business_cases import load_case
 from .business_verifier import BusinessCaseVerifier
 from .contracts import ArtifactReference,TaskContract,TrialManifest,VerifierResult,AssertionResult
@@ -45,25 +46,34 @@ def verification(root,contract,manifest):
     return (BusinessCaseVerifier() if contract.task_id in {'T01','T02','T03'} else RemainingVerifier()).verify(inputs)
 
 
-def inventory(revision=None):
+def inventory(revision=None,variant_id="baseline",names=None,include_recovery=False):
+    if variant_id not in VARIANTS:raise ValueError("不支持的Variant")
+    if variant_id!="baseline" and revision!="f1":raise ValueError("Variant必须使用F1/协议v2")
     result=[]
-    for name in ['T01','T02','T03',*CASE_NAMES]:
-        selected=revision if name not in {'t05-multiidentity','t08-crash'} else None
+    for name in (names if names is not None else ['T01','T02','T03',*CASE_NAMES]):
+        selected=revision if name!='t05-multiidentity' and (name!='t08-crash' or include_recovery) else None
         contract,baseline=(load_case(name,revision=selected) if name.startswith('T') else load_remaining(name,revision=selected))
+        excluded=exclusion(contract,variant_id)
         protocols=list((MODULE/'runs'/SMOKES[name]).rglob('protocol-result.json'))
-        if selected=='f1':
+        if selected=='f1' and not excluded:
             protocols=[p for p in (MODULE/'runs').rglob('protocol-result-v2.json') if
                 json.loads(p.read_text()).get('identity',{}).get('case_id')==contract.case_id and
-                (p.parent/'trial.json').exists() and json.loads((p.parent/'trial.json').read_text()).get('phase')=='protocol_smoke']
+                json.loads(p.read_text()).get('protocol_status')=='PASS' and
+                (p.parent/'trial.json').exists() and json.loads((p.parent/'trial.json').read_text()).get('phase')=='protocol_smoke' and
+                json.loads((p.parent/'trial.json').read_text()).get('run_config',{}).get('variant_id','baseline')==variant_id]
+            explicit=[p for p in protocols if json.loads((p.parent/'trial.json').read_text()).get('run_config',{}).get('variant_id')==variant_id]
+            if explicit:protocols=explicit
             if not protocols:raise ValueError('F1必须先有新版Protocol Smoke；不得回退到旧B2：'+name)
-        if len(protocols)!=1:raise ValueError('Smoke Protocol 产物不唯一：'+name)
-        source=protocols[0].parent;p=json.loads(protocols[0].read_text())
-        if name not in {'t05-multiidentity','t08-crash'}:
+        if excluded:protocols=[]
+        if not excluded and len(protocols)!=1:raise ValueError('Smoke Protocol 产物不唯一：'+name)
+        source=protocols[0].parent if protocols else None
+        p=json.loads(protocols[0].read_text()) if protocols else {'protocol_status':'NOT_APPLICABLE','task_status':'INCONCLUSIVE','reason':excluded}
+        if name!='t05-multiidentity' and (name!='t08-crash' or include_recovery) and not excluded:
             trial=TrialManifest.model_validate_json((source/'trial.json').read_text())
             checked=verification(source,contract,trial)
             if not trial.matches(contract) or checked.status!=p.get('verifier_status',p['task_status']) or p['protocol_status']!='PASS':raise ValueError('合同／Verifier／Smoke 不匹配：'+name)
-        eligible=p['protocol_status']=='PASS' and name not in {'t05-multiidentity','t08-crash'}
-        result.append({'name':name,'suite_id':contract.suite_id,'case_id':contract.case_id,'task_id':contract.task_id,'environment_kind':contract.environment_kind,'eligible':eligible,'smoke_protocol':p['protocol_status'],'smoke_task':p['task_status'],'smoke_artifact':str(source),'reason':p.get('reason'),'contract_sha256':contract.digest(),'baseline_sha256':sha256(json.dumps(baseline,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),'contract':contract.model_dump(mode='json'),'baseline':baseline,'budget':contract.execution_budget.model_dump(mode='json'),'full_config':asdict(full_config(contract.execution_budget.model_dump()))})
+        eligible=p['protocol_status']=='PASS' and name!='t05-multiidentity' and (name!='t08-crash' or include_recovery)
+        result.append({'name':name,'suite_id':contract.suite_id,'case_id':contract.case_id,'task_id':contract.task_id,'environment_kind':contract.environment_kind,'eligible':eligible,'smoke_protocol':p['protocol_status'],'smoke_task':p['task_status'],'smoke_artifact':str(source),'reason':p.get('reason'),'contract_sha256':contract.digest(),'baseline_sha256':sha256(json.dumps(baseline,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),'contract':contract.model_dump(mode='json'),'baseline':baseline,'budget':contract.execution_budget.model_dump(mode='json'),'variant_id':variant_id,'effective_config_sha256':variant_metadata(contract.execution_budget.model_dump(),variant_id)['effective_config_sha256'],'exclusion_reason':excluded,'full_config':asdict(effective_config(contract.execution_budget.model_dump(),variant_id))})
     return result
 
 
@@ -79,19 +89,21 @@ def freeze(args,items):
     provider={k:v for k,v in dotenv_values(args.provider_env_file).items() if k in {'OPENAI_API_KEY','OPENAI_BASE_URL','MODEL_ID'}}
     if len(provider)!=3 or not all(provider.values()):raise ValueError('Provider 配置缺失')
     metadata=json.loads(args.build_metadata.read_text())
-    if git(ROOT,'diff',metadata['runtime']['commit'],'--','hexgent'):raise ValueError('Runtime 镜像与当前 Production 源码不一致')
+    uses_workspace=any(c['eligible'] and c['environment_kind']=='hexworkspace' for c in items)
+    if uses_workspace and git(ROOT,'diff',metadata['runtime']['commit'],'--','hexgent'):raise ValueError('Runtime 镜像与当前 Production 源码不一致')
     from .fixture_agent import register_fixture
     from hexgent.tool.tool_registry import TOOL_REGISTRY
     from hexgent.prompt import TOOLS
     from hexgent.observation import source_fingerprint
     register_fixture('http://127.0.0.1:0','not-a-live-token')
     registry={name:{'function':tool.function.__module__+'.'+tool.function.__qualname__,'requires_context':tool.requires_context,'permission_capability':tool.permission_capability,'execution_domain':tool.execution_domain,'concurrency_safe':tool.concurrency_safe,'automatic_retry_safe':tool.automatic_retry_safe,'deduplication_policy':tool.deduplication_policy,'interrupt_behavior':tool.interrupt_behavior} for name,tool in TOOL_REGISTRY.items()}
-    plan=[{'case_id':c['case_id'],'name':c['name'],'ordinal':i,'trial_id':'b2-'+c['case_id']+'-'+str(i)} for c in items if c['eligible'] for i in [1,2,3]]
-    manifest={'schema_version':1,'protocol_version':2 if getattr(args,'revision',None)=='f1' else 1,'campaign_id':args.root.name,'frozen_at':now(),'execution':'serial; exactly three planned attempts per eligible Case; no automatic task retry',
+    variant_id=getattr(args,'variant','baseline')
+    plan=[{'variant_id':variant_id,'case_id':c['case_id'],'name':c['name'],'ordinal':i,'trial_id':variant_trial_id(args.root,variant_id,c['case_id'],i)} for c in items if c['eligible'] for i in [1,2,3]]
+    manifest={'schema_version':1,'protocol_version':2 if getattr(args,'revision',None)=='f1' else 1,'variant_id':variant_id,'variant_schema_version':1,'campaign_id':args.root.name,'frozen_at':now(),'execution':'serial; exactly three planned attempts per eligible Case; no automatic task retry',
         'inventory':items,'trial_plan':plan,'git':{'hexgent_head':git(ROOT,'rev-parse','HEAD'),'hexgent_branch':git(ROOT,'branch','--show-current'),'hexgent_status':git(ROOT,'status','--short','--untracked-files=all'),'workspace_head':git(args.workspace_source,'rev-parse','HEAD'),'workspace_branch':git(args.workspace_source,'branch','--show-current'),'workspace_status':git(args.workspace_source,'status','--short','--untracked-files=all')},
-        'runtime_source_sha256':source_fingerprint(),'build_metadata':metadata,'source_hashes':source_hashes(args.workspace_source,args.build_metadata,args.provider_env_file,args.embedding_env_file),
+        'runtime_source_sha256':source_fingerprint(),'build_metadata':metadata if uses_workspace else {'execution':'host Fixture subprocess; images unused','python':sys.executable},'source_hashes':source_hashes(args.workspace_source,args.build_metadata,args.provider_env_file,args.embedding_env_file),
         'provider':{'host':urlparse(provider['OPENAI_BASE_URL']).hostname,'route_sha256':sha256(provider['OPENAI_BASE_URL'].encode()).hexdigest(),'model':provider['MODEL_ID'],'temperature':'omitted / provider default','reasoning_effort':'omitted / provider default','sdk_max_retries':0 if getattr(args,'revision',None)=='f1' else 2,'max_output_tokens_per_round':4096,'finalization_output_tokens':2000,'server_model_identity':'not independently attested'},
-        'harness':{'variant':'Full; no ablation','config_by_case':'inventory.full_config','max_model_rounds':40,'tool_parallel':False,'permission_mode':'default','compaction_threshold_tokens':64000,'snapshot':'production compaction Key Fact Snapshot enabled','memory':'production default enabled; T05 single identity','context_records':'production tracked default disabled; not an ablation','budgets':'unchanged frozen Case budgets'},
+        'harness':{'variant':variant_id,'config_by_case':'inventory.full_config','max_model_rounds':40,'tool_parallel':variant_id=='tool_parallel_on','permission_mode':'default','compaction_threshold_tokens':64000,'snapshot':'production compaction Key Fact Snapshot enabled','memory':'retrieval disabled; writes unchanged' if variant_id=='no_memory_retrieval' else 'production default enabled; T05 single identity','context_records':'production tracked default disabled; not an ablation','budgets':'unchanged frozen Case budgets'},
         'tool_registry':registry,'tool_schemas':TOOLS,'host':{'python':sys.version,'platform':platform.platform(),'timezone':'Asia/Shanghai','dependencies':{n:importlib.metadata.version(n) for n in ['openai','httpx','pydantic','python-dotenv']}},
         'protocol_adjustments':['phase baseline metadata added to existing entries','Fixture baseline config aligned to Workspace: rounds40/output4096/parallel false; Smoke defaults preserved','B1 Smoke outcomes not pooled with B2'],
         'usage_limitations':['failed or SDK retry usage unknown if unreported','Workspace embedding adapter usage unavailable'],'excluded_case_count':sum(not c['eligible'] for c in items)}
@@ -103,6 +115,8 @@ def freeze(args,items):
     for p in MODULE.rglob('*'):
         if p.is_file() and p.suffix in {'.py','.json','.md'} and 'runs' not in p.relative_to(MODULE).parts and '__pycache__' not in p.parts:
             target=args.root/'source-snapshot'/p.relative_to(MODULE);target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,target)
+    for p in (ROOT/'hexgent').rglob('*.py'):
+        target=args.root/'runtime-source-snapshot'/p.relative_to(ROOT);target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,target)
     dump(args.root/'case-inventory.json',items)
     return manifest
 
@@ -117,7 +131,7 @@ def check_frozen(args,manifest):
 def command(args,case,trial):
     module='business_smoke' if case['name'].startswith('T') else 'memory_business_smoke' if case['name']=='t05-single' else 'fixture_smoke'
     cmd=[sys.executable,'-m','eval.benchmark_v1.'+module,'--phase','baseline','--case',case['name'],'--trial-id',trial['trial_id'],'--root',str(args.root/'trials'/trial['trial_id']),'--provider-env-file',str(args.provider_env_file)]
-    if case.get('contract',{}).get('verifier_spec',{}).get('verifier_version')=='2':cmd+=['--revision','f1']
+    if case.get('contract',{}).get('verifier_spec',{}).get('verifier_version')=='2':cmd+=['--revision','f1','--variant',getattr(args,'variant','baseline')]
     if case['environment_kind']=='hexworkspace':
         cmd += ['--workspace-source',str(args.workspace_source),'--build-metadata',str(args.build_metadata),'--docker-socket',args.docker_socket,'--embedding-env-file',str(args.embedding_env_file)]
     return cmd
@@ -148,8 +162,9 @@ def collect(args,case,trial,returncode,elapsed):
         if case.get('full_config') is not None:
             configs=measured['native_run_configurations']
             model=json.loads((args.root/'baseline-manifest.json').read_text())['provider']['model']
-            if not configs or any(r['config']!=case['full_config'] or r['model']!=model for r in configs):
-                raise ValueError('新版实际配置不符合冻结Baseline')
+            verify_actual(configs,case['full_config'],model)
+        variant_id=case.get('variant_id','baseline')
+        if manifest.run_config.get('variant_id','baseline')!=variant_id:raise ValueError('Trial串Variant')
         measured.update(attempted_tool_calls=measured['tool_calls'],kernel_dispatch_candidates=measured['tool_dispatches'],
             tool_calls=integrity.get('actual_dispatches'),tool_dispatches=integrity.get('actual_dispatches'))
         groups={}
@@ -159,7 +174,7 @@ def collect(args,case,trial,returncode,elapsed):
             if r['usage_known']:
                 g['input_tokens']+=r['input_tokens'];g['output_tokens']+=r['output_tokens'];g['total_tokens']+=r['tokens']
             else:g['missing_usage_records']+=1
-        return {**trial,'task_id':case['task_id'],'suite_id':case['suite_id'],'protocol_status':p['protocol_status'],
+        return {**trial,'variant_id':variant_id,'effective_config_sha256':variant_metadata(contract.execution_budget.model_dump(),variant_id)['effective_config_sha256'],'task_id':case['task_id'],'suite_id':case['suite_id'],'protocol_status':p['protocol_status'],
             'task_status':p['task_status'],'termination_reason':p['termination_reason'],'safety_violation':p['safety_violation'],
             'valid_task_sample':p['valid_task_sample'] and integrity['status']=='PASS','artifact_root':str(base),
             'evidence_manifest_sha256':p['evidence_manifest_sha256'],'contract_sha256':manifest.task_contract_sha256,
@@ -194,22 +209,22 @@ def collect(args,case,trial,returncode,elapsed):
 def report(root,records,items,status):
     summary=aggregate(records,items)
     dump(root/'baseline-summary.json',{'stage_status':status,'generated_at':now(),'planned_trials':3*sum(c['eligible'] for c in items),'completed_attempts':len(records),'valid_trials':sum(r['valid_task_sample'] for r in records),'excluded_cases':sum(not c['eligible'] for c in items),'cases':summary,'trials':records,'statistical_significance':'not claimed; n=3 per Case'})
-    lines=['# B2 Full Harness Baseline', '', '阶段状态：'+status+'。固定清单串行执行；没有消融、Oracle调整或任务失败重跑。', '', '| Case | 有效 | PASS/FAIL | INVALID/INCONCLUSIVE | 成功率 | 已知Token均值 | Agent秒均值 | Tool均值 |','|---|---:|---|---|---|---:|---:|---:|']
+    lines=['# B2 Full Harness Baseline', '', 'Variant：'+(items[0].get('variant_id','baseline') if items else 'baseline')+'；阶段状态：'+status+'。固定清单串行执行；没有消融、Oracle调整或任务失败重跑。', '', '| Case | 有效 | PASS/FAIL | INVALID/INCONCLUSIVE | 成功率 | 已知Token均值 | Agent秒均值 | Tool均值 |','|---|---:|---|---|---|---:|---:|---:|']
     for s in summary:
         def val(key):return str(round(s[key]['mean'],2)) if s[key] else '—'
         lines.append(f"| {s['case_id']} | {s['valid_trials']} | {s['pass']}/{s['fail']} | {s['invalid']}/{s['inconclusive']} | {s['pass_rate_numerator']}/{s['pass_rate_denominator']} | {val('known_provider_tokens')} | {val('agent_run_seconds_sum')} | {val('tool_calls')} |")
     lines += ['', '## 原始 Trial', '', '| Case / Trial | Protocol | Task | 已知Token | 总墙钟秒 | Agent秒 | Tools | Compaction / Snapshot / Memory写 / Recall请求 |','|---|---|---|---:|---:|---:|---:|---|']
     for r in records:
-        m=r['metrics'];link=str(Path(r['artifact_root'])/'protocol-result.json')
+        m=r['metrics'];link=str(Path(r['artifact_root'])/('protocol-result-v2.json' if (Path(r['artifact_root'])/'protocol-result-v2.json').exists() else 'protocol-result.json'))
         lines.append(f"| [{r['trial_id']}]({link}) | {r['protocol_status']} | {r['task_status']} | {m.get('known_provider_tokens','—')} | {r['total_wall_seconds']:.2f} | {m.get('agent_run_seconds_sum','—')} | {m.get('tool_calls','—')} | {m.get('compactions','—')} / {m.get('snapshot_events','—')} / {m.get('memory_writes','—')} / {m.get('memory_recall_requests','—')} |")
-    lines += ['', '## 边界', '', '两个BLOCKED Case没有执行，不进入分母。INVALID、INCONCLUSIVE与Protocol/配置失效均排除并单列。Task FAIL保留为有效样本。', '', '总墙钟包含初始化、Readiness、运行、归档、销毁；Agent秒来自原生Run Report并跨Session求和，不等同模型推理时间。', '', 'Token来自实际Provider完成记录，MAIN与辅助调用明细在baseline-summary.json。未报告失败/SDK重试和Workspace Embedding成本未知，不称全部计费成本。Cached/Reasoning字段缺失不默认为零。', '', '仅三个样本，不宣称显著性，没有加权分数。本轮停止，不自动进入B3。']
+    lines += ['', '## 边界', '', 'BLOCKED及NOT_APPLICABLE Case不执行，不进入分母；具体原因见冻结Inventory。INVALID、INCONCLUSIVE与Protocol/配置失效均排除并单列。Task FAIL保留为有效样本。', '', '总墙钟包含初始化、Readiness、运行、归档、销毁；Agent秒来自原生Run Report并跨Session求和，不等同模型推理时间。', '', 'Token来自实际Provider完成记录，MAIN与辅助调用明细在baseline-summary.json。未报告失败/SDK重试和Workspace Embedding成本未知，不称全部计费成本。Cached/Reasoning字段缺失不默认为零。', '', '仅三个样本，不宣称显著性，没有加权分数。本轮停止，不自动进入B3。']
     (root/'BASELINE_REPORT.md').write_text('\n'.join(lines)+'\n')
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--revision',choices=['f1'],default=None);p.add_argument('--root',type=Path,required=True);p.add_argument('--workspace-source',type=Path,required=True);p.add_argument('--build-metadata',type=Path,required=True);p.add_argument('--docker-socket',required=True);p.add_argument('--provider-env-file',type=Path,required=True);p.add_argument('--embedding-env-file',type=Path,required=True);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--include-recovery',action='store_true');p.add_argument('--cases',nargs='+',choices=['T01','T02','T03',*CASE_NAMES]);p.add_argument('--variant',choices=VARIANTS,default='baseline');p.add_argument('--revision',choices=['f1'],default=None);p.add_argument('--root',type=Path,required=True);p.add_argument('--workspace-source',type=Path,required=True);p.add_argument('--build-metadata',type=Path,required=True);p.add_argument('--docker-socket',required=True);p.add_argument('--provider-env-file',type=Path,required=True);p.add_argument('--embedding-env-file',type=Path,required=True);args=p.parse_args()
     for field in ['root','workspace_source','build_metadata','provider_env_file','embedding_env_file']:setattr(args,field,getattr(args,field).resolve())
-    items=inventory(args.revision);args.root.mkdir(parents=True,exist_ok=False);manifest=freeze(args,items);records=[];status='PARTIAL'
+    items=inventory(args.revision,args.variant,args.cases,args.include_recovery);args.root.mkdir(parents=True,exist_ok=False);manifest=freeze(args,items);records=[];status='PARTIAL'
     print(json.dumps({'event':'manifest_frozen','cases':sum(c['eligible'] for c in items),'trials':len(manifest['trial_plan']),'manifest':str(args.root/'baseline-manifest.json')},ensure_ascii=False),flush=True)
     try:
         for trial in manifest['trial_plan']:

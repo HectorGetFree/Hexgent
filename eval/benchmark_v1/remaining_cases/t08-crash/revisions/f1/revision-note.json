@@ -1,0 +1,9 @@
+{
+  "revision": "f1",
+  "previous_contract": "../../contract.json",
+  "previous_case_id": "t08-crash-v1",
+  "case_id": "t08-crash-v2",
+  "verifier_version": "2",
+  "reason": "Production Run增量重建后重验；业务Query、预算和单次提交要求不变；新增协议v2与恢复结果证据",
+  "comparability": "新版本独立运行，旧BLOCKED与历史B2不重判"
+}

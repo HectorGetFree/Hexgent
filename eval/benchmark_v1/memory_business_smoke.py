@@ -18,8 +18,12 @@ from .contracts import VerifierResult, AssertionResult, ArtifactReference
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--replacement-of',type=Path,default=None);p.add_argument('--revision',choices=['f1'],default=None);p.add_argument('--phase',choices=['protocol_smoke','baseline'],default='protocol_smoke');p.add_argument('--case',choices=['t05-single','t05-multiidentity'],required=True);p.add_argument('--trial-id',required=True);p.add_argument('--root',type=Path,required=True);p.add_argument('--workspace-source',type=Path,required=True);p.add_argument('--build-metadata',type=Path,required=True);p.add_argument('--docker-socket',required=True);p.add_argument('--provider-env-file',type=Path,required=True);p.add_argument('--embedding-env-file',type=Path,required=True);args=p.parse_args()
+    from .variants import VARIANTS
+    p=argparse.ArgumentParser();p.add_argument("--variant",choices=VARIANTS,default=None);p.add_argument('--replacement-of',type=Path,default=None);p.add_argument('--revision',choices=['f1'],default=None);p.add_argument('--phase',choices=['protocol_smoke','baseline'],default='protocol_smoke');p.add_argument('--case',choices=['t05-single','t05-multiidentity'],required=True);p.add_argument('--trial-id',required=True);p.add_argument('--root',type=Path,required=True);p.add_argument('--workspace-source',type=Path,required=True);p.add_argument('--build-metadata',type=Path,required=True);p.add_argument('--docker-socket',required=True);p.add_argument('--provider-env-file',type=Path,required=True);p.add_argument('--embedding-env-file',type=Path,required=True);args=p.parse_args()
     contract,baseline=load_remaining(args.case,revision=args.revision)
+    if args.variant is not None:
+        from .variants import require_applicable
+        require_applicable(contract,args.variant)
     if args.case=='t05-multiidentity':
         args.root.mkdir(parents=True,exist_ok=False);write_json(args.root/'contract.json',contract)
         result={'protocol_status':'BLOCKED','task_status':'INCONCLUSIVE','scenario_triggered':False,'reason':'Production MemoryStore only workdir scope; no trusted userId/workspaceId namespace; no identity routing added','real_provider_requests':0}
@@ -32,12 +36,18 @@ def main():
     for key in ['HTTP_PROXY','HTTPS_PROXY']:
         if os.environ.get(key):provider[key]=os.environ[key]
     metadata=json.loads(args.build_metadata.read_text())
-    manager=BusinessCaseEnvironment(args.root,args.workspace_source,metadata['workspace']['image_id'],metadata['runtime']['image_id'],LocalDocker(args.docker_socket),contract=contract,baseline=baseline,provider=provider,embedding_key=dotenv_values(args.embedding_env_file).get('DASHSCOPE_API_KEY',''))
+    manager=BusinessCaseEnvironment(args.root,args.workspace_source,metadata['workspace']['image_id'],metadata['runtime']['image_id'],LocalDocker(args.docker_socket),contract=contract,baseline=baseline,provider=provider,variant_id=args.variant,embedding_key=dotenv_values(args.embedding_env_file).get('DASHSCOPE_API_KEY',''))
     env=None;started=time.monotonic();deadline=started+contract.execution_budget.max_wall_time_seconds;stages=[];decisions={}
     protocol={'case_id':contract.case_id,'trial_id':args.trial_id,'protocol_status':'BLOCKED','task_status':'INVALID','scenario_triggered':False,'identity_boundary':'single user + workspace; multiple identity NOT_SUPPORTED'}
     run_config={'protocol_version':2 if contract.verifier_spec.verifier_version=='2' else 1,'phase':args.phase,'model':provider['MODEL_ID'],'memory':'production-default','context_records':'disabled as tracked default','direct_history_injection':False,'identity_scope':'single trusted business identity','measurement_scope':contract.scenario_config.get('measurement_scope','legacy memory evidence; causal dependence not established'),'runtime_image_id':metadata['runtime']['image_id'],'workspace_image_id':metadata['workspace']['image_id']}
+    if args.variant is not None:
+        from .variants import metadata as variant_metadata
+        run_config.update(variant_metadata(contract.execution_budget.model_dump(),args.variant))
+        run_config["tool_parallel"]=args.variant=="tool_parallel_on"
+        run_config["memory"]="retrieval-disabled; writes unchanged" if args.variant=="no_memory_retrieval" else "production-default"
     try:
         env=manager.provision(args.trial_id,contract.baseline_id);root=env.artifact_root
+        dump(root/"run-config.json",run_config)
         if args.replacement_of:
             from .protocol_v2 import reserve_replacement
             reserve_replacement(root,args.replacement_of,contract,args.trial_id)

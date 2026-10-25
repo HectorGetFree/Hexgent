@@ -23,9 +23,13 @@ def container_proxy(value):
 
 
 class BusinessCaseEnvironment(TrialEnvironmentManager):
-    def __init__(self, *args, contract, baseline, provider, **kwargs):
+    def __init__(self, *args, contract, baseline, provider, variant_id=None, **kwargs):
         super().__init__(*args, suite_id=contract.suite_id, case_id=contract.case_id, **kwargs)
         self.contract, self.provider = contract, provider
+        self.variant_id = variant_id
+        if variant_id is not None:
+            from .variants import require_applicable
+            require_applicable(contract, variant_id)
         self.protocol_started_at=time.time()
         if not all(provider.get(key) for key in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "MODEL_ID"]):
             raise EnvironmentError("真实 Agent Provider 配置缺失")
@@ -70,6 +74,9 @@ enabled = false
 enabled = false
 max_workers = 4
 ''')
+        if self.variant_id is not None:
+            from .variants import config_toml, effective_config
+            (private/'workdir/hexgent.toml').write_text(config_toml(effective_config(budget.model_dump(), self.variant_id)))
         if self.contract.verifier_spec.verifier_version=='2':
             control=dict(protocol_version=2,identity=dict(suite_id=self.contract.suite_id,
                 case_id=self.contract.case_id,trial_id=trial_id,contract_sha256=self.contract.digest()),

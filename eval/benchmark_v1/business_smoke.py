@@ -57,6 +57,15 @@ def audit(environment):
                 if payload['tool_name']=='read_file':
                     consumption.append({'call_id':payload['call_id'],'status':payload['status'],
                                         'arguments':arguments})
+            if kind=='session_recovery_repaired':
+                from .protocol_v2 import recovered_call
+                for repaired in payload['repaired_calls']:
+                    if repaired['recovery_action']=='restore_finished_output':continue
+                    cid=repaired['call_id'];source=started[cid]
+                    try:arguments=json.loads(source.get('arguments','{}'))
+                    except ValueError:arguments={'_invalid_json':source.get('arguments','')}
+                    calls.append(recovered_call(dict(session_id=sid,run_id=run_id,call_id=cid,
+                        tool_name=source['tool_name'],arguments=arguments),repaired['recovery_action']))
             if kind=='model_response_completed':
                 usage.append({'session_id':sid,'sequence':row['sequence'],'kind':'main',
                               'usage':payload.get('usage')})
@@ -124,6 +133,10 @@ def settle(manager,environment,deadline):
 
 def main():
     parser=argparse.ArgumentParser()
+    from .variants import VARIANTS
+    parser.add_argument("--variant",choices=VARIANTS,default=None)
+    parser.add_argument('--revision',choices=['f1'],default=None)
+    parser.add_argument('--replacement-of',type=Path,default=None)
     parser.add_argument('--phase',choices=['protocol_smoke','baseline'],default='protocol_smoke')
     parser.add_argument('--case',choices=['T01','T02','T03'],required=True)
     parser.add_argument('--trial-id',required=True)
@@ -135,6 +148,9 @@ def main():
     parser.add_argument('--embedding-env-file',type=Path,required=True)
     args=parser.parse_args()
     contract,baseline=load_case(args.case,revision=args.revision)
+    if args.variant is not None:
+        from .variants import require_applicable
+        require_applicable(contract,args.variant)
     provider={k:v for k,v in dotenv_values(args.provider_env_file).items()
               if k in {'OPENAI_API_KEY','OPENAI_BASE_URL','MODEL_ID'}}
     for key in ['HTTP_PROXY','HTTPS_PROXY']:
@@ -142,7 +158,7 @@ def main():
     metadata=json.loads(args.build_metadata.read_text())
     manager=BusinessCaseEnvironment(args.root,args.workspace_source,metadata['workspace']['image_id'],
         metadata['runtime']['image_id'],LocalDocker(args.docker_socket),contract=contract,baseline=baseline,
-        provider=provider,embedding_key=dotenv_values(args.embedding_env_file).get('DASHSCOPE_API_KEY',''))
+        provider=provider,variant_id=args.variant,embedding_key=dotenv_values(args.embedding_env_file).get('DASHSCOPE_API_KEY',''))
     environment=None; started=time.monotonic(); decisions={}; stages=[]
     protocol={'schema_version':1,'suite_id':contract.suite_id,'case_id':contract.case_id,
               'trial_id':args.trial_id,'protocol_status':'BLOCKED','task_status':'INVALID','reason':None}
@@ -162,6 +178,11 @@ def main():
             'context_record_extraction':False,'context_record_retrieval':False,
             'compaction_threshold_tokens':64000,'memory':'production-default',
             'budget_scope':'Trial across stages; known Harness usage monitored; embedding usage unavailable'}
+        if args.variant is not None:
+            from .variants import metadata as variant_metadata
+            run_config.update(variant_metadata(contract.execution_budget.model_dump(),args.variant))
+            run_config["tool_parallel"]=args.variant=="tool_parallel_on"
+            run_config["memory"]="retrieval-disabled; writes unchanged" if args.variant=="no_memory_retrieval" else "production-default"
         dump(environment.artifact_root/'run-config.json',run_config)
         base=manager.readiness(environment,require_seed=False,require_vector=False,timeout_seconds=120)
         if base['status']!='PASS': raise EnvironmentError('基础环境未就绪')

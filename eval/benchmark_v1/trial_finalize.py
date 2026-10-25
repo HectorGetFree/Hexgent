@@ -64,7 +64,8 @@ def finalize_workspace(manager,env,contract,protocol,stages):
         if failed.exists():shutil.copy2(failed,root/'provider-setup-error-v2.json')
     def archive():
         nonlocal manifest
-        manifest,_=archive_manifest(root,env.workdir,contract,env.trial_id,{'phase':protocol.get('phase','protocol_smoke'),'protocol_version':2})
+        saved=json.loads((root/'run-config.json').read_text()) if (root/'run-config.json').exists() else {}
+        manifest,_=archive_manifest(root,env.workdir,contract,env.trial_id,{**saved,'phase':protocol.get('phase','protocol_smoke'),'protocol_version':2})
     def contract_artifact():
         if not (root/'contract.json').exists():
             from .artifacts import write_json
