@@ -167,7 +167,7 @@ class SessionRestorer:
                 ContextRecordStore.mutation_from_payload(record["payload"])
             )
 
-        # 4. 仅当 Checkpoint 后没有新的状态事实时，才允许继续其运行预算。
+        # 4. 重放版本化Run状态和后续工具消耗；旧日志仍使用保守续跑规则。
         pending_run_state = _pending_run_state(checkpoint, records)
 
         # 5. 崩溃可能留下两类工具协议缺口：未 finished 的调用只能保守告知未知状态；
@@ -284,6 +284,9 @@ def _pending_run_state(
     records: list[dict[str, Any]],
 ) -> RunStateSnapshot | None:
     """判断恢复出的 Checkpoint 是否仍能安全地继续运行。"""
+    from .run_state_replay import supports_run_replay,replay_run_state
+    if supports_run_replay(checkpoint, records):
+        return replay_run_state(checkpoint, records)
     # 新 Compaction 事件携带完整已提交续跑状态；Checkpoint 失败时不猜测旧预算。
     for record in reversed(records):
         if record["type"] == "context_compaction_applied" and "resume_state" in record["payload"]:

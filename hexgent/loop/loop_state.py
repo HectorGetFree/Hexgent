@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from time import monotonic
+from math import isfinite
 from typing import Any, Literal
 
 from hexgent.context.context_manager import ContextManager
@@ -130,6 +131,7 @@ class RunStateSnapshot:
                 "max_total_tokens",
                 "max_elapsed_seconds",
             }
+            or not isfinite(snapshot.elapsed_seconds)
             or snapshot.elapsed_seconds < 0
         ):
             raise ValueError("Checkpoint 运行状态字段无效")

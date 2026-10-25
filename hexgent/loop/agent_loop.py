@@ -50,6 +50,7 @@ def agent_loop(
         session.start_run(
             limits_enabled=config.loop.enforce_run_limits,
             plan=state.tool_context.plan_store.get_plan(),
+            loop_state=state,
         )
         observation = current_observation.get()
         if observation is not None:
@@ -78,6 +79,7 @@ def agent_loop(
             and not active_control.interrupt_controller.interrupted
             and next_state.model_rounds > state.model_rounds
         ):
+            session.invalidate_run_state("context_record_extraction")
             extraction_input_tokens, extraction_output_tokens = (
                 extract_context_records(
                     session,
@@ -109,6 +111,9 @@ def agent_loop(
                     ),
                     next_state,
                 )
+        if session is not None:
+            session.record_run_state(next_state, run_status=("active" if isinstance(turn_output, Continue)
+                else "continuable" if turn_output.terminal.status in {"interrupted", "incomplete"} else "terminal"))
         if isinstance(turn_output, Continue):
             yield LoopTransitionEvent(turn_output.reason)
             state = turn_output.next_state

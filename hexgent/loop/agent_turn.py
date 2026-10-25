@@ -364,6 +364,8 @@ def run_turn(
         boundary["reactive"] = True
         return commit_current_compaction(boundary)
 
+    if session is not None:
+        session.invalidate_run_state("context_compaction")
     compaction = yield from compact_context_if_needed(
         state.context_manager,
         client,
@@ -402,6 +404,9 @@ def run_turn(
         return _failure_stop(state, "CONTEXT_BUDGET_EXCEEDED：" + (compaction.message or "上下文无法安全压缩"))
     if controller.interrupted:
         return _control_stop(state, active_control, session, "context_preparation")
+
+    if session is not None:
+        session.record_run_state(state)
 
     # 6. 组装主模型请求；压缩摘要调用不计入正常模型轮次。
     request: dict[str, Any] = {
@@ -451,6 +456,8 @@ def run_turn(
             session.record_runtime_event("pinned_context_prepared", {"constraint_ids": [item["id"] for item in active_constraints(session.store)], "estimated_input_tokens": estimated, "output_allowance": prepared.get("max_output_tokens", 0)})
         return prepared
 
+    if session is not None:
+        session.invalidate_run_state("main_model")
     try:
         response = yield from call_model(
             client,
@@ -562,12 +569,7 @@ def run_turn(
     state.context_manager.append_messages(
         response.output, completes_round=not tool_calls
     )
-    if session is not None:
-        session.record_context_messages(
-            response.output,
-            completes_round=not tool_calls,
-            source="model_response",
-        )
+
     model_rounds = state.model_rounds + 1
     input_tokens = state.input_tokens + response_input_tokens
     output_tokens = state.output_tokens + response_output_tokens
@@ -577,6 +579,14 @@ def run_turn(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
     )
+
+    if session is not None:
+        session.record_context_messages(
+            response.output,
+            completes_round=not tool_calls,
+            source="model_response",
+            loop_state=response_state,
+        )
 
     # 11. 完整响应提交后优先处理 Pause/Cancel，不能继续启动新工具。
     if controller.interrupted and not tool_calls:
@@ -646,11 +656,16 @@ def run_turn(
         interrupt_controller=controller,
     )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
+    response_state = replace(response_state,
+        tool_calls=state.tool_calls + batch.budgeted_call_count,
+        active_skill=_activated_skill(state.active_skill, batch.completed_calls),
+        transition="tool_results_ready")
     if session is not None:
         session.record_context_messages(
             batch.outputs,
             completes_round=True,
             source="tool_results",
+            loop_state=response_state,
         )
     if controller.interrupted:
         return _control_stop(response_state, active_control, session, "tool_batch")
@@ -661,7 +676,7 @@ def run_turn(
         tool_context=state.tool_context,
         relevant_context=state.relevant_context,
         relevant_memory=state.relevant_memory,
-        active_skill=_activated_skill(state.active_skill, batch.completed_calls),
+        active_skill=response_state.active_skill,
         model_rounds=model_rounds,
         tool_calls=state.tool_calls + batch.budgeted_call_count,
         input_tokens=input_tokens,

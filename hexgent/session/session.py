@@ -138,7 +138,7 @@ class Session:
         if self.store is not None:
             self.store.start_named_session(session_id, "Workspace Conversation")
 
-    def start_run(self, *, limits_enabled: bool, plan: Plan | None) -> None:
+    def start_run(self, *, limits_enabled: bool, plan: Plan | None, loop_state: Any | None = None) -> None:
         """开始跟踪一次由最新用户 Query 驱动的 Agent Run。"""
         if self.store is None:
             return
@@ -159,6 +159,7 @@ class Session:
                 "conversation_id": self._conversation_id,
                 "caused_by_command_id": self._caused_by_command_id,
                 "limits_enabled": limits_enabled,
+                **self._run_state_payload(loop_state),
                 "user_query": self._latest_user_query,
                 "plan": asdict(plan) if plan is not None else None,
             },
@@ -303,6 +304,7 @@ class Session:
         *,
         completes_round: bool,
         source: str,
+        loop_state: Any | None = None,
     ) -> None:
         """原子记录一次 Context 消息追加及其完整轮次语义。"""
         self.record_runtime_event(
@@ -311,8 +313,23 @@ class Session:
                 "messages": messages,
                 "completes_round": completes_round,
                 "source": source,
+                **self._run_state_payload(loop_state),
             },
         )
+
+    def _run_state_payload(self, loop_state: Any | None) -> dict[str, Any]:
+        if loop_state is None:
+            return {}
+        return {"run_state_version": 1, "run_id": self._active_run_id,
+                "run_state": loop_state.to_snapshot().to_dict()}
+
+    def record_run_state(self, loop_state: Any, *, run_status: str = "active") -> None:
+        """发布完整预算/控制投影；Checkpoint失败时仍可重放此事实。"""
+        self.record_runtime_event("run_state_committed", {**self._run_state_payload(loop_state), "run_status": run_status})
+
+    def invalidate_run_state(self, phase: str) -> None:
+        """请求结果未提交前不可假定预算已知；下个完整状态发布才解除。"""
+        self.record_runtime_event("run_state_invalidated", {"run_id": self._active_run_id, "phase": phase})
 
     def record_runtime_event(self, event_type: str, payload: Any) -> None:
         """记录不进入模型 Context 的完整 Session 事实。"""
