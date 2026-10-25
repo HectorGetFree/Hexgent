@@ -1,7 +1,8 @@
 """Agent Run 的底层中断与暂停、取消、Steering 业务控制。"""
 
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import Event, Lock, Thread
 from typing import Literal
@@ -102,6 +103,9 @@ class SteeringQuery:
     # 用户提交的原始文本，不允许合并、摘要或改写。
     content: str
 
+    # interrupt 仅让当前主模型请求让位，不取消整个 Run 或抢占工具。
+    mode: Literal["boundary", "interrupt"] = "boundary"
+
 
 class SteeringMailbox:
     """在线程之间按 FIFO 保存当前 Run 的 Steering Query。"""
@@ -116,12 +120,14 @@ class SteeringMailbox:
         # 保护交互线程提交与 Agent 线程批量取出之间的顺序一致性。
         self._lock = Lock()
 
-    def submit(self, content: str) -> SteeringQuery:
+    def submit(self, content: str, *, mode: Literal["boundary", "interrupt"] = "boundary") -> SteeringQuery:
         """把非空原始 Query 追加到 FIFO 尾部。"""
         if not content.strip():
             raise ValueError("Steering Query 不能为空")
+        if mode not in {"boundary", "interrupt"}:
+            raise ValueError("Steering 模式必须为 boundary 或 interrupt")
         with self._lock:
-            query = SteeringQuery(self._next_sequence, content)
+            query = SteeringQuery(self._next_sequence, content, mode)
             self._next_sequence += 1
             self._queries.append(query)
             return query
@@ -139,6 +145,12 @@ class SteeringMailbox:
         with self._lock:
             return bool(self._queries)
 
+    @property
+    def has_interrupting_input(self) -> bool:
+        """检查尚未消费的输入是否要求当前模型请求让位。"""
+        with self._lock:
+            return any(query.mode == "interrupt" for query in self._queries)
+
 
 class RunControl:
     """把业务控制意图与一次性底层中断机制组合为 Run 控制入口。"""
@@ -150,7 +162,7 @@ class RunControl:
         # Pause 和 Cancel 用于唤醒当前模型流并阻止后续工具启动。
         self.interrupt_controller = interrupt_controller or InterruptController()
 
-        # Steering 只在完整 Turn 边界应用，第一版不会主动打断当前阶段。
+        # 默认仍在完整边界应用；显式 interrupt 模式仅让位 MAIN 请求。
         self.steering_mailbox = SteeringMailbox()
 
         # 当前 Run 已请求的终止动作；Cancel 可以覆盖先到达的 Pause。
@@ -158,6 +170,10 @@ class RunControl:
 
         # 保护交互线程与 Agent 线程之间的终止动作读写。
         self._lock = Lock()
+
+        # 请求级控制器随主请求换代；Run 级 Pause/Cancel 信号永不复位。
+        self._model_request_controller: InterruptController | None = None
+        self._model_request_steerable = False
 
     def pause(self) -> None:
         """请求当前 Run 安全停止并保留活动 Plan。"""
@@ -179,9 +195,47 @@ class RunControl:
             self._terminal_action = "cancel"
         self.interrupt_controller.interrupt()
 
-    def steer(self, content: str) -> SteeringQuery:
-        """按 FIFO 保存 Query，等待下一个完整 Turn 边界应用。"""
-        return self.steering_mailbox.submit(content)
+    def steer(self, content: str, *, mode: Literal["boundary", "interrupt"] = "boundary") -> SteeringQuery:
+        """按 FIFO 登记纠偏；interrupt 只唤醒当前 MAIN 请求。"""
+        # 1. 入队和绑定目标请求互斥，避免输入落在两个请求之间而丢失唤醒。
+        with self._lock:
+            query = self.steering_mailbox.submit(content, mode=mode)
+            request_controller = (
+                self._model_request_controller
+                if mode == "interrupt" and self._model_request_steerable else None
+            )
+        # 2. 关闭流可能阻塞，不在控制锁内执行资源回调。
+        if request_controller is not None:
+            request_controller.interrupt()
+        return query
+
+    def drain_steering(self) -> list[SteeringQuery]:
+        """与终止意图仲裁后取输入；Pause/Cancel 已登记时不自动消费。"""
+        with self._lock:
+            if self._terminal_action is not None or self.interrupt_controller.interrupted:
+                return []
+            return self.steering_mailbox.drain()
+
+    @contextmanager
+    def model_request(self, *, steerable: bool = True) -> Iterator[InterruptController]:
+        """为一次主模型调用（含其内部重试）绑定独立的让位控制器。"""
+        request_controller = InterruptController()
+        with self._lock:
+            if self._model_request_controller is not None:
+                raise RuntimeError("同一 Run 不允许重叠的主模型请求")
+            self._model_request_controller = request_controller
+            self._model_request_steerable = steerable
+            pending = steerable and self.steering_mailbox.has_interrupting_input
+        remove = self.interrupt_controller.add_callback(request_controller.interrupt)
+        try:
+            if pending:
+                request_controller.interrupt()
+            yield request_controller
+        finally:
+            with self._lock:
+                self._model_request_controller = None
+                self._model_request_steerable = False
+            remove()
 
     @property
     def terminal_action(self) -> TerminalControlAction | None:
