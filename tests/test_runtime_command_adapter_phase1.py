@@ -186,6 +186,10 @@ class RuntimeCommandAdapterPhase1Test(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("ACCEPTED", decision.status)
             pending = manager._runs[internal_run_id].run_control.steering_mailbox.drain()
             self.assertEqual(["重点关注权限设计"], [query.content for query in pending])
+            self.assertEqual(pending[0].command_id, "cmd-steer-live")
+            self.assertEqual(pending[0].mode, "interrupt")
+            # 异步唤醒会让 Worker 真正获得执行机会；清理目录前必须等待其释放。
+            await asyncio.wait_for(manager._runs[internal_run_id].task, timeout=2)
 
     async def test_cancel_paused_run_commits_durable_effect_and_lifecycle(self) -> None:
         """暂停 execution 已结束后，Cancel 仍以 durable effect 收敛为 CANCELLED。"""

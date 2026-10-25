@@ -15,6 +15,18 @@ function event(type: AgentEvent['type'], payload: Record<string, unknown>): Agen
 }
 
 describe('Run Store 事件投影', () => {
+  it('同一 Run 的纠偏前后响应按 responseId 隔离，迟到文本仍回到旧草稿', () => {
+    const before = appendTextDelta([], 'run_1', '旧草稿', 'response_old')
+    const after = appendTextDelta(before, 'run_1', '新回答', 'response_new')
+    const late = appendTextDelta(after, 'run_1', '末尾', 'response_old')
+    expect(late.map((message) => message.content)).toEqual(['旧草稿末尾', '新回答'])
+  })
+  it('旧响应不能占用新 Query 的空回复位置', () => {
+    const before = appendTextDelta([], 'run_1', '旧草稿', 'response_old')
+    const pending = [...before, { ...before[0], id: 'pending', content: '', responseId: undefined }]
+    const late = appendTextDelta(pending, 'run_1', '末尾', 'response_old')
+    expect(late.map((message) => message.content)).toEqual(['旧草稿末尾', ''])
+  })
   it('把多个 Run 的文本保存在同一 Session 对话时间线中', () => {
     const firstRun = appendTextDelta([], 'run_1', '第一轮回答')
     const secondRun = appendTextDelta(firstRun, 'run_2', '第二轮回答')

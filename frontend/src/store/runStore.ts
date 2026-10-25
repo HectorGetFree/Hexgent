@@ -120,20 +120,32 @@ export function appendTextDelta(
   messages: ConversationMessage[],
   runId: string,
   delta: string,
+  responseId?: string,
 ): ConversationMessage[] {
   let targetIndex = -1
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index].role === 'assistant' && messages[index].runId === runId) {
+    if (messages[index].role === 'assistant' && messages[index].runId === runId
+        && (!responseId || messages[index].responseId === responseId)) {
       targetIndex = index
       break
     }
   }
+  // 先匹配已有响应身份；旧响应迟到片段不能抢占新 Query 的空占位消息。
+  if (targetIndex < 0 && responseId) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'assistant' && messages[index].runId === runId
+          && !messages[index].responseId && messages[index].content === '') {
+        targetIndex = index
+        break
+      }
+    }
+  }
   if (targetIndex < 0) {
-    return [...messages, conversationMessage('assistant', delta, runId, true)]
+    return [...messages, { ...conversationMessage('assistant', delta, runId, true), responseId }]
   }
   return messages.map((message, index) =>
     index === targetIndex
-      ? { ...message, content: message.content + delta, streaming: true }
+      ? { ...message, content: message.content + delta, streaming: true, responseId }
       : message,
   )
 }
@@ -167,7 +179,7 @@ export function finishAssistantMessages(
   stopReason: string | null,
 ): ConversationMessage[] {
   return messages.map((message) =>
-    message.role === 'assistant' && message.runId === runId
+    message.role === 'assistant' && message.runId === runId && message.stopReason !== 'steered'
       ? { ...message, streaming: false, terminalStatus: status, stopReason }
       : message,
   )
@@ -339,14 +351,20 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
     set({ submitting: true, error: null })
     try {
       if (run && ['pending', 'running'].includes(run.status)) {
-        await steerRun(run.run_id, query)
+        const userMessage = conversationMessage('user', query, run.run_id, false)
+        const placeholder = conversationMessage('assistant', '', run.run_id, true)
         set((state) => ({
           messages: [
-            ...finishAssistantMessages(state.messages, run.run_id, 'incomplete', 'steered'),
-            conversationMessage('user', query, run.run_id, false),
-            conversationMessage('assistant', '', run.run_id, true),
+            ...state.messages, userMessage, placeholder,
           ],
         }))
+        try {
+          await steerRun(run.run_id, query)
+        } catch (error) {
+          set((state) => ({ messages: state.messages.filter((message) =>
+            message.id !== userMessage.id && (message.id !== placeholder.id || message.content !== '')) }))
+          throw error
+        }
       } else {
         // 暂停后输入新目标表示放弃旧 Plan，再以原始 Query 开始新 Run。
         if (run?.status === 'paused') {
@@ -467,10 +485,17 @@ export const useRunStore = create<RunWorkspaceState>((set, get) => ({
       events: [...state.events, event],
     }
     if (event.type === 'text_delta') {
-      const payload = event.payload as { delta: string }
+      const payload = event.payload as { delta: string; responseId?: string }
       if (!(state.controlPending === 'pause' && state.run?.status === 'paused')) {
-        patch.messages = appendTextDelta(state.messages, event.run_id, payload.delta)
+        patch.messages = appendTextDelta(state.messages, event.run_id, payload.delta, payload.responseId)
       }
+    } else if (event.type === 'steering_applied') {
+      patch.messages = state.messages.map((message) =>
+        message.role === 'assistant' && message.runId === event.run_id && message.content
+          ? { ...message, streaming: false, terminalStatus: 'incomplete', stopReason: 'steered' }
+          : message)
+    } else if (event.type === 'steering_received' && event.payload.mode === 'interrupt') {
+      patch.permissions = []
     } else if (event.type === 'tool_started' || event.type === 'tool_execution_completed' || event.type === 'tool_finished') {
       patch.tools = updateTools(state.tools, event)
     } else if (event.type === 'plan_created' || event.type === 'plan_updated') {

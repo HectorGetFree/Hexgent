@@ -111,7 +111,7 @@ class Session:
         return PermissionContext(self.settings.permission_mode)
 
     def record_user_query(
-        self, query: UserQuery, *, source: str = "user", command_id: str | None = None,
+        self, query: UserQuery, *, source: str = "user", command_id: str | None = None, loop_state: Any | None = None,
     ) -> None:
         """先初始化 Session，再记录一条进入活动 Context 的原始 Query。"""
         self._latest_user_query = query.content
@@ -130,6 +130,7 @@ class Session:
                     "content": query.content,
                     "source": source,
                     "command_id": command_id,
+                    **self._run_state_payload(loop_state),
                 },
             )
 
@@ -368,6 +369,22 @@ class Session:
             and (record.get("payload") or {}).get("effect") == "cancelled"
             for record in self.store.read_transcript()
         )
+
+    @session_write
+    def record_steering_intent(self, command_id: str, content: str, mode: str) -> bool:
+        """先持久化再唤醒；命令身份在同 Session 内不可被不同输入复用。"""
+        if not isinstance(command_id, str) or not command_id.strip():
+            raise ValueError("纠偏 command_id 必须为非空字符串")
+        for intent in self.steering_intents():
+            if intent.get("command_id") == command_id:
+                if (intent.get("instruction"), intent.get("mode", "boundary")) != (content, mode):
+                    raise ValueError("IDEMPOTENCY_CONFLICT：纠偏命令输入不一致")
+                return False
+        self.record_runtime_control_effect(command_id, "steering_intent", {
+            "instruction": content, "mode": mode,
+            "run_id": self._active_run_id,
+        })
+        return True
 
     def pending_steering_intents(self) -> list[dict[str, Any]]:
         """返回尚未提交 steering_applied 的 durable steering intent。"""

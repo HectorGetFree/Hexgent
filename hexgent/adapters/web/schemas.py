@@ -62,6 +62,8 @@ class SteeringRequest(BaseModel):
     """向当前活跃 Run 的 FIFO 提交一条改向要求。"""
 
     query: str = Field(min_length=1)
+    mode: Literal["interrupt", "boundary"] = "interrupt"
+    command_id: str | None = Field(default=None, min_length=1)
 
 
 class PermissionDecisionRequest(BaseModel):
@@ -89,3 +91,4 @@ class ControlResponse(BaseModel):
     run_id: str
     accepted: bool = True
     action: Literal["pause", "cancel", "steer", "permission"]
+    command_id: str | None = None

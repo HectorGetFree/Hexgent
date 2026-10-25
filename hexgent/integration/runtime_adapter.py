@@ -361,6 +361,7 @@ class RuntimeCommandAdapter:
             if internal_run_id is not None:
                 await self.manager.steer(
                     internal_run_id, str(command.payload.get("instruction", "")),
+                    mode="interrupt", command_id=command.command_id,
                 )
             else:
                 # 进程重启后没有旧 Mailbox；先提交幂等 durable intent，等待下一次安全执行边界消费。
@@ -369,6 +370,7 @@ class RuntimeCommandAdapter:
                         "workspace_run_id": command.run_id,
                         "conversation_id": command.conversation_id,
                         "instruction": str(command.payload.get("instruction", "")),
+                        "mode": "interrupt",
                     },
                 )
 

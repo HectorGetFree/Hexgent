@@ -300,6 +300,8 @@ class WebAdapterTest(unittest.TestCase):
         assert engine.last_control is not None
         queries = engine.last_control.steering_mailbox.drain()
         self.assertEqual([item.content for item in queries], ["先检查测试"])
+        self.assertEqual(queries[0].mode, "interrupt")
+        self.assertEqual(queries[0].command_id, response.json()["command_id"])
         engine.release.set()
         self._wait_for_terminal(run_id)
 

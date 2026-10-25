@@ -26,7 +26,7 @@ from .tool_registry import get_tool
 from .tool_result import ToolExecutionResult, ToolFailure
 from .tool_retry import ToolRetryLimits
 from .tool_permission_pipeline import PermissionContext
-from hexgent.run_control import InterruptController
+from hexgent.run_control import InterruptController, ToolDispatchGate
 from hexgent.observation import begin_span, end_span
 
 if TYPE_CHECKING:
@@ -129,19 +129,20 @@ def _budget_tool_result(call_id: str, message: str) -> dict[str, str]:
     }
 
 
-def _interrupted_tool_result() -> ToolExecutionResult:
+def _interrupted_tool_result(*, steering: bool = False) -> ToolExecutionResult:
     """为尚未开始的工具构造可与 Tool Call 配对的中断结果。"""
-    message = "当前 Run 已被中断，本次工具调用未执行"
+    message = "当前工具批次因纠偏让位，本次调用未执行" if steering else "当前 Run 已被中断，本次工具调用未执行"
     return ToolExecutionResult(
         "error",
         f"错误：{message}",
         True,
         failure=ToolFailure(
-            "execution_interrupted",
+            "steering_interrupted" if steering else "execution_interrupted",
             "scheduling",
             message,
             side_effect_state="not_started",
         ),
+        attempt_count=0,
     )
 
 
@@ -214,10 +215,33 @@ def _run_scheduled_call(
     user_confirmation: UserConfirmation,
     retry_limits: ToolRetryLimits,
     permission_context: PermissionContext | None,
+    dispatch_gate: ToolDispatchGate | None = None,
+    session_store: SessionStore | None = None,
+    admission_deadline: float | None = None,
 ) -> ToolExecutionResult:
     """执行一个已经完成主线程准备的工具调用。"""
     # 惰性取用执行函数，既避免模块循环，也保留测试替换执行入口的能力。
     from . import tool_execution
+
+    def admit(attempt: int) -> bool | ToolExecutionResult:
+        if admission_deadline is not None and monotonic() >= admission_deadline:
+            return ToolExecutionResult("error", "错误：工具批次超时，本次 Handler 尝试未执行", True,
+                failure=ToolFailure("tool_timeout", "scheduling", "工具批次超时，本次 Handler 尝试未执行",
+                                    side_effect_state="not_started"), attempt_count=0)
+        def record():
+            if session_store is None:
+                return
+            if attempt == 1:
+                session_store.append_transcript("tool_execution_dispatched", {
+                    "call_id": item.tool_call.call_id, "tool_name": item.tool_call.name,
+                    "recovery_action": "safe_to_retry" if item.prepared.tool.interrupt_behavior == "cancel" else "verify_before_retry",
+                })
+            session_store.append_transcript("tool_handler_admitted", {
+                "call_id": item.tool_call.call_id, "tool_name": item.tool_call.name,
+                "attempt": attempt,
+            })
+        assert dispatch_gate is not None
+        return dispatch_gate.claim(record)
 
     return tool_execution.execute_tool_call(
         item.tool_call.name,
@@ -228,6 +252,7 @@ def _run_scheduled_call(
         prepared_call=item.prepared,
         retry_limits=retry_limits,
         permission_context=permission_context,
+        **({"dispatch_guard": admit} if dispatch_gate is not None else {}),
     )
 
 
@@ -241,6 +266,8 @@ def _execute_scheduled_group(
     retry_limits: ToolRetryLimits,
     permission_context: PermissionContext | None,
     interrupt_controller: InterruptController | None,
+    dispatch_gate: ToolDispatchGate | None = None,
+    session_store: SessionStore | None = None,
 ) -> Generator[AgentEvent, None, tuple[bool, float]]:
     """执行连续分组，并立即发送并行工具的真实完成事件。"""
     from hexgent.events import ToolExecutionCompletedEvent
@@ -264,6 +291,8 @@ def _execute_scheduled_group(
                 user_confirmation,
                 retry_limits,
                 permission_context,
+                dispatch_gate,
+                session_store,
             )
         return False, monotonic() - started_at
 
@@ -281,6 +310,9 @@ def _execute_scheduled_group(
             user_confirmation,
             retry_limits,
             permission_context,
+            dispatch_gate,
+            session_store,
+            started_at + limits.batch_timeout_seconds,
         ): item
         for item in executable
     }
@@ -291,7 +323,19 @@ def _execute_scheduled_group(
     pending = set(future_to_item)
     try:
         while pending:
+            if dispatch_gate is not None and interrupt_controller is not None and interrupt_controller.interrupted:
+                # 仅取消尚未开始的 Future；已经准入的 Handler 必须返回后再交接新 Query。
+                cancelled = {future for future in pending if future.cancel()}
+                for future in cancelled:
+                    item = future_to_item[future]
+                    item.result = _interrupted_tool_result(steering=dispatch_gate.steering_requested)
+                    yield ToolExecutionCompletedEvent(item.tool_call.name, item.tool_call.call_id, item.result.status)
+                pending.difference_update(cancelled)
+                if not pending:
+                    break
             if (
+                dispatch_gate is None
+                and
                 interrupt_controller is not None
                 and interrupt_controller.interrupted
             ):
@@ -321,8 +365,18 @@ def _execute_scheduled_group(
 
             remaining = limits.batch_timeout_seconds - (monotonic() - started_at)
             if remaining <= 0:
-                timed_out = True
-                break
+                if dispatch_gate is not None:
+                    # 不把尚在运行的线程伪装成已停止；记录超时并保守等待其结果。
+                    if not timed_out and session_store is not None:
+                        session_store.append_transcript("tool_batch_settlement_wait", {
+                            "call_ids": [future_to_item[f].tool_call.call_id for f in pending],
+                            "reason": "batch_timeout_in_flight", "timeout_seconds": limits.batch_timeout_seconds,
+                        })
+                    timed_out = True
+                    remaining = 0.05
+                else:
+                    timed_out = True
+                    break
             completed, pending = wait(
                 pending,
                 timeout=min(0.05, remaining),
@@ -333,6 +387,9 @@ def _execute_scheduled_group(
                 try:
                     item.result = future.result()
                 except Exception as error:
+                    if dispatch_gate is not None:
+                        # Handler 异常由执行器归一；闸门/持久化异常必须停止，不能伪装业务失败。
+                        raise
                     item.result = ToolExecutionResult(
                         "error",
                         f"错误：并行工具执行失败：{error}",
@@ -350,11 +407,13 @@ def _execute_scheduled_group(
                 )
     except BaseException:
         # 生成器被调用方提前关闭或发生异常时，也不能遗留尚未启动的 Future。
-        executor.shutdown(wait=False, cancel_futures=True)
+        if dispatch_gate is not None:
+            dispatch_gate.close()
+        executor.shutdown(wait=dispatch_gate is not None, cancel_futures=True)
         raise
 
     # 3. 超时调用按原顺序获得配对错误；已运行线程不再阻塞等待。
-    if timed_out:
+    if timed_out and dispatch_gate is None:
         for future, item in future_to_item.items():
             if item.result is not None:
                 continue
@@ -408,6 +467,7 @@ def execute_tool_batch(
     retry_limits: ToolRetryLimits | None = None,
     permission_context: PermissionContext | None = None,
     interrupt_controller: InterruptController | None = None,
+    dispatch_gate: ToolDispatchGate | None = None,
 ) -> Generator[AgentEvent, None, ToolBatchResult]:
     """调度完整工具批次，并保证每个调用都有配对结果。"""
     from hexgent.events import (
@@ -474,7 +534,7 @@ def execute_tool_batch(
                 interrupt_controller is not None
                 and interrupt_controller.interrupted
             ):
-                scheduled.result = _interrupted_tool_result()
+                scheduled.result = _interrupted_tool_result(steering=dispatch_gate is not None and dispatch_gate.steering_requested)
             elif limit_message is not None:
                 scheduled.skipped_message = limit_message
             else:
@@ -528,7 +588,7 @@ def execute_tool_batch(
                 min(limits.max_workers, executable_count),
             )
         # 3. 在提交线程或同步执行前持久化派发边界；进程崩溃后不能猜测副作用。
-        if session_store is not None:
+        if session_store is not None and dispatch_gate is None:
             for scheduled in scheduled_calls:
                 if (
                     scheduled.prepared is None
@@ -563,6 +623,8 @@ def execute_tool_batch(
                 retry_limits=active_retry_limits,
                 permission_context=permission_context,
                 interrupt_controller=interrupt_controller,
+                dispatch_gate=dispatch_gate,
+                session_store=session_store,
             )
             batch_status = "RETURNED"
         finally:
@@ -572,6 +634,9 @@ def execute_tool_batch(
         for scheduled in scheduled_calls:
             source_call_id = scheduled.pending_duplicate_source_call_id
             if source_call_id is None:
+                continue
+            if dispatch_gate is not None and interrupt_controller is not None and interrupt_controller.interrupted:
+                scheduled.result = _interrupted_tool_result(steering=dispatch_gate.steering_requested)
                 continue
             assert scheduled.prepared is not None
             source = next(
@@ -587,7 +652,7 @@ def execute_tool_batch(
                     context,
                 )
             else:
-                if session_store is not None:
+                if session_store is not None and dispatch_gate is None:
                     session_store.append_transcript(
                         "tool_execution_dispatched",
                         {
@@ -602,6 +667,8 @@ def execute_tool_batch(
                     user_confirmation,
                     active_retry_limits,
                     permission_context,
+                    dispatch_gate,
+                    session_store,
                 )
 
         # 5. 按模型原始顺序持久化、发事件并构造配对结果。
@@ -631,7 +698,11 @@ def execute_tool_batch(
             result = scheduled.result
             if result is None:
                 raise RuntimeError("工具调度完成后缺少执行结果")
-            if result.status in {"success", "error", "deduplicated"}:
+            if result.status in {"success", "error", "deduplicated"} and not (
+                dispatch_gate is not None and result.failure is not None
+                and result.failure.phase == "scheduling" and result.failure.side_effect_state == "not_started"
+                and result.attempt_count == 0
+            ):
                 budgeted_call_count += 1
 
             persisted: PersistedToolResult | None = None

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from ...agent_engine import AgentEngine, RunRequest
 from ...config import HexgentConfig
-from ...events import AgentEvent, RunFinishedEvent, TextDeltaEvent, ToolStartedEvent
+from ...events import AgentEvent, RunFinishedEvent, TextDeltaEvent, ToolStartedEvent, LoopTransitionEvent
 from ...run_control import RunControl
 from ...tool.tool_permission_pipeline import (
     PermissionConfig,
@@ -366,15 +366,26 @@ class RunManager:
         self._resolve_pending_permissions(handle, "unavailable")
         return self._run_response(handle)
 
-    async def steer(self, run_id: str, query: str) -> RunResponse:
-        """把原始 Query 按 FIFO 提交到当前 Run 的 SteeringMailbox。"""
+    async def steer(self, run_id: str, query: str, *, mode: str = "interrupt",
+                    command_id: str | None = None) -> RunResponse:
+        """先持久化再唤醒；阻塞的 SDK 关闭回调不得占用事件循环。"""
         handle = self._require_active_run(run_id)
         session = self._require_session(handle.session_id)
-        session.engine.session.record_runtime_event(
-            "web_steering_submitted",
-            {"content": query},
-        )
-        handle.run_control.steer(query)
+        identity = command_id or str(uuid4())
+        def submit():
+            handle.run_control.bind_steering_session(session.engine.session)
+            return handle.run_control.steer(query, mode=mode, command_id=identity)
+        try:
+            await asyncio.to_thread(submit)
+        except ValueError as error:
+            raise WebAdapterError(409 if "IDEMPOTENCY_CONFLICT" in str(error) else 422,
+                "steering_conflict" if "IDEMPOTENCY_CONFLICT" in str(error) else "invalid_steering",
+                str(error)) from error
+        if mode == "interrupt":
+            self._resolve_pending_permissions(handle, "unavailable")
+        await self._publish_web_event(handle, "steering_received", {
+            "command_id": identity, "mode": mode,
+        })
         return self._run_response(handle)
 
     async def resolve_permission(
@@ -504,6 +515,9 @@ class RunManager:
                 loop,
             )
             pending = future.result()
+            if (handle.run_control.interrupt_controller.interrupted
+                    or handle.run_control.steering_mailbox.has_interrupting_input):
+                pending.resolve("unavailable", f"interrupted_{pending.request_id}")
 
             # 2. 工具线程阻塞等待网络决定；Pause/Cancel 会将其唤醒为 unavailable。
             if not pending.resolved.wait(PERMISSION_WAIT_TIMEOUT_SECONDS):
@@ -560,6 +574,11 @@ class RunManager:
     ) -> None:
         """按 Run 内顺序追加一个 Core 事件并更新网络终态。"""
         async with handle.condition:
+            if isinstance(event, LoopTransitionEvent) and event.reason == "steering_applied":
+                # 新 MAIN 使用新的响应身份，避免前端把让位前后的草稿视作同一响应。
+                handle.response_id = None
+                handle.events.append(build_web_event("steering_applied", {},
+                    run_id=handle.run_id, stream_id=handle.stream_id, sequence=len(handle.events) + 1))
             if isinstance(event, TextDeltaEvent) and handle.response_id is None:
                 handle.response_id = f"response_{uuid4().hex[:12]}"
             if isinstance(event, ToolStartedEvent):

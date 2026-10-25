@@ -33,10 +33,12 @@ class ModelCallError(RuntimeError):
 
 
 class ModelCallInterrupted(RuntimeError):
-    """模型流在产生完整 Response 之前收到当前 Run 中断请求。"""
+    """任务中断或请求让位；携带的完整响应仅供成本对账，不可派发其中工具。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, response: Any = None, request_attempts: int = 0) -> None:
         super().__init__("模型流式响应已在业务控制请求下中断")
+        self.response = response
+        self.request_attempts = request_attempts
 
 
 def _error_details(error: Any) -> str:
@@ -96,6 +98,7 @@ def call_model(
     """调用模型、发送文本增量，并返回协议完整的响应。"""
     # 1. 只有未输出任何文本且未收到 completed 的空流，才可安全重试一次。
     #    此时没有完整 Response、更没有工具调用，重复请求不会造成外部副作用或界面文字重复。
+    request_attempts = 0
     for attempt in range(2):
         stream = None
         completed_response = None
@@ -114,6 +117,8 @@ def call_model(
             prepared_request = prepare_request(request) if prepare_request is not None else request
             guard = memory_store.request_guard(prepared_request) if memory_store is not None else nullcontext((prepared_request, observation_memory_receipt))
             with guard as (current_request, current_receipt):
+                if interrupt_controller is not None and interrupt_controller.interrupted:
+                    raise ModelCallInterrupted()
                 if observed[0] is not None and current_receipt is not None:
                     observed[0].emit(
                         "memory_injected", span_id=observed[2],
@@ -121,6 +126,7 @@ def call_model(
                         memories=list(current_receipt),
                         instructions_sha256=sha256(str(current_request.get("instructions", "")).encode()).hexdigest(),
                     )
+                request_attempts += 1
                 stream = client.responses.create(**current_request, stream=True)
             close = getattr(stream, "close", None)
             if interrupt_controller is not None and callable(close):
@@ -157,6 +163,9 @@ def call_model(
                     message = getattr(event, "message", None) or "未知错误"
                     raise _model_call_error(f"模型流式响应错误：{message}", event)
         except (ModelCallError, ModelCallInterrupted) as error:
+            if isinstance(error, ModelCallInterrupted):
+                error.response = completed_response
+                error.request_attempts = request_attempts
             observed_status = "INTERRUPTED" if isinstance(error, ModelCallInterrupted) else "FAILED"
             observed_error = getattr(error, "reason", type(error).__name__)
             raise
@@ -165,7 +174,8 @@ def call_model(
             observed_error = type(error).__name__
             if interrupt_controller is not None and interrupt_controller.interrupted:
                 observed_status = "INTERRUPTED"
-                raise ModelCallInterrupted() from error
+                observed_error = "ModelCallInterrupted"
+                raise ModelCallInterrupted(response=completed_response, request_attempts=request_attempts) from error
             # 尚未产生文本或工具调用时，连接中断不会造成重复副作用；允许一次完整重试。
             if attempt == 0 and not emitted_text and _is_retryable_empty_stream_error(error):
                 continue
@@ -181,7 +191,7 @@ def call_model(
 
         # 2. 只有 completed 事件中的完整 Response 可以进入后续工具循环。
         if interrupt_controller is not None and interrupt_controller.interrupted:
-            raise ModelCallInterrupted()
+            raise ModelCallInterrupted(response=completed_response, request_attempts=request_attempts)
         if completed_response is not None:
             return completed_response
         if attempt == 0 and not emitted_text:

@@ -17,7 +17,17 @@ def transcript_messages(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         and isinstance(record["payload"].get("content"), str)
     )
     assistant_since_query = False
+    applied_ids = {r["payload"].get("command_id") for r in records
+        if r.get("type") == "context_user_query_appended"
+        and isinstance(r.get("payload"), dict) and r["payload"].get("source") == "steering"}
     for record in records:
+        payload = record.get("payload") or {}
+        if record.get("type") == "runtime_control_effect" and payload.get("effect") == "steering_intent":
+            # 新链路按身份去重；同文不同 ID 仍是两次独立用户输入。
+            if payload.get("command_id") not in applied_ids:
+                messages.append(_message(record, "user", payload["instruction"]))
+                assistant_since_query = False
+            continue
         if record.get("type") == "web_hidden_query":
             payload = record.get("payload")
             if isinstance(payload, dict) and isinstance(payload.get("content"), str):

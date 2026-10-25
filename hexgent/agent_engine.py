@@ -227,7 +227,7 @@ class AgentEngine:
             if workspace_run_id is not None and conversation_id is not None:
                 self.session.bind_runtime_run(workspace_run_id, conversation_id)
                 self.tool_context.integration_metadata["workspace_run_id"] = workspace_run_id
-            self._apply_pending_steering_intents()
+            # 持久化纠偏由 Loop 安全边界统一重放，不在请求组装前另行修改 Context。
 
             # 4. 稳定配置和依赖作为显式参数传入 Loop，并转发完整事件流。
             outcome = yield from agent_loop(

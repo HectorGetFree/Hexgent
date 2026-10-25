@@ -93,6 +93,7 @@ export interface ConversationMessage {
   runId: string | null
   createdAt: string
   streaming: boolean
+  responseId?: string
   /** Assistant 消息对应 Run 的最终状态；运行中保持为空。 */
   terminalStatus?: RunStatus | null
   /** Agent 主动停止时提供的机器可读原因，例如 user_pause。 */
@@ -133,6 +134,8 @@ export const AGENT_EVENT_TYPES = [
   'run_finished',
   'permission_requested',
   'worker_failed',
+  'steering_received',
+  'steering_applied',
 ] as const
 
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number]

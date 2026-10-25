@@ -10,6 +10,7 @@ from ...workspace import find_workspace_root
 from .event_renderer import TerminalEventRenderer
 from .terminal_io import TerminalIO
 from .pinned_commands import handle_pinned_command
+from .interactive_run import run_interactive
 
 
 def main(config_path: Path | None = None) -> None:
@@ -25,6 +26,7 @@ def main(config_path: Path | None = None) -> None:
         "输入内容后按两次回车或输入 /send 发送消息；"
         "输入 /restore 恢复历史会话，/continue 续跑暂停任务；exit 或 q 可以结束对话。\n"
         "约束管理：/pin <原文>，/replace-pin <id> <version> <新原文>，/revoke-pin <id> <version>，/pins。\n"
+        "运行中可输入新要求（空行或 /send 提交）中断式纠偏；/queue <要求> 边界式排队；/pause、/cancel 控制运行。\n"
     )
 
     # 2. 每条终端消息启动独立 Run，并跨 Run 复用同一个 AgentEngine。
@@ -78,14 +80,7 @@ def main(config_path: Path | None = None) -> None:
         # 4. 将终端控制和权限确认转换为 Core 端口，并消费结构化事件。
         run_control = RunControl()
         renderer = TerminalEventRenderer(engine.tool_context.plan_store.get_plan)
-        event_stream = engine.run(
-            request,
-            user_confirmation=terminal_io.request_confirmation,
-            run_control=run_control,
-        )
         try:
-            with terminal_io.capture_run_interrupt(run_control):
-                for event in event_stream:
-                    renderer.render(event)
+            run_interactive(terminal_io, engine, request, run_control, renderer)
         except (RuntimeError, ValueError) as error:
             print(f"运行请求未执行：{error}")

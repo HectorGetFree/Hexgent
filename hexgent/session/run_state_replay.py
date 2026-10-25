@@ -49,7 +49,7 @@ def _replay(checkpoint, records):
             active = p['run_id']
             if not isinstance(active,str) or not active:raise ValueError('Run身份无效')
             valid = False;paused=False
-        publishes = kind in {'agent_run_started','context_messages_appended','run_state_committed'} and 'run_state_version' in p
+        publishes = kind in {'agent_run_started','context_messages_appended','run_state_committed','context_user_query_appended'} and 'run_state_version' in p
         compaction = kind == 'context_compaction_applied' and 'resume_state' in p
         if publishes or compaction:
             if publishes and (type(p['run_state_version']) is not int or p['run_state_version'] != 1 or p['run_id'] != active or not active):
@@ -81,7 +81,12 @@ def _replay(checkpoint, records):
                 if cid in finished:raise ValueError('重复工具结果')
                 finished.add(cid)
                 status=p['status']
-                if status in {'success','error','deduplicated'}:charged.add(cid)
+                failure=p.get('failure') or {}
+                never_admitted=(status=='error' and p.get('attempt_count')==0
+                    and failure.get('phase')=='scheduling' and failure.get('side_effect_state')=='not_started'
+                    and failure.get('code') in {'steering_interrupted','execution_interrupted','tool_timeout'})
+                if never_admitted:charged.discard(cid)
+                elif status in {'success','error','deduplicated'}:charged.add(cid)
                 elif status not in {'denied','invalid','skipped','interrupted'}:raise ValueError('未知工具状态')
                 if status=='interrupted':charged.discard(cid)  # 已确认中断按原Kernel计数；未知派发仍保留消耗。
                 if p['tool_name']=='activate_skill' and status=='success':

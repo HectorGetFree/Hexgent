@@ -222,21 +222,32 @@ def _continue_with_steering(
 ) -> Continue | None:
     """在安全 Turn 边界按 FIFO 注入当前已到达的全部 Steering Query。"""
     # 1. drain 使用原子快照；调用期间新到达的 Query 留给下一个边界。
-    queries = run_control.steering_mailbox.drain()
+    queries = run_control.drain_steering()
     if not queries:
         return None
 
     # 2. 每条 Query 保持独立原文进入 Context 和 Transcript，不合并、不摘要。
     applied_queries = []
     for query in queries:
+        mutations = session.steering_context_mutations(query.command_id) if session is not None else []
+        if mutations:
+            from ..context.context_manager import UserQuery
+            previous = mutations[0]
+            applied_queries.append(UserQuery(previous["query_sequence"], previous["content"]))
+            session.record_runtime_control_effect(query.command_id, "steering_applied")
+            continue
         user_query = state.context_manager.append_user_query(query.content)
         applied_queries.append(user_query)
         if session is not None:
-            session.record_user_query(user_query, source="steering")
+            session.record_user_query(user_query, source="steering", command_id=query.command_id,
+                loop_state=replace(state, plan_completion_nudges=0, transition="steering_applied"))
+            session.record_runtime_control_effect(query.command_id, "steering_applied")
             session.record_runtime_event(
                 "steering_applied",
                 {
                     "steering_sequence": query.sequence,
+                    "command_id": query.command_id,
+                    "steering_mode": query.mode,
                     "query_sequence": user_query.sequence,
                     "before_model_round": state.model_rounds + 1,
                 },
@@ -459,15 +470,53 @@ def run_turn(
     if session is not None:
         session.invalidate_run_state("main_model")
     try:
-        response = yield from call_model(
-            client,
-            interrupt_controller=controller,
-            observation_memory_receipt=built_context.memory_receipt,
-            memory_store=state.tool_context.memory_store,
-            prepare_request=prepare_current_request,
-            **request,
-        )
+        # 预算收尾不再被纠偏反复打断，避免突破原有收尾请求上限。
+        with active_control.model_request(steerable=state.mode == "working") as request_controller:
+            response = yield from call_model(
+                client,
+                interrupt_controller=request_controller,
+                observation_memory_receipt=built_context.memory_receipt,
+                memory_store=state.tool_context.memory_store,
+                prepare_request=prepare_current_request,
+                **request,
+            )
     except ModelCallInterrupted as interrupted:
+        # 1. 请求让位不是 Run 暂停；只累计可观测 Usage，未知值保留在审计事件中。
+        if not controller.interrupted:
+            response = interrupted.response
+            usage = getattr(response, "usage", None)
+            if hasattr(usage, "model_dump"):
+                usage = usage.model_dump()
+            elif usage is not None and not isinstance(usage, dict):
+                usage = vars(usage)
+            usage = usage or {}
+            known_input = usage.get("input_tokens")
+            known_output = usage.get("output_tokens")
+            next_state = replace(
+                state,
+                model_rounds=state.model_rounds + interrupted.request_attempts,
+                input_tokens=state.input_tokens + (known_input if type(known_input) is int else 0),
+                output_tokens=state.output_tokens + (known_output if type(known_output) is int else 0),
+            )
+            if session is not None:
+                session.record_runtime_event("model_request_yielded", {
+                    "reason": "steering", "request_attempts": interrupted.request_attempts,
+                    "input_tokens": known_input, "output_tokens": known_output,
+                    "usage_available": (interrupted.request_attempts == 1
+                                        and type(known_input) is int and type(known_output) is int),
+                    "missing_usage_attempts": interrupted.request_attempts - (
+                        1 if type(known_input) is int and type(known_output) is int else 0),
+                    "completed_response_discarded": response is not None,
+                })
+            # 2. Pause/Cancel 仍优先；不消费其抢占期间尚未应用的纠偏输入。
+            if controller.interrupted:
+                return _control_stop(next_state, active_control, session, "model_stream")
+            steering = _continue_with_steering(next_state, active_control, session, config)
+            if steering is not None:
+                return steering
+            if controller.interrupted or active_control.terminal_action is not None:
+                return _control_stop(next_state, active_control, session, "model_stream")
+            raise RuntimeError("模型请求让位后缺少待应用的纠偏输入")
         if session is not None:
             session.record_runtime_event(
                 "model_stream_interrupted",
@@ -631,30 +680,27 @@ def run_turn(
         )
 
     # 14. 执行工具批次；Pause/Cancel 后仍需先提交完整配对结果。
-    batch = yield from execute_tool_batch(
-        tool_calls,
-        context=state.tool_context,
-        user_confirmation=user_confirmation,
-        remaining_tool_calls=(
-            max(0, limits.max_tool_calls - state.tool_calls)
-            if limits.enforce_run_limits
-            else None
-        ),
-        deadline=(
-            state.started_at + limits.max_elapsed_seconds
-            if limits.enforce_run_limits
-            else None
-        ),
-        session_store=session.store if session is not None else None,
-        parallel_limits=config.tool_parallel,
-        retry_limits=config.tool_retry,
-        permission_context=(
-            session.permission_context
-            if session is not None
-            else PermissionContext(config.permission.default_mode)
-        ),
-        interrupt_controller=controller,
-    )
+    with active_control.tool_batch() as dispatch_gate:
+        batch = yield from execute_tool_batch(
+            tool_calls,
+            context=state.tool_context,
+            user_confirmation=user_confirmation,
+            remaining_tool_calls=(
+                max(0, limits.max_tool_calls - state.tool_calls)
+                if limits.enforce_run_limits else None
+            ),
+            deadline=(
+                state.started_at + limits.max_elapsed_seconds
+                if limits.enforce_run_limits else None
+            ),
+            session_store=session.store if session is not None else None,
+            parallel_limits=config.tool_parallel,
+            retry_limits=config.tool_retry,
+            permission_context=(session.permission_context if session is not None
+                                else PermissionContext(config.permission.default_mode)),
+            interrupt_controller=dispatch_gate.controller,
+            dispatch_gate=dispatch_gate,
+        )
     state.context_manager.append_messages(batch.outputs, completes_round=True)
     response_state = replace(response_state,
         tool_calls=state.tool_calls + batch.budgeted_call_count,
