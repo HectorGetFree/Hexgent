@@ -41,8 +41,9 @@ class MemoryM1Tests(unittest.TestCase):
         self.assertFalse(off["memory_retrieval"]["enabled"])
         off["memory_retrieval"]["enabled"] = True
         self.assertEqual(on, off)
-        self.assertTrue(on["context_retrieval"]["enabled"])
-        self.assertTrue(on["context_extraction"]["enabled"])
+        # 非被测模块沿用准备时的配置，不假定 Production 默认仍启用 ContextRecord。
+        self.assertEqual(on["context_retrieval"], self.manifest["base_config"]["context_retrieval"])
+        self.assertEqual(on["context_extraction"], self.manifest["base_config"]["context_extraction"])
 
     def test_private_vault_and_write_transcript_access_are_denied(self):
         workspace, vault = self.root / "query", self.root / "vault"

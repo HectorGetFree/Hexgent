@@ -40,6 +40,11 @@ class BenchmarkResponses:
         self.kinds: list[str] = []
 
     def create(self, **request: Any):
+        # 1. Snapshot 提取是独立辅助调用，不消费原 MAIN/SUMMARY 响应队列。
+        from tests.support.fact_extraction_fixture import extraction_event
+        extraction = extraction_event(self, request)
+        if extraction is not None:
+            return extraction
         self.calls.append(request)
         if str(request.get("instructions", "")).startswith(COMPACTION_INSTRUCTIONS):
             self.kinds.append("compaction")
@@ -110,10 +115,11 @@ def _run_compression_variant(*, compact: bool) -> VariantObservation:
         (root / "task.txt").write_text("工具读取内容", encoding="utf-8")
         context = (
             ContextLimits(
-                context_window_tokens=10_000,
-                reserved_output_tokens=100,
+                # 完整请求包含现有工具 Schema 和真实 MAIN 输出预留；不能沿用旧 10K 假窗口。
+                context_window_tokens=32_000,
+                reserved_output_tokens=8_000,
                 safety_margin_tokens=100,
-                # 固定 System Prompt + tool schema 约 3.4k；历史加入后超过 4k。
+                # 较低主动阈值用于触发机制；物理窗口仍完整容纳工具定义和输出预留。
                 proactive_threshold_tokens=4_000,
                 recent_context_tokens=500,
                 reactive_recent_context_tokens=200,
@@ -121,10 +127,14 @@ def _run_compression_variant(*, compact: bool) -> VariantObservation:
                 min_compaction_savings_ratio=0.01,
             )
             if compact else ContextLimits(
-                context_window_tokens=1_000_000,
-                reserved_output_tokens=1,
-                safety_margin_tokens=1,
-                proactive_threshold_tokens=900_000,
+                context_window_tokens=32_000,
+                reserved_output_tokens=8_000,
+                safety_margin_tokens=100,
+                proactive_threshold_tokens=31_000,
+                recent_context_tokens=500,
+                reactive_recent_context_tokens=200,
+                min_compaction_savings_tokens=1,
+                min_compaction_savings_ratio=0.01,
             )
         )
         config = _base_config(context=context)

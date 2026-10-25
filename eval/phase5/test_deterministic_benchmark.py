@@ -1,12 +1,35 @@
 """Phase5A deterministic benchmark 的指标与正确性约束验证。"""
 
 import unittest
+from dataclasses import asdict
+from unittest.mock import patch
 
 from eval.phase5.runner import run_benchmark
 
 
 class DeterministicRuntimeEfficiencyBenchmarkTest(unittest.TestCase):
     """只验证可归因的机制数据，不从 FakeModel 推导行为或延迟收益。"""
+
+    def test_compression_pair_only_changes_proactive_threshold(self):
+        from eval.phase5 import scenarios
+        original = scenarios._base_config
+        configs = []
+
+        def capture(**arguments):
+            config = original(**arguments)
+            configs.append(asdict(config))
+            return config
+
+        with patch.object(scenarios, "_base_config", side_effect=capture):
+            result = scenarios.context_compression()
+        self.assertEqual(len(configs), 2)
+        enabled, baseline = configs
+        self.assertNotEqual(enabled["context"]["proactive_threshold_tokens"], baseline["context"]["proactive_threshold_tokens"])
+        baseline["context"]["proactive_threshold_tokens"] = enabled["context"]["proactive_threshold_tokens"]
+        self.assertEqual(enabled, baseline)
+        self.assertEqual(enabled["context"]["reserved_output_tokens"], enabled["loop"]["max_output_tokens_per_round"])
+        self.assertGreater(result.enabled.compaction_count, 0)
+        self.assertEqual(result.baseline.compaction_count, 0)
 
     def test_all_variants_preserve_declared_correctness_guardrails(self) -> None:
         """四组 ON/OFF 对照均应通过既有 Runtime correctness 边界。"""

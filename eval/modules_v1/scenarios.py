@@ -23,7 +23,7 @@ from hexgent.context.context_compaction import compact_context_if_needed
 from hexgent.memory import MemoryStore, MemoryRetriever, MemoryRetrievalLimits
 from hexgent.plan import InMemoryPlanStore, Plan, PlanStep
 from hexgent.session import Session, SessionRestorer
-from hexgent.memory import ContextRecordInput
+from hexgent.memory import ContextRecordInput, ContextRetrievalLimits
 from hexgent.memory.context_retrieval import ContextRecordRetriever, format_retrieved_context
 from hexgent.memory.context_record_extraction import ContextExtractionLimits
 from hexgent.loop.extract_context_records import extract_context_records
@@ -281,7 +281,7 @@ def context_record_continuation():
         client = SimpleNamespace(responses=SimpleNamespace(create=lambda **_: iter([
             SimpleNamespace(type="response.completed", response=response)])))
         with patch("hexgent.loop.extract_context_records.get_model", return_value="fixture-model"):
-            extract_context_records(session, client, ContextExtractionLimits(), InterruptController(), force=True)
+            extract_context_records(session, client, ContextExtractionLimits(enabled=True), InterruptController(), force=True)
         produced = session.context_records.active_records
         if not produced:
             return {"qualified": False, "oracle_pass": False, "transcript": session.store.read_transcript()}
@@ -299,7 +299,7 @@ def context_record_continuation():
             session.record_compaction(outcome.boundary)
         session.create_checkpoint(context_manager=context, plan=None, loop_state=None, reason="context_compaction_completed", run_status="continuable")
         restored = SessionRestorer(root).restore(session.store.session_id)
-        recalled = ContextRecordRetriever().retrieve("服务部署端口", restored.session.context_records.active_records)
+        recalled = ContextRecordRetriever(ContextRetrievalLimits(enabled=True)).retrieve("服务部署端口", restored.session.context_records.active_records)
         injected = format_retrieved_context(recalled)
         checks = {"active_record_recalled": new_fact in injected,
                   "required_fact_accessible_after_compaction": new_fact in injected and outcome.boundary is not None,

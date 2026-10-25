@@ -16,6 +16,7 @@ from hexgent.session import Session, SessionRestorer
 from hexgent.tool.builtin_tools import read_file, write_file
 from hexgent.tool.tool_context import ToolExecutionContext
 from hexgent.plan import InMemoryPlanStore
+from tests.support.fact_extraction_fixture import extraction_event
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,9 @@ class _FakeResponses:
         self.calls: list[dict[str, Any]] = []
 
     def create(self, **arguments: Any):
+        extraction = extraction_event(self, arguments)
+        if extraction is not None:
+            return extraction
         self.calls.append(arguments)
         response = SimpleNamespace(
             output_text="<summary>已完成此前文件读取与结论。</summary>",
@@ -81,8 +85,9 @@ def compaction_preserves_complete_tool_round() -> ContextMemoryScenario:
         outcome = _drain(compact_context_if_needed(
             context, client, "fake", "系统提示", [],
             ContextLimits(
-                context_window_tokens=10, reserved_output_tokens=1,
+                context_window_tokens=500, reserved_output_tokens=1,
                 safety_margin_tokens=1, recent_context_tokens=100,
+                proactive_threshold_tokens=100,
                 min_compaction_savings_tokens=1,
                 min_compaction_savings_ratio=0.01,
             ),
@@ -175,7 +180,7 @@ def superseded_context_record_is_not_recalled() -> ContextMemoryScenario:
             ])
             restored = SessionRestorer(root).restore(session.store.session_id)
             records = restored.session.retrieve_context_records(
-                "当前部署端口是什么", (1,), ContextRetrievalLimits(),
+                "当前部署端口是什么", (1,), ContextRetrievalLimits(enabled=True),
             )
             return ContextMemoryObservation({
                 "recalled": tuple(record.content for record in records),

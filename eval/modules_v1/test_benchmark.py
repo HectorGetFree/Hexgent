@@ -1,6 +1,7 @@
 """模块 Benchmark 自身的确定性回归；不调用真实模型。"""
 
 from pathlib import Path
+import json
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -53,11 +54,37 @@ class ModuleBenchmarkTest(unittest.TestCase):
                 self.assertGreater(row["compression_ratio"], 0)
                 self.assertLess(row["compression_ratio"], 1)
 
-    def test_compaction_oracle_rejects_dropped_fact(self):
+    def test_snapshot_preserves_fact_when_summary_drops_it(self):
         from . import scenarios
         original = scenarios.BenchmarkResponses
         with patch.object(scenarios, "BenchmarkResponses", side_effect=lambda *a, **k: original([], summary="事实已丢失")):
             row = compaction_case("long_history")
+        self.assertTrue(row["checks"]["required_fact_retention"])
+        self.assertTrue(row["oracle_pass"])
+
+    def test_compaction_oracle_rejects_dropped_fact(self):
+        from . import scenarios
+        from tests.support.fact_extraction_fixture import extraction_event
+        original = scenarios.BenchmarkResponses
+
+        def omit_critical_fact(owner, request):
+            stream = extraction_event(owner, request)
+            if stream is None:
+                return None
+            event = next(stream)
+            snapshot = json.loads(event.response.output_text)
+            # 保留同一历史中有依据的非关键事实，模拟两个压缩通道都遗漏目标事实。
+            payload = json.loads(request["input"][0]["content"])
+            self.assertIn("历史信息。", str(payload["history_prefix"]))
+            for fact in snapshot["facts"]:
+                fact["content"] = "历史信息。"
+            event.response.output_text = json.dumps(snapshot, ensure_ascii=False)
+            return iter([event])
+
+        with patch.object(scenarios, "BenchmarkResponses", side_effect=lambda *a, **k: original([], summary="事实已丢失")), \
+                patch("tests.support.fact_extraction_fixture.extraction_event", side_effect=omit_critical_fact):
+            row = compaction_case("long_history")
+        self.assertTrue(row["checks"]["compaction_commit_success"])
         self.assertFalse(row["checks"]["required_fact_retention"])
         self.assertFalse(row["oracle_pass"])
 

@@ -168,10 +168,10 @@ def _crash_before_tool_result_context() -> Callable[[Session], object]:
     def hook(session: Session):
         original = session.record_context_messages
 
-        def record(messages: list[object], *, completes_round: bool, source: str):
+        def record(messages: list[object], *, completes_round: bool, source: str, loop_state=None):
             if source == "tool_results":
                 raise InjectedCrash("before durable function_call_output")
-            return original(messages, completes_round=completes_round, source=source)
+            return original(messages, completes_round=completes_round, source=source, loop_state=loop_state)
 
         with patch.object(session, "record_context_messages", side_effect=record):
             yield
